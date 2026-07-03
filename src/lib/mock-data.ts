@@ -862,12 +862,17 @@ function fallbackResponse(identity: Identity): AssistantResponse {
 }
 
 /**
- * Try to match a free-form user message to one of the example question ids,
- * otherwise fall back to a synthesised scoped response.
+ * Mock fallback used by the store when the FastAPI backend is unreachable.
+ *
+ * Tries to match the user message to one of the example questions (by label
+ * prefix), returning the pre-baked scoped response for that identity. Falls
+ * back to a synthesised scoped response so the prototype never breaks. The
+ * signature `(message, identity)` mirrors the backend `callBackend` helper
+ * so the two are drop-in interchangeable in the store action.
  */
-export function getResponseForMessage(
-  identity: Identity,
+export function getMockResponse(
   message: string,
+  identity: Identity,
 ): AssistantResponse {
   const normalized = message.trim().toLowerCase();
   const match = EXAMPLE_QUESTIONS.find((q) =>
@@ -879,6 +884,20 @@ export function getResponseForMessage(
     if (r) return r;
   }
   return fallbackResponse(identity);
+}
+
+/**
+ * Try to match a free-form user message to one of the example question ids,
+ * otherwise fall back to a synthesised scoped response.
+ *
+ * Kept for backwards compatibility with existing callers — delegates to
+ * `getMockResponse` (the canonical entry point).
+ */
+export function getResponseForMessage(
+  identity: Identity,
+  message: string,
+): AssistantResponse {
+  return getMockResponse(message, identity);
 }
 
 /** Direct lookup by example question id (used when clicking an example chip). */

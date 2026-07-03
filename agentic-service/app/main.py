@@ -1,14 +1,12 @@
 """FastAPI application entrypoint for Tevet-7.
 
-Phase 0: This module exposes a minimal but real FastAPI app — health check,
-root info, CORS, and lifespan logging. The real ``/chat`` router is imported
-but returns HTTP 501 (see ``app/api/chat.py``).
+Phase 1: real `/chat` endpoint backed by an in-process SQLite database with
+fictitious Drive Producteur data. The DB is created + seeded on startup by
+``app.db_seed.init_db()``.
 
 Run locally with::
 
-    uvicorn app.main:app --reload --port 8000
-
-Phase 1 will wire in the real agent orchestrator and SSE streaming.
+    uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
 """
 
 from __future__ import annotations
@@ -23,10 +21,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.api.chat import router as chat_router
 from app.config import get_settings
+from app.db_seed import dispose_engine, init_db
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging
-# In production we'd ship structured JSON logs (structlog / loguru). For Phase 0
+# In production we'd ship structured JSON logs (structlog / loguru). For Phase 1
 # the standard logger is enough — uvicorn's access logs already give us timing.
 # ─────────────────────────────────────────────────────────────────────────────
 logger = logging.getLogger("tevet7")
@@ -36,10 +35,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 # ─────────────────────────────────────────────────────────────────────────────
 # Lifespan
 # FastAPI's recommended way to run startup/shutdown code. We use it for:
-#   - startup: log version, env, validate required settings
-#   - shutdown: log clean exit, flush Langfuse spans (Phase 1)
-# We deliberately do NOT open the DB connection pool here — the engine is
-# lazy-initialized on first use, and tests may want to override it.
+#   - startup: log version, env, create + seed the SQLite DB.
+#   - shutdown: log clean exit, dispose the engine pool.
 # ─────────────────────────────────────────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -50,16 +47,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.env,
         settings.llm_model,
     )
-    if settings.openai_api_key in {"", "sk-replace-me"}:
-        logger.warning(
-            "OPENAI_API_KEY is not configured — /chat will fail in Phase 1. "
-            "Set it in .env before enabling the chat router."
-        )
-    # TODO(Phase 1): initialise Langfuse client, warm up the LLM client,
-    # pre-load schema.yaml into a per-tenant cache, etc.
+    # Phase 1: create + seed the SQLite DB (idempotent — drop & recreate).
+    try:
+        await init_db()
+        logger.info("SQLite database ready at %s", settings.database_url)
+    except Exception:  # noqa: BLE001
+        logger.exception("init_db() failed — /chat will return errors until fixed")
     yield
     logger.info("Tevet-7 shutting down — version=%s", __version__)
-    # TODO(Phase 1): await langfuse_client.flush() to ship pending traces.
+    await dispose_engine()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -74,8 +70,9 @@ def create_app() -> FastAPI:
         description=(
             "Configurable enterprise AI agent platform. "
             "First tenant: Drive Producteur (Producer Copilot).\n\n"
-            "Phase 0: skeleton only — `/chat` returns HTTP 501. "
-            "See `docs/architecture.md` for the full roadmap."
+            "Phase 1: rule-based SQL generator + sqlglot row-level scoping "
+            "on an in-process SQLite database. See `docs/architecture.md` "
+            "for the full roadmap."
         ),
         version=__version__,
         lifespan=lifespan,
@@ -96,7 +93,8 @@ def create_app() -> FastAPI:
     )
 
     # Routers
-    # Phase 1: the chat router will actually serve traffic.
+    # Phase 1: the chat router serves real traffic (rule-based agent +
+    # sqlglot scoping on SQLite).
     app.include_router(chat_router, prefix="/api", tags=["chat"])
 
     # ── Health & info ────────────────────────────────────────────────────────
@@ -115,12 +113,13 @@ def create_app() -> FastAPI:
         return {
             "name": "Tevet-7",
             "version": __version__,
-            "phase": 0,
+            "phase": 1,
             "docs": "/docs",
             "architecture": "https://github.com/your-org/tevet-7/blob/main/agentic-service/docs/architecture.md",
             "endpoints": {
                 "health": "/health",
-                "chat (Phase 1)": "/api/chat",
+                "chat": "/api/chat",
+                "schema": "/api/schema",
             },
         }
 

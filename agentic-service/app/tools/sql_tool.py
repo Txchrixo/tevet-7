@@ -17,14 +17,14 @@ The rewriting pipeline (see ``validate_and_rewrite``) enforces:
    anywhere in the query (including subqueries, JOINs, CTEs). The forbidden
    list (``users``, ``audit_logs``, ...) is rejected even for admins.
 3. **Row-level scoping.** For every producer-scoped table referenced, the
-   query must include ``WHERE {scope_column} = {scope_value}`` at the top
-   level **and** inside every subquery that touches the same table. If the
+   query must include ``WHERE {scope_column} = {scope_value}`` at every
+   SELECT that touches the table (top-level + subqueries + CTEs). If the
    LLM produced a query missing the filter (or with a wrong value), the
    rewriter injects the correct one and logs a ``SECURITY WARNING`` — the
    attempt is treated as a security event for audit purposes.
 4. **Result limit.** ``LIMIT {default_limit}`` is appended if not present.
 5. **No dangerous functions.** ``pg_sleep``, ``lo_import``, ``pg_read_file``,
-   ``COPY``, ``CREATE``, etc. are stripped/rejected.
+   ``COPY``, ``LOAD_EXTENSION``, ``WRITEFILE`` are rejected.
 
 Because the rewrite is deterministic and based on AST manipulation (not
 regex), it cannot be defeated by SQL comments, string tricks, or unusual
@@ -41,7 +41,10 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
+
+import sqlglot
+from sqlglot import exp
 
 from app.connectors.base import Connector, QueryResult
 
@@ -66,6 +69,11 @@ class ToolResult:
     # The natural-language question that triggered this tool call — useful
     # for Langfuse attribution and for the agent to cite back to the user.
     question: str | None = None
+    # The post-rewrite SQL that was executed (or None if generation failed).
+    sql_used: str | None = None
+    # The scope clause that the rewriter injected (or preserved), e.g.
+    # ``WHERE oi.producer_id = 42``. Null for admin / unscoped queries.
+    scope_clause: str | None = None
     # Tables this query actually touched (post-rewrite). Used to populate
     # the agent's `sources` field.
     tables_touched: list[str] = field(default_factory=list)
@@ -90,12 +98,204 @@ class SqlSecurityError(Exception):
 
 
 class SqlGenerationError(Exception):
-    """Raised when the LLM fails to produce parseable SQL."""
+    """Raised when the SQL generator fails to produce parseable SQL."""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SQL generator protocol (swappable LLM/rule-based)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class SQLGenerator(Protocol):
+    """Protocol every SQL generator must satisfy.
+
+    Phase 1 ships ``RuleBasedSQLGenerator`` (deterministic, keyword-driven).
+    Phase 2 will swap in ``LLMSQLGenerator`` that calls OpenAI with the
+    rendered schema + few-shot examples. The orchestrator and tool do not
+    need to change.
+    """
+
+    def generate(
+        self,
+        question: str,
+        role: str,
+        scope_column: str | None,
+        scope_value: int | str | None,
+    ) -> str | None:
+        """Translate a natural-language question into a SQL SELECT.
+
+        Returns ``None`` if no rule matches (or the LLM declined). Raises
+        ``SqlGenerationError`` for unrecoverable failures.
+
+        ``scope_column`` / ``scope_value`` are provided for context but the
+        generator is NOT required to include the scope clause — the
+        ``validate_and_rewrite`` step will inject it if missing.
+        """
+        ...
+
+
+# Sentinel the generator returns to ask the tool to refuse the question
+# (e.g. a producer asking a cross-producer question).
+REFUSE_MARKER = "__REFUSE__"
+
+
+class RuleBasedSQLGenerator:
+    """Deterministic keyword-driven SQL generator for the 5 demo questions.
+
+    Matches French keywords in the question to pick one of five SQL
+    templates. The generated SQL omits the scope clause on purpose — the
+    rewriter always injects it. (A second code path — included for
+    robustness — also works when the SQL contains a correct scope clause;
+    the rewriter simply preserves it.)
+    """
+
+    # ── helpers ────────────────────────────────────────────────────────────
+    @staticmethod
+    def _has_any(text: str, needles: list[str]) -> bool:
+        t = text.lower()
+        return any(n in t for n in needles)
+
+    # ── entry point ────────────────────────────────────────────────────────
+    def generate(
+        self,
+        question: str,
+        role: str,
+        scope_column: str | None,
+        scope_value: int | str | None,
+    ) -> str | None:
+        q = question.lower()
+
+        # 1. Cross-producer ranking — admin-only.
+        #    "Quels producteurs ont le plus de commandes ?"
+        if self._has_any(q, ["producteur"]) and self._has_any(q, ["commande", "vente"]):
+            if role != "admin":
+                # Producer asking a cross-producer question → refuse.
+                return REFUSE_MARKER
+            # Admin: aggregate across all producers, current month.
+            return (
+                "SELECT p.display_name AS producer_name, "
+                "COUNT(DISTINCT o.id) AS order_count, "
+                "COALESCE(SUM(o.total_amount), 0) AS revenue_eur "
+                "FROM producers p "
+                "LEFT JOIN orders o ON o.producer_id = p.id "
+                "AND o.created_at >= '2024-07-01' "
+                "AND o.status != 'cancelled' "
+                "GROUP BY p.id, p.display_name "
+                "ORDER BY order_count DESC"
+            )
+
+        # 2. Top products this month.
+        #    "Quels sont mes 5 produits les plus vendus ce mois-ci ?"
+        if self._has_any(q, ["produit", "vendu", "vente"]) and self._has_any(q, ["top", "plus", "plus vendu", "best", "meilleur"]):
+            return (
+                "SELECT p.name AS name, "
+                "SUM(oi.quantity) AS units_sold, "
+                "ROUND(SUM(oi.line_total_eur), 2) AS revenue "
+                "FROM order_items oi "
+                "JOIN products p ON oi.product_id = p.id "
+                "JOIN orders o ON oi.order_id = o.id "
+                "WHERE o.status != 'cancelled' "
+                "AND o.created_at >= '2024-07-01' "
+                "GROUP BY p.id, p.name "
+                "ORDER BY units_sold DESC "
+                "LIMIT 5"
+            )
+
+        # 3. Stock shortfall.
+        #    "Quels produits risquent de me manquer samedi ?"
+        if self._has_any(q, ["stock", "manqu", "rupture", "samedi", "épuis"]):
+            return (
+                "SELECT p.name AS name, "
+                "p.category AS category, "
+                "s.quantity AS stock_quantity, "
+                "s.reserved AS reserved, "
+                "s.available AS available, "
+                "ROUND(s.available, 2) AS available_display "
+                "FROM stocks s "
+                "JOIN products p ON s.product_id = p.id "
+                "WHERE s.available < 10 "
+                "ORDER BY s.available ASC"
+            )
+
+        # 4. Net revenue (current month or named month, e.g. June).
+        #    "Combien ai-je gagné en juin ?"
+        if self._has_any(q, ["gagné", "gagne", "net", "commission", "chiffre", "ca ", "revenu", "recette"]):
+            # Determine the month from the question; default = current month.
+            month_start, month_end, month_label = self._resolve_month(q)
+            return (
+                f"SELECT "
+                f"COUNT(DISTINCT o.id) AS order_count, "
+                f"ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS gross_revenue, "
+                f"ROUND(COALESCE(SUM(o.total_amount), 0) * {1 - 0.12:.4f}, 2) AS net_revenue, "
+                f"'{month_label}' AS month_label "
+                f"FROM orders o "
+                f"WHERE o.status != 'cancelled' "
+                f"AND o.created_at >= '{month_start}' "
+                f"AND o.created_at <= '{month_end}'"
+            )
+
+        # 5. Weekly sales summary.
+        #    "Résumé de mes ventes cette semaine ?"
+        if self._has_any(q, ["résumé", "resume", "semaine", "synthèse", "synthese"]):
+            return (
+                "SELECT DATE(o.created_at) AS day, "
+                "COUNT(DISTINCT o.id) AS order_count, "
+                "ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS revenue "
+                "FROM orders o "
+                "WHERE o.status != 'cancelled' "
+                "AND o.created_at >= DATE('2024-07-08') "
+                "AND o.created_at <= DATE('2024-07-15') "
+                "GROUP BY DATE(o.created_at) "
+                "ORDER BY day ASC"
+            )
+
+        # No rule matched.
+        return None
+
+    @staticmethod
+    def _resolve_month(q: str) -> tuple[str, str, str]:
+        """Pick the SQL date window for the revenue question.
+
+        Defaults to the current demo month (July 2024). Recognises "juin",
+        "juillet", "mai", "avril", "mars", "février", "janvier".
+        """
+        months = [
+            ("janvier", "2024-01-01", "2024-01-31 23:59:59", "janvier 2024"),
+            ("février", "2024-02-01", "2024-02-29 23:59:59", "février 2024"),
+            ("fevrier", "2024-02-01", "2024-02-29 23:59:59", "février 2024"),
+            ("mars", "2024-03-01", "2024-03-31 23:59:59", "mars 2024"),
+            ("avril", "2024-04-01", "2024-04-30 23:59:59", "avril 2024"),
+            ("mai", "2024-05-01", "2024-05-31 23:59:59", "mai 2024"),
+            ("juin", "2024-06-01", "2024-06-30 23:59:59", "juin 2024"),
+            ("juillet", "2024-07-01", "2024-07-31 23:59:59", "juillet 2024"),
+        ]
+        for keyword, start, end, label in months:
+            if keyword in q:
+                return start, end, label
+        # Default to current month (July 2024 in the demo).
+        return "2024-07-01", "2024-07-31 23:59:59", "ce mois-ci"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # The tool
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+# Functions that must NEVER appear in a generated query (SQLite + Postgres).
+_FORBIDDEN_FUNCTIONS = {
+    "pg_sleep",
+    "lo_import",
+    "lo_export",
+    "pg_read_file",
+    "pg_write_file",
+    "pg_ls_dir",
+    "copy",
+    "load_extension",
+    "writefile",
+    "readfile",
+    "unlink",
+    "fsync",
+}
 
 
 class SqlReadTool:
@@ -118,17 +318,14 @@ class SqlReadTool:
     --------
     ``run(question)`` orchestrates three steps:
 
-    1. ``generate_sql(question)`` — ask the LLM to translate the question
-       into SQL, given the schema (compact text form) and the few-shot
-       examples in the system prompt.
+    1. ``generate_sql(question)`` — produce SQL (rule-based in Phase 1,
+       LLM-based in Phase 2). The ``SQLGenerator`` protocol makes the swap
+       a one-line change.
     2. ``validate_and_rewrite(sql)`` — sqlglot parses the SQL, applies the
        five security checks described in the module docstring, and returns
        the rewritten SQL.
     3. ``execute(sql)`` — the connector runs the rewritten SQL on its
        read-only connection.
-
-    Phase 0 status: methods are stubbed with detailed TODOs. The signatures
-    and the security contract are stable; only the bodies change in Phase 1.
     """
 
     # Default result limit if the schema doesn't override it.
@@ -139,9 +336,11 @@ class SqlReadTool:
         connector: Connector,
         schema: dict[str, Any],
         allowed_tables: list[str],
-        scope_column: str,
-        scope_value: int | str,
+        scope_column: str | None,
+        scope_value: int | str | None,
+        role: str = "producer",
         llm_client: Any | None = None,
+        generator: SQLGenerator | None = None,
     ) -> None:
         self.connector = connector
         self.schema = schema
@@ -151,36 +350,45 @@ class SqlReadTool:
         self.forbidden_tables = set(schema.get("forbidden_tables", []))
         self.scope_column = scope_column
         self.scope_value = scope_value
+        self.role = role
+        # For producer/customer: row-level scoping is enforced.
+        # For admin: scoping is skipped (admin sees all rows).
+        self.enforce_scope = role != "admin" and scope_column is not None and scope_value is not None
         self.default_limit = schema.get("metadata", {}).get("default_limit", self.DEFAULT_LIMIT)
         self.llm_client = llm_client
+        self.generator: SQLGenerator = generator or RuleBasedSQLGenerator()
+        # Build a quick lookup: table_name -> scope_column (or None)
+        self._table_scope_columns: dict[str, str | None] = {}
+        for t in schema.get("tables", []):
+            self._table_scope_columns[t["name"]] = t.get("tenant_scope_column")
 
     # ───────────────────────────────────────────────────────────────────────
-    # Step 1 — SQL generation (LLM)
+    # Step 1 — SQL generation
     # ───────────────────────────────────────────────────────────────────────
-    async def generate_sql(self, question: str) -> str:
-        """Ask the LLM to translate ``question`` into a SQL SELECT.
+    def generate_sql(self, question: str) -> str:
+        """Generate SQL for the question via the configured generator.
 
-        The prompt includes:
-        - The allowed tables + their columns (compact text form).
-        - The scope column + the scope value (so the model can pre-inject it
-          — though the rewriter will catch it if the model forgets).
-        - A few-shot example or two.
-
-        Returns the raw SQL string. Does NOT validate it — that's the
-        rewriter's job.
-
-        TODO(Phase 1):
-          - Build the schema-as-text representation (cache per-tenant).
-          - Call OpenAI with the sql_read_tool function schema.
-          - Parse the tool call result, fall back to a second attempt if
-            the model returns malformed SQL.
+        Returns the SQL string. Returns ``REFUSE_MARKER`` if the generator
+        explicitly refuses the question (e.g. a producer asking a
+        cross-producer question). Raises ``SqlGenerationError`` if no rule
+        matches AND no LLM fallback is available.
         """
-        raise NotImplementedError("Phase 1: wire up the OpenAI call.")
+        sql = self.generator.generate(
+            question=question,
+            role=self.role,
+            scope_column=self.scope_column,
+            scope_value=self.scope_value,
+        )
+        if sql is None:
+            raise SqlGenerationError(
+                f"No SQL rule matched the question: {question!r}"
+            )
+        return sql
 
     # ───────────────────────────────────────────────────────────────────────
     # Step 2 — Validation & rewriting (sqlglot)
     # ───────────────────────────────────────────────────────────────────────
-    async def validate_and_rewrite(self, sql: str) -> str:
+    def validate_and_rewrite(self, sql: str) -> str:
         """Parse ``sql`` with sqlglot and return a safe, rewritten SQL string.
 
         Pipeline (all checks raise ``SqlSecurityError`` on violation):
@@ -193,40 +401,200 @@ class SqlReadTool:
            not in ``allowed_tables``.
         d) For every producer-scoped table (those with
            ``tenant_scope_column`` in the schema), ensure the WHERE clause
-           (at every level that touches the table) includes
+           of every SELECT that directly touches that table includes
            ``{scope_column} = {scope_value}``. If missing or wrong:
-              - rewrite the AST to inject the correct predicate,
+              - rewrite the AST to inject/replace the predicate,
               - increment ``rewrites_applied``,
               - if the existing predicate used a *different* scope value
-                (the LLM tried to bypass), set ``security_incident=True``
-                and log a ``SECURITY WARNING`` — but still return a safe
-                query (scoped to the right producer) so the user gets an
-                answer and we get an audit trail.
+                (the LLM tried to bypass), set ``self._last_security_incident=True``
+                and log a ``SECURITY WARNING``.
+           For admin role: skip scoping.
         e) Reject dangerous function calls (``pg_sleep``, ``lo_import``,
-           ``pg_read_file``, ``COPY``).
+           ``pg_read_file``, ``COPY``, ``LOAD_EXTENSION``, ``WRITEFILE``).
         f) If no ``LIMIT`` is present, append ``LIMIT {default_limit}``.
 
         Returns the rewritten SQL as a string.
 
-        TODO(Phase 1):
-          - Use ``sqlglot.parse_one(sql, dialect="postgres")``.
-          - Walk with ``ast.find_all(exp.Table)`` for table collection.
-          - Use ``ast.find_all(exp.Where)`` to inspect predicates.
-          - Inject scope predicates via ``ast.where(...)``.
-          - Add the LIMIT via ``ast.set("limit", exp.Limit(...))``.
+        Side effects: sets ``self._last_security_incident`` and
+        ``self._last_rewrites_applied`` (consumed by ``run``).
         """
-        raise NotImplementedError("Phase 1: implement the sqlglot rewrite pipeline.")
+        self._last_security_incident = False
+        self._last_rewrites_applied = 0
+        self._last_scope_clause: str | None = None
+
+        # ── a) Parse ──
+        try:
+            ast = sqlglot.parse_one(sql, dialect="sqlite")
+        except Exception as exc:
+            raise SqlGenerationError(f"unparseable SQL: {exc}") from exc
+
+        # ── b) Statement kind ──
+        if not isinstance(ast, exp.Select):
+            kind = type(ast).__name__
+            raise SqlSecurityError(
+                f"Statement kind '{kind}' is not allowed — only SELECT."
+            )
+
+        # ── c) Table allowlist (walk ALL tables in the AST) ──
+        referenced_tables: list[str] = []
+        for table_node in ast.find_all(exp.Table):
+            tname = table_node.name
+            referenced_tables.append(tname)
+            if tname in self.forbidden_tables:
+                raise SqlSecurityError(
+                    f"Forbidden table referenced: {tname!r} "
+                    "(control-plane table — never reachable via the agent)."
+                )
+            if tname not in self.allowed_tables:
+                raise SqlSecurityError(
+                    f"Table {tname!r} is not in the allowed list for role "
+                    f"{self.role!r}."
+                )
+
+        # ── d) Row-level scoping ──
+        if self.enforce_scope:
+            self._apply_row_level_scope(ast)
+
+        # ── e) Dangerous functions ──
+        for anon in ast.find_all(exp.Anonymous):
+            fname = (anon.name or "").lower()
+            if fname in _FORBIDDEN_FUNCTIONS:
+                raise SqlSecurityError(
+                    f"Dangerous function {fname!r} is not allowed."
+                )
+
+        # ── f) LIMIT ──
+        if not ast.args.get("limit"):
+            ast.set("limit", exp.Limit(expression=exp.Literal.number(self.default_limit)))
+            self._last_rewrites_applied += 1
+
+        rewritten = ast.sql(dialect="sqlite", pretty=False)
+        return rewritten
+
+    def _apply_row_level_scope(self, ast: exp.Select) -> None:
+        """Inject ``{scope_column} = {scope_value}`` at every SELECT that
+        directly references a producer-scoped table.
+
+        Mutates ``ast`` in place. Updates ``self._last_security_incident``,
+        ``self._last_rewrites_applied``, and ``self._last_scope_clause``.
+        """
+        scope_col = self.scope_column
+        scope_val = self.scope_value
+
+        # Walk every SELECT node (top-level + subqueries + CTEs).
+        for sel in ast.find_all(exp.Select):
+            direct_tables = self._direct_tables_of_select(sel)
+            scoped_tables_here = [
+                t for t in direct_tables
+                if self._table_scope_columns.get(t) == scope_col
+            ]
+            if not scoped_tables_here:
+                continue
+
+            # Pick a qualifier for the scope column from the alias of one of
+            # the scoped tables present in this SELECT. This avoids
+            # "ambiguous column name" errors when several scoped tables are
+            # joined (all of them carry the same scope_column).
+            qualifier = self._pick_scope_qualifier(sel, scoped_tables_here)
+
+            # Inspect the SELECT's direct WHERE.
+            where = sel.args.get("where")
+            existing_predicate = None
+            existing_value: int | str | None = None
+            if where is not None:
+                for eq in where.find_all(exp.EQ):
+                    left = eq.left
+                    right = eq.right
+                    if isinstance(left, exp.Column) and left.name == scope_col:
+                        # Existing predicate on scope_col found.
+                        if isinstance(right, exp.Literal):
+                            try:
+                                existing_value = int(right.this)
+                            except (ValueError, TypeError):
+                                existing_value = right.this
+                        else:
+                            existing_value = right.sql()
+                        existing_predicate = eq
+                        break
+
+            if existing_predicate is None:
+                # Missing → inject. Use the qualifier so SQLite doesn't
+                # raise "ambiguous column name" when several scoped tables
+                # are joined.
+                col_ref = f"{qualifier}.{scope_col}" if qualifier else scope_col
+                predicate = exp.condition(f"{col_ref} = {scope_val}")
+                # sel.where() returns a new Select; we copy its WHERE into
+                # the existing node so the AST is mutated in place.
+                new_sel = sel.where(predicate)
+                new_where = new_sel.args.get("where")
+                if new_where is not None:
+                    sel.set("where", new_where)
+                self._last_rewrites_applied += 1
+                if self._last_scope_clause is None:
+                    self._last_scope_clause = f"WHERE {col_ref} = {scope_val}"
+            else:
+                # Existing predicate on scope_col. Check value.
+                if str(existing_value) != str(scope_val):
+                    # Wrong value → rewrite + security incident.
+                    logger.warning(
+                        "SECURITY WARNING — scope bypass attempt: "
+                        "question scope_value=%s but SQL contained %s=%s. "
+                        "Rewriting to %s=%s.",
+                        scope_val, scope_col, existing_value, scope_col, scope_val,
+                    )
+                    existing_predicate.right.replace(
+                        exp.Literal.number(int(scope_val))
+                        if isinstance(scope_val, int)
+                        else exp.Literal.string(str(scope_val))
+                    )
+                    self._last_security_incident = True
+                    self._last_rewrites_applied += 1
+                    if self._last_scope_clause is None:
+                        col_ref = f"{qualifier}.{scope_col}" if qualifier else scope_col
+                        self._last_scope_clause = f"WHERE {col_ref} = {scope_val}"
+                # else: correct predicate, no action.
+
+    def _pick_scope_qualifier(
+        self, sel: exp.Select, scoped_tables_here: list[str]
+    ) -> str | None:
+        """Pick the alias of the first scoped table referenced by ``sel``.
+
+        Returns the alias (or the bare table name when no alias is set) so
+        the rewriter can emit ``<alias>.producer_id = 42`` and avoid
+        ambiguous-column errors. Returns ``None`` if no scoped table is
+        found (shouldn't happen since the caller filters first).
+        """
+        from_clause = sel.args.get("from_") or sel.args.get("from")
+        if from_clause is not None and isinstance(from_clause.this, exp.Table):
+            t = from_clause.this
+            if t.name in scoped_tables_here:
+                return t.alias_or_name
+        for j in (sel.args.get("joins") or []):
+            if isinstance(j.this, exp.Table):
+                t = j.this
+                if t.name in scoped_tables_here:
+                    return t.alias_or_name
+        return None
+
+    @staticmethod
+    def _direct_tables_of_select(sel: exp.Select) -> list[str]:
+        """Tables directly referenced by ``sel`` (FROM + JOINs) — excluding
+        tables that appear only inside subqueries of ``sel``.
+        """
+        out: list[str] = []
+        from_clause = sel.args.get("from_") or sel.args.get("from")
+        if from_clause is not None and isinstance(from_clause.this, exp.Table):
+            out.append(from_clause.this.name)
+        for j in (sel.args.get("joins") or []):
+            if isinstance(j.this, exp.Table):
+                out.append(j.this.name)
+        return out
 
     # ───────────────────────────────────────────────────────────────────────
     # Step 3 — Execution (Connector)
     # ───────────────────────────────────────────────────────────────────────
     async def execute(self, sql: str) -> QueryResult:
-        """Run the rewritten SQL via the connector's read-only connection.
-
-        ``sql`` must already have been through ``validate_and_rewrite``;
-        we do NOT re-validate here (the contract is that the orchestrator
-        calls the steps in order).
-        """
+        """Run the rewritten SQL via the connector's read-only connection."""
         return await self.connector.execute_readonly_query(sql)
 
     # ───────────────────────────────────────────────────────────────────────
@@ -240,18 +608,29 @@ class SqlReadTool:
         explain the failure to the user without crashing.
         """
         try:
-            raw_sql = await self.generate_sql(question)
-            safe_sql = await self.validate_and_rewrite(raw_sql)
+            raw_sql = self.generate_sql(question)
+            if raw_sql == REFUSE_MARKER:
+                # Generator explicitly refused the question (cross-producer
+                # question from a producer).
+                return ToolResult(
+                    success=False,
+                    error="REFUSE: cross-producer question requires admin role.",
+                    question=question,
+                    security_incident=False,
+                )
+            safe_sql = self.validate_and_rewrite(raw_sql)
             result = await self.execute(safe_sql)
             return ToolResult(
                 success=True,
                 query_result=result,
                 question=question,
+                sql_used=safe_sql,
+                scope_clause=self._last_scope_clause,
                 tables_touched=self._extract_tables(safe_sql),
+                rewrites_applied=self._last_rewrites_applied,
+                security_incident=self._last_security_incident,
             )
         except SqlSecurityError as exc:
-            # Security violations are logged at WARNING with the offending
-            # SQL redacted (we keep the structure, drop the values).
             logger.warning(
                 "SqlSecurityError for scope_value=%s: %s", self.scope_value, exc
             )
@@ -274,9 +653,14 @@ class SqlReadTool:
     def _extract_tables(self, sql: str) -> list[str]:
         """Return the list of tables actually referenced in ``sql``.
 
-        Used to populate ``ToolResult.tables_touched``. In Phase 1 this will
-        reuse the AST walk from ``validate_and_rewrite`` (we'll cache the
-        parsed tree on the result instead of re-parsing).
+        Uses sqlglot to walk the AST (deduplicated, order-preserving).
         """
-        # TODO(Phase 1): implement with sqlglot.
-        return []
+        try:
+            ast = sqlglot.parse_one(sql, dialect="sqlite")
+        except Exception:  # noqa: BLE001
+            return []
+        seen: list[str] = []
+        for t in ast.find_all(exp.Table):
+            if t.name not in seen:
+                seen.append(t.name)
+        return seen

@@ -4,30 +4,23 @@ THIS FILE IS THE INTERVIEW ARGUMENT.
 
 Each test names a specific attack vector against row-level security and
 asserts that ``SqlReadTool.validate_and_rewrite`` defends against it. The
-tests are written for ``pytest`` with ``pytest-asyncio``. In Phase 0 the
-bodies are TODOs because ``validate_and_rewrite`` is not yet implemented —
-but the INTENT of every test is crystal-clear and locked in.
-
-When Phase 1 implements ``validate_and_rewrite``, these tests must pass
-without modification to their docstrings or names. If a test fails, it
-means we have a security regression and the release is blocked.
-
-Running (once Phase 1 lands)::
-
-    pytest tests/test_sql_security.py -v
+tests are written for ``pytest`` with ``pytest-asyncio``.
 
 The fixture ``tool`` constructs a ``SqlReadTool`` configured for a producer
 with ``producer_id = 42``, mimicking what a real request would build.
+
+Running::
+
+    pytest tests/test_sql_security.py -v
 """
 
 from __future__ import annotations
 
+import logging
+
 import pytest
 
-# These imports will resolve once Phase 1 implements the modules. In Phase 0
-# they are valid module paths; the classes exist but methods are stubs.
 from app.tools.sql_tool import SqlReadTool, SqlSecurityError
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Fixtures
@@ -38,9 +31,9 @@ from app.tools.sql_tool import SqlReadTool, SqlSecurityError
 def tool() -> SqlReadTool:
     """A SqlReadTool configured for producer_id=42 on the DP tenant.
 
-    In Phase 1 this will be built from a real Connector + the loaded
-    schema.yaml. For Phase 0 we construct it with lightweight stubs so the
-    test file is syntactically importable.
+    Uses a minimal schema (orders + order_items) with users/audit_logs/
+    compliance_flags as forbidden tables — exactly the vectors exercised
+    by the tests below.
     """
     schema = {
         "metadata": {"default_limit": 1000},
@@ -59,7 +52,7 @@ def tool() -> SqlReadTool:
         "forbidden_tables": ["users", "audit_logs", "compliance_flags"],
     }
 
-    class _StubConnector:  # pragma: no cover — replaced in Phase 1
+    class _StubConnector:  # minimal stub — tests only exercise validate_and_rewrite
         def get_schema(self) -> dict:
             return schema
 
@@ -78,6 +71,7 @@ def tool() -> SqlReadTool:
         allowed_tables=["orders", "order_items"],
         scope_column="producer_id",
         scope_value=42,
+        role="producer",
     )
 
 
@@ -103,8 +97,17 @@ async def test_rejects_non_select_statement(tool: SqlReadTool) -> None:
       - ``ALTER TABLE orders DROP COLUMN producer_id``
     Each must raise ``SqlSecurityError``.
     """
-    # TODO(Phase 1): implement once validate_and_rewrite is wired up.
-    pytest.skip("Phase 1: implement validate_and_rewrite first.")
+    vectors = [
+        "UPDATE orders SET status='completed'",
+        "DELETE FROM orders WHERE id = 1",
+        "DROP TABLE orders",
+        "INSERT INTO orders (id, producer_id) VALUES (1, 42)",
+        "TRUNCATE orders",
+        "ALTER TABLE orders DROP COLUMN producer_id",
+    ]
+    for sql in vectors:
+        with pytest.raises(SqlSecurityError):
+            tool.validate_and_rewrite(sql)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -125,8 +128,17 @@ async def test_rejects_forbidden_table(tool: SqlReadTool) -> None:
       - ``SELECT count(*) FROM audit_logs``
       - ``SELECT * FROM orders o JOIN compliance_flags c ON c.user_id = o.customer_id``
     """
-    # TODO(Phase 1): implement.
-    pytest.skip("Phase 1: implement validate_and_rewrite first.")
+    vectors = [
+        "SELECT * FROM users",
+        "SELECT count(*) FROM audit_logs",
+        (
+            "SELECT * FROM orders o "
+            "JOIN compliance_flags c ON c.user_id = o.customer_id"
+        ),
+    ]
+    for sql in vectors:
+        with pytest.raises(SqlSecurityError):
+            tool.validate_and_rewrite(sql)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -143,8 +155,13 @@ async def test_auto_injects_scope_when_missing(tool: SqlReadTool) -> None:
     must always add it. This is the most common LLM mistake and the most
     important auto-fix.
     """
-    # TODO(Phase 1): implement.
-    pytest.skip("Phase 1: implement validate_and_rewrite first.")
+    rewritten = tool.validate_and_rewrite("SELECT * FROM orders")
+    low = rewritten.lower()
+    assert "producer_id = 42" in low, f"scope not injected: {rewritten}"
+    # LIMIT must also be appended.
+    assert "limit 1000" in low, f"LIMIT not appended: {rewritten}"
+    # No incident should have been raised (LLM simply forgot, not malicious).
+    assert tool._last_security_incident is False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -153,7 +170,9 @@ async def test_auto_injects_scope_when_missing(tool: SqlReadTool) -> None:
 
 
 @pytest.mark.asyncio
-async def test_rejects_wrong_scope_value(tool: SqlReadTool) -> None:
+async def test_rejects_wrong_scope_value(
+    tool: SqlReadTool, caplog: pytest.LogCaptureFixture
+) -> None:
     """``SELECT * FROM orders WHERE producer_id = 99`` for user 42 must be
     rewritten to ``producer_id = 42`` AND a SECURITY WARNING must be logged.
 
@@ -168,8 +187,23 @@ async def test_rejects_wrong_scope_value(tool: SqlReadTool) -> None:
       2. ``ToolResult.security_incident`` is True when ``run()`` is called.
       3. A WARNING-level log record with "SECURITY" was emitted.
     """
-    # TODO(Phase 1): implement.
-    pytest.skip("Phase 1: implement validate_and_rewrite first.")
+    sql = "SELECT * FROM orders WHERE producer_id = 99"
+    with caplog.at_level(logging.WARNING, logger="tevet7.sql_tool"):
+        rewritten = tool.validate_and_rewrite(sql)
+
+    # 1. The rewritten SQL is scoped to 42, never 99.
+    low = rewritten.lower()
+    assert "producer_id = 42" in low, f"scope not rewritten to 42: {rewritten}"
+    assert "producer_id = 99" not in low, f"wrong scope value still present: {rewritten}"
+
+    # 2. The internal security_incident flag is set (consumed by run()).
+    assert tool._last_security_incident is True
+
+    # 3. A WARNING-level log mentioning "SECURITY" was emitted.
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(
+        "SECURITY" in r.getMessage().upper() for r in warnings
+    ), f"no SECURITY WARNING logged; records: {[r.getMessage() for r in warnings]}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -199,8 +233,25 @@ async def test_rejects_subquery_accessing_other_producer(tool: SqlReadTool) -> N
          inner levels (or the query is rejected outright).
       2. ``ToolResult.security_incident`` is True.
     """
-    # TODO(Phase 1): implement.
-    pytest.skip("Phase 1: implement validate_and_rewrite first.")
+    sql = (
+        "SELECT * FROM orders "
+        "WHERE id IN (SELECT id FROM orders WHERE producer_id = 99)"
+    )
+    rewritten = tool.validate_and_rewrite(sql)
+    low = rewritten.lower()
+
+    # The rewritten SQL must NOT contain producer_id = 99 anywhere.
+    assert "producer_id = 99" not in low, (
+        f"inner subquery scope leak: {rewritten}"
+    )
+    # The rewritten SQL must contain producer_id = 42 (we accept either
+    # one or two occurrences — the key is that 99 is gone and 42 is present).
+    assert "producer_id = 42" in low, (
+        f"scope not injected at all levels: {rewritten}"
+    )
+
+    # Security incident flag must be set (we caught a bypass attempt).
+    assert tool._last_security_incident is True
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -216,8 +267,11 @@ async def test_adds_limit_when_missing(tool: SqlReadTool) -> None:
     Security guarantee: prevents the LLM from accidentally DoSing the DB
     with an unbounded scan, and bounds memory usage on the connector side.
     """
-    # TODO(Phase 1): implement.
-    pytest.skip("Phase 1: implement validate_and_rewrite first.")
+    rewritten = tool.validate_and_rewrite(
+        "SELECT * FROM orders WHERE producer_id = 42"
+    )
+    low = rewritten.lower()
+    assert "limit 1000" in low, f"LIMIT not appended: {rewritten}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -235,8 +289,17 @@ async def test_preserves_existing_correct_scope(tool: SqlReadTool) -> None:
     through untouched (modulo LIMIT). This keeps the audit log signal-to-
     noise ratio high — every security_incident=True is a real attempt.
     """
-    # TODO(Phase 1): implement.
-    pytest.skip("Phase 1: implement validate_and_rewrite first.")
+    rewritten = tool.validate_and_rewrite(
+        "SELECT * FROM orders WHERE producer_id = 42"
+    )
+    low = rewritten.lower()
+    # Count occurrences of "producer_id = 42" — there must be exactly one.
+    occurrences = low.count("producer_id = 42")
+    assert occurrences == 1, (
+        f"expected exactly 1 occurrence of producer_id = 42, got {occurrences}: {rewritten}"
+    )
+    # No security incident.
+    assert tool._last_security_incident is False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -245,7 +308,9 @@ async def test_preserves_existing_correct_scope(tool: SqlReadTool) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ignores_sql_comments_trying_to_disable_scope(tool: SqlReadTool) -> None:
+async def test_ignores_sql_comments_trying_to_disable_scope(
+    tool: SqlReadTool,
+) -> None:
     """``SELECT * FROM orders -- WHERE producer_id = 42`` must still get
     the scope injected, because the rewriter operates on the AST, not on
     text. The trailing comment must not be interpreted as "no WHERE".
@@ -253,5 +318,12 @@ async def test_ignores_sql_comments_trying_to_disable_scope(tool: SqlReadTool) -
     Security guarantee: AST-based rewriting is immune to comment-based
     tricks, string concatenation, or unusual whitespace.
     """
-    # TODO(Phase 1): implement.
-    pytest.skip("Phase 1: implement validate_and_rewrite first.")
+    sql = "SELECT * FROM orders -- WHERE producer_id = 42"
+    rewritten = tool.validate_and_rewrite(sql)
+    low = rewritten.lower()
+    # The scope must be injected (the comment is dropped during AST rebuild).
+    assert "producer_id = 42" in low, (
+        f"comment-trick defeated the rewriter: {rewritten}"
+    )
+    # LIMIT must also be present.
+    assert "limit 1000" in low

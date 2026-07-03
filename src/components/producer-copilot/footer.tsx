@@ -1,8 +1,42 @@
 "use client";
 
 import { Shield } from "@/components/ui/feather-icons";
+import { useCopilotStore } from "@/lib/store";
+import type { BackendStatus } from "@/lib/store";
+
+interface StatusConfig {
+  label: string;
+  /** Tailwind background utility for the 8px status dot. */
+  dot: string;
+}
+
+function statusConfig(status: BackendStatus): StatusConfig {
+  switch (status) {
+    case "connected":
+      return {
+        label: "Backend connecté",
+        // On-brand accent green — matches the Scoping actif shield.
+        dot: "bg-accent",
+      };
+    case "demo":
+      return {
+        label: "Mode démo",
+        // Muted dot — NOT a warning color, stays in the Tevet-7 palette.
+        dot: "bg-muted-foreground/60",
+      };
+    case "unknown":
+    default:
+      return {
+        label: "Backend en attente",
+        dot: "bg-muted-foreground/30",
+      };
+  }
+}
 
 export function Footer() {
+  const backendStatus = useCopilotStore((s) => s.backendStatus);
+  const { label, dot } = statusConfig(backendStatus);
+
   return (
     <footer className="mt-auto border-t border-border bg-background">
       <div className="flex h-9 items-center justify-between gap-2 px-3 text-[11px] text-muted-foreground sm:px-4">
@@ -12,9 +46,22 @@ export function Footer() {
         <span className="hidden truncate text-center font-body uppercase tracking-wide sm:inline">
           Drive Producteur tenant
         </span>
-        <span className="flex shrink-0 items-center gap-1.5 font-body uppercase tracking-wide">
-          <Shield size={12} className="text-accent" />
-          Scoping actif
+        <span className="flex shrink-0 items-center gap-2.5 font-body uppercase tracking-wide sm:gap-3">
+          <span
+            className="flex items-center gap-1.5"
+            title={label}
+            aria-label={label}
+          >
+            <span
+              className={`size-2 rounded-full ${dot}`}
+              aria-hidden
+            />
+            <span className="hidden sm:inline">{label}</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Shield size={12} className="text-accent" />
+            Scoping actif
+          </span>
         </span>
       </div>
     </footer>

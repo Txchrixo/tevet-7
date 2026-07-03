@@ -13,7 +13,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -31,11 +31,39 @@ class Settings(BaseSettings):
         extra="ignore",  # tolerate unknown env vars (e.g. PATH injected by IDEs)
     )
 
-    # ── Database (control plane) ─────────────────────────────────────────────
+    # ── Database ─────────────────────────────────────────────────────────────
+    # Phase 1 uses an in-process SQLite database (no Postgres needed) so the
+    # service runs without external infrastructure. The URL points to a file
+    # `dev.db` in the working directory; `init_db()` (see app/db_seed.py)
+    # creates and seeds it on startup.
+    #
+    # NOTE: a sibling Next.js project may export a `DATABASE_URL` env var of
+    # its own (e.g. `file:/path/to/custom.db`). The model_validator below
+    # ignores any value that is not a valid SQLAlchemy URL so the SQLite
+    # default takes over.
     database_url: str = Field(
-        default="postgresql+asyncpg://tevet7:tevet7_dev_password@localhost:5432/tevet7",
-        description="Async SQLAlchemy URL for the control-plane DB.",
+        default="sqlite+aiosqlite:///./dev.db",
+        description="Async SQLAlchemy URL for the tenant business database (SQLite in Phase 1).",
     )
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def _coerce_sqlite_default(cls, v: str) -> str:
+        """If DATABASE_URL is not a valid SQLAlchemy URL (e.g. the Next.js
+        project's ``file:/...``), fall back to the in-process SQLite default.
+        """
+        if not v or not any(
+            v.startswith(scheme)
+            for scheme in (
+                "sqlite+aiosqlite:///",
+                "sqlite:///",
+                "postgresql+asyncpg://",
+                "postgresql://",
+                "mysql+aiomysql://",
+            )
+        ):
+            return "sqlite+aiosqlite:///./dev.db"
+        return v
 
     # ── LLM ──────────────────────────────────────────────────────────────────
     openai_api_key: str = Field(default="sk-replace-me", description="OpenAI API key.")
