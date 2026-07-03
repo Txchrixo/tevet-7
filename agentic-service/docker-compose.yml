@@ -1,0 +1,98 @@
+# docker-compose.yml — Tevet-7 infrastructure (Phase 0)
+#
+# Spins up the two stateful services the agentic service depends on:
+#   1. PostgreSQL 16 with the pgvector extension (control plane + RAG store).
+#   2. Langfuse (self-hosted LLM observability: traces, prompts, evals).
+#
+# The FastAPI app itself is run locally with uvicorn during development
+# (see README.md "How to run"). It will get its own compose service in Phase 2.
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f langfuse
+#   docker compose down            # stop
+#   docker compose down -v         # stop AND wipe volumes (dev only!)
+
+services:
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 + pgvector
+  #
+  # The pgvector/pgvector:pg16 image ships Postgres 16 with the `vector`
+  # extension pre-installed. We use one DB instance for both:
+  #   - the Tevet-7 control plane (tenants, users, configs, audit logs)
+  #   - the Langfuse database (separate schema, owned by the langfuse user)
+  #   - the RAG embeddings store (created in Phase 3)
+  #
+  # NOTE: Tenant *business* databases (e.g. Drive Producteur's real DB) are
+  # NOT in this compose file. They are external and connected to via the
+  # Connector abstraction (see app/connectors/base.py). In Phase 0 we simulate
+  # them with the schema.yaml file.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: tevet7-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tevet7
+      POSTGRES_PASSWORD: tevet7_dev_password
+      POSTGRES_DB: tevet7
+      # Recommended production tuning (commented out for dev simplicity):
+      # POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tevet7 -d tevet7"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - tevet7-net
+
+  # ---------------------------------------------------------------------------
+  # Langfuse — LLM observability
+  #
+  # Self-hosted Langfuse. In production we'd add S3-compatible storage for
+  # blob uploads and a separate ClickHouse for events, but for Phase 0 the
+  # bundled Postgres + in-memory blob storage is enough.
+  # ---------------------------------------------------------------------------
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: tevet7-langfuse
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Langfuse needs its own database. We create it on first boot via the
+      # same Postgres instance, in a separate logical DB.
+      DATABASE_URL: "postgresql://tevet7:tevet7_dev_password@postgres:5432/langfuse"
+      # NEXTAUTH_SECRET is used to sign session cookies. Generate with:
+      #   openssl rand -base64 32
+      NEXTAUTH_SECRET: "change_me_nextauth_secret_please_use_openssl_rand"
+      # SALT is used to hash API keys stored in the DB. Generate with:
+      #   openssl rand -base64 32
+      SALT: "change_me_salt_please_use_openssl_rand"
+      # Public URL the browser will use to reach Langfuse.
+      NEXTAUTH_URL: "http://localhost:3001"
+      # Disable telemetry in dev to keep logs clean.
+      LANGFUSE_TELEMETRY_DISABLED: "true"
+      # Allow self-sign-up locally; lock this down in production.
+      LANGFUSE_SIGNUP_DISABLED: "false"
+    ports:
+      - "3001:3000"
+    networks:
+      - tevet7-net
+
+# Persistent volume for Postgres data. Wipe with `docker compose down -v`.
+volumes:
+  postgres_data:
+    driver: local
+
+# Shared network so the FastAPI app (running on the host) can reach both
+# services via localhost ports, and so Langfuse can reach Postgres by name.
+networks:
+  tevet7-net:
+    driver: bridge

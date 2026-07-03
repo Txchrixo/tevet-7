@@ -1,0 +1,51 @@
+# requirements.txt — Tevet-7 agentic service
+#
+# Pinned versions for reproducible builds. Bump intentionally.
+# Grouped by concern. Dev/test deps are at the bottom.
+
+# ── Web framework ───────────────────────────────────────────────────────────
+fastapi==0.115.6
+uvicorn[standard]==0.34.0          # ASGI server + uvloop + httptools + websockets
+python-multipart==0.0.20           # form parsing (file uploads for RAG later)
+sse-starlette==2.1.3               # Server-Sent Events for the /chat stream
+
+# ── Configuration & validation ─────────────────────────────────────────────
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# ── Database (async stack) ──────────────────────────────────────────────────
+SQLAlchemy[asyncio]==2.0.36
+asyncpg==0.30.0                    # async Postgres driver
+pgvector==0.3.6                    # pgvector type support for SQLAlchemy
+
+# ── LLM provider ────────────────────────────────────────────────────────────
+openai==1.58.1                     # OpenAI Python SDK (chat + embeddings + tools)
+tiktoken==0.8.0                    # tokenizer for accurate token counting / quotas
+
+# ── SQL parsing / rewriting (the security layer) ────────────────────────────
+sqlglot==26.0.0                    # parse + validate + rewrite LLM-generated SQL
+
+# ── Observability ───────────────────────────────────────────────────────────
+langfuse==2.60.0                   # tracing, prompts, evals (self-hosted)
+
+# ── Config files & HTTP ─────────────────────────────────────────────────────
+PyYAML==6.0.2                      # parse schema.yaml
+httpx==0.28.1                      # async HTTP client (DP REST connector, OpenAI, ...)
+
+# ── Document ingestion (RAG — Phase 3) ──────────────────────────────────────
+pypdf==5.1.0                       # PDF text extraction for document_search_tool
+
+# ── ML utilities (evals + future embeddings clustering) ─────────────────────
+scikit-learn==1.6.0
+pandas==2.2.3
+numpy==2.2.1
+
+# ── Auth ────────────────────────────────────────────────────────────────────
+PyJWT==2.10.1                      # JWT verification for /chat (tenant + role claims)
+cryptography==44.0.0               # PyJWT[crypto] dependency for RS256 support
+
+# ── Dev / test only ─────────────────────────────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-cov==6.0.0
+anyio==4.7.0                       # async test fixtures

@@ -1,0 +1,237 @@
+# schema.yaml — Drive Producteur (DP) business schema for the Producer Copilot
+# ─────────────────────────────────────────────────────────────────────────────
+# This is THE data contract between the agent and the tenant's data. It is:
+#
+#   - Loaded at startup by the SqlReadTool (see app/tools/sql_tool.py).
+#   - Sent to the LLM (as compact text) so it knows what tables/columns exist.
+#   - Used by the sqlglot rewriter to validate that the LLM only references
+#     allowed tables and that row-level scoping is enforced.
+#
+# The descriptions are written in French because they mirror what the
+# producers see in their DP back-office — the LLM prompt includes them so
+# the model can map natural-language French questions to the right columns.
+#
+# IMPORTANT: This file is FICTITIOUS for the Phase 0 prototype. Real DP tables
+# will be defined when the PostgresConnector connects to a real (or replica)
+# DP database in Phase 1.
+# ─────────────────────────────────────────────────────────────────────────────
+
+metadata:
+  tenant_id: dp                                  # internal tenant identifier
+  tenant_name: Drive Producteur
+  tenant_kind: marketplace_click_and_collect
+  schema_version: "0.1.0"
+  description: |
+    Schéma métier fictif du tenant Drive Producteur, utilisé par le Producer
+    Copilot. Les producteurs peuvent interroger leurs propres ventes, stocks,
+    commandes et réservations de retrait. Les clients et les administrateurs
+    internes disposent d'autres vues (non incluses ici).
+  scope_strategy: |
+    Row-level security by `producer_id`. Every producer-scoped table has a
+    `producer_id` column. The SqlReadTool rewrites every generated SQL to
+    inject `WHERE producer_id = <scope_value>` where the user's scope_value
+    comes from the verified JWT (never from the request body).
+  default_limit: 1000                            # enforced by the rewriter
+  currency: EUR
+  timezone: Europe/Paris
+
+# Tables the Producer Copilot can read. Other roles (customer, admin) have
+# different allowlists — see `allowed_for_roles` on each table.
+tables:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # producers — the producer accounts themselves. Read-only, scope = self.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: producers
+    description: "Comptes producteurs de la marketplace Drive Producteur."
+    tenant_scope_column: id                       # a producer can only see their own row
+    allowed_for_roles: [producer, admin]
+    columns:
+      - {name: id,           type: integer,  description: "Identifiant unique du producteur (SCOPE COLUMN)."}
+      - {name: legal_name,   type: varchar,  description: "Raison sociale du producteur."}
+      - {name: display_name, type: varchar,  description: "Nom affiché aux clients sur la marketplace."}
+      - {name: email,        type: varchar,  description: "Email de contact principal."}
+      - {name: phone,        type: varchar,  description: "Téléphone de contact."}
+      - {name: siret,        type: varchar,  description: "Numéro SIRET (admin only — column-level filter)."}
+      - {name: created_at,   type: timestamp, description: "Date de création du compte producteur."}
+      - {name: is_active,    type: boolean,  description: "Compte actif ou suspendu."}
+    joins_to: []
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # shops — physical pickup points (a producer may run several).
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: shops
+    description: "Points de vente (lieux de retrait) rattachés à un producteur."
+    tenant_scope_column: producer_id
+    allowed_for_roles: [producer, admin]
+    columns:
+      - {name: id,           type: integer,  description: "Identifiant unique du point de vente."}
+      - {name: producer_id,  type: integer,  description: "Producteur propriétaire (SCOPE COLUMN)."}
+      - {name: name,         type: varchar,  description: "Nom du point de vente (ex. « Ferme du Vallon — Annecy »)."}
+      - {name: address,      type: varchar,  description: "Adresse postale complète."}
+      - {name: city,         type: varchar,  description: "Ville."}
+      - {name: postal_code,  type: varchar,  description: "Code postal."}
+      - {name: latitude,     type: decimal,  description: "Latitude (géolocalisation)."}
+      - {name: longitude,    type: decimal,  description: "Longitude (géolocalisation)."}
+      - {name: opening_hours,type: varchar,  description: "Horaires d'ouverture (format libre)."}
+      - {name: is_active,    type: boolean,  description: "Point de vente actif."}
+    joins_to:
+      - {table: producers, on: "shops.producer_id = producers.id"}
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # products — the producer's catalog.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: products
+    description: "Catalogue produits du producteur."
+    tenant_scope_column: producer_id
+    allowed_for_roles: [producer, customer, admin]   # customers see products in the marketplace
+    columns:
+      - {name: id,            type: integer,   description: "Identifiant unique du produit."}
+      - {name: producer_id,   type: integer,   description: "Producteur vendeur (SCOPE COLUMN for producers)."}
+      - {name: shop_id,       type: integer,   description: "Point de vente où le produit est vendu."}
+      - {name: sku,           type: varchar,   description: "Référence interne du producteur."}
+      - {name: name,          type: varchar,   description: "Nom du produit (ex. « Tomates anciennes »)."}
+      - {name: category,      type: varchar,   description: "Catégorie (légumes, fruits, produits laitiers, ...)."}
+      - {name: unit,          type: varchar,   description: "Unité de vente (kg, pièce, botte, litre)."}
+      - {name: price_eur,     type: decimal,   description: "Prix unitaire en euros TTC."}
+      - {name: vat_rate,      type: decimal,   description: "Taux de TVA (0.055, 0.10, 0.20)."}
+      - {name: is_organic,    type: boolean,   description: "Produit bio."}
+      - {name: is_available,  type: boolean,   description: "Produit visible et achetable sur la marketplace."}
+      - {name: created_at,    type: timestamp, description: "Date d'ajout au catalogue."}
+    joins_to:
+      - {table: producers, on: "products.producer_id = producers.id"}
+      - {table: shops,     on: "products.shop_id = shops.id"}
+      - {table: stocks,    on: "products.id = stocks.product_id"}
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # stocks — current inventory per product per shop.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: stocks
+    description: "Stocks courants par produit et point de vente."
+    tenant_scope_column: producer_id
+    allowed_for_roles: [producer, admin]
+    columns:
+      - {name: id,            type: integer,   description: "Identifiant unique du stock."}
+      - {name: producer_id,   type: integer,   description: "Producteur (SCOPE COLUMN)."}
+      - {name: product_id,    type: integer,   description: "Produit concerné."}
+      - {name: shop_id,       type: integer,   description: "Point de vente concerné."}
+      - {name: quantity,      type: decimal,   description: "Quantité disponible dans l'unité du produit."}
+      - {name: reserved,      type: decimal,   description: "Quantité réservée par des commandes en cours."}
+      - {name: available,     type: decimal,   description: "Quantité réellement disponible (quantity - reserved)."}
+      - {name: updated_at,    type: timestamp, description: "Dernière mise à jour du stock."}
+    joins_to:
+      - {table: products, on: "stocks.product_id = products.id"}
+      - {table: shops,    on: "stocks.shop_id = shops.id"}
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # orders — customer orders.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: orders
+    description: "Commandes passées par les clients sur la marketplace."
+    tenant_scope_column: producer_id
+    allowed_for_roles: [producer, admin]            # customers have their own order view (not shown here)
+    columns:
+      - {name: id,            type: integer,   description: "Identifiant unique de la commande."}
+      - {name: producer_id,   type: integer,   description: "Identifiant du producteur vendeur (SCOPE COLUMN — used for row-level security)."}
+      - {name: customer_id,   type: integer,   description: "Identifiant du client acheteur."}
+      - {name: shop_id,       type: integer,   description: "Point de vente de retrait."}
+      - {name: pickup_slot,   type: timestamp, description: "Créneau de retrait choisi par le client."}
+      - {name: total_amount,  type: decimal,   description: "Montant total de la commande en euros TTC."}
+      - {name: status,        type: varchar,   description: "Statut: pending, paid, ready_for_pickup, completed, cancelled."}
+      - {name: created_at,    type: timestamp, description: "Date de création de la commande."}
+      - {name: updated_at,    type: timestamp, description: "Dernière mise à jour de la commande."}
+    joins_to:
+      - {table: order_items, on: "orders.id = order_items.order_id"}
+      - {table: payments,    on: "orders.id = payments.order_id"}
+      - {table: shops,       on: "orders.shop_id = shops.id"}
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # order_items — line items inside an order.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: order_items
+    description: "Lignes de commande (un produit par ligne)."
+    tenant_scope_column: producer_id
+    allowed_for_roles: [producer, admin]
+    columns:
+      - {name: id,            type: integer,   description: "Identifiant unique de la ligne."}
+      - {name: order_id,      type: integer,   description: "Commande parente."}
+      - {name: producer_id,   type: integer,   description: "Producteur (SCOPE COLUMN — dénormalisé pour RLS)."}
+      - {name: product_id,    type: integer,   description: "Produit commandé."}
+      - {name: quantity,      type: decimal,   description: "Quantité commandée."}
+      - {name: unit_price_eur,type: decimal,   description: "Prix unitaire au moment de la commande (snapshot)."}
+      - {name: line_total_eur,type: decimal,   description: "Sous-total de la ligne (quantity * unit_price_eur)."}
+    joins_to:
+      - {table: orders,   on: "order_items.order_id = orders.id"}
+      - {table: products, on: "order_items.product_id = products.id"}
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # pickup_bookings — pickup slot bookings (separate from orders in DP's model;
+  # a booking may exist before any order is finalised).
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: pickup_bookings
+    description: "Réservations de créneaux de retrait par les clients."
+    tenant_scope_column: producer_id
+    allowed_for_roles: [producer, admin]
+    columns:
+      - {name: id,            type: integer,   description: "Identifiant unique de la réservation."}
+      - {name: producer_id,   type: integer,   description: "Producteur (SCOPE COLUMN)."}
+      - {name: shop_id,       type: integer,   description: "Point de vente du retrait."}
+      - {name: customer_id,   type: integer,   description: "Client."}
+      - {name: slot_start,    type: timestamp, description: "Début du créneau."}
+      - {name: slot_end,      type: timestamp, description: "Fin du créneau."}
+      - {name: status,        type: varchar,   description: "Statut: pending, confirmed, fulfilled, no_show, cancelled."}
+      - {name: created_at,    type: timestamp, description: "Date de création de la réservation."}
+    joins_to:
+      - {table: shops, on: "pickup_bookings.shop_id = shops.id"}
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # payments — payment attempts / captures per order.
+  # ─────────────────────────────────────────────────────────────────────────
+  - name: payments
+    description: "Paiements rattachés aux commandes."
+    tenant_scope_column: producer_id
+    allowed_for_roles: [producer, admin]
+    columns:
+      - {name: id,             type: integer,   description: "Identifiant unique du paiement."}
+      - {name: order_id,       type: integer,   description: "Commande payée."}
+      - {name: producer_id,    type: integer,   description: "Producteur (SCOPE COLUMN — dénormalisé pour RLS)."}
+      - {name: provider,       type: varchar,   description: "PSP: stripe, paygreen, mollie, ..."}
+      - {name: provider_ref,   type: varchar,   description: "Référence côté PSP (intent id)."}
+      - {name: amount_eur,     type: decimal,   description: "Montant capturé en euros."}
+      - {name: status,         type: varchar,   description: "Statut: pending, authorized, captured, refunded, failed."}
+      - {name: captured_at,    type: timestamp, description: "Date de capture effective."}
+      - {name: created_at,     type: timestamp, description: "Date de création du paiement."}
+    joins_to:
+      - {table: orders, on: "payments.order_id = orders.id"}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Forbidden tables — referenced explicitly in the SqlReadTool's deny list.
+# Even if an admin configures them by mistake, the rewriter will reject any
+# query touching them. Producers must NEVER reach these.
+# ─────────────────────────────────────────────────────────────────────────────
+forbidden_tables:
+  - users               # all platform users (producers + customers + admins)
+  - audit_logs          # immutable compliance audit trail
+  - compliance_flags    # AML / KYC flags on customers
+  - payout_bank_accounts # producer IBANs (PCI-adjacent)
+  - api_keys            # tenant API keys (hashed)
+  - webhooks            # outbound webhook configurations
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Write-action catalogue (Phase 4 — human-in-the-loop).
+# These are NOT callable by the SQL tool. They are exposed via the connector's
+# `call_business_action` and require human approval before execution.
+# ─────────────────────────────────────────────────────────────────────────────
+business_actions:
+  - name: update_stock
+    description: "Ajuster le stock d'un produit (réservé aux producteurs sur leurs propres produits)."
+    requires_approval: true
+    allowed_for_roles: [producer]
+  - name: cancel_order
+    description: "Annuler une commande (remboursement automatique si déjà payée)."
+    requires_approval: true
+    allowed_for_roles: [producer, admin]
+  - name: refund_payment
+    description: "Rembourser un paiement (toujours manuel, toujours tracé)."
+    requires_approval: true
+    allowed_for_roles: [admin]
