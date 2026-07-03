@@ -22,6 +22,7 @@ from app import __version__
 from app.api.chat import router as chat_router
 from app.config import get_settings
 from app.db_seed import dispose_engine, init_db
+from app.tracing import get_tracer
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging
@@ -53,6 +54,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("SQLite database ready at %s", settings.database_url)
     except Exception:  # noqa: BLE001
         logger.exception("init_db() failed — /chat will return errors until fixed")
+    # Phase 2 tracing: initialise the tracer singleton early so the first
+    # /chat request doesn't pay the (small) construction cost. Also logs
+    # which tracer is active (LocalTracer vs LangfuseTracer) so the operator
+    # can confirm observability is wired.
+    try:
+        tracer = get_tracer()
+        tracer_name = type(tracer).__name__
+        logger.info("Tracer active: %s", tracer_name)
+    except Exception:  # noqa: BLE001
+        logger.exception("tracer init failed — tracing disabled for this run")
     yield
     logger.info("Tevet-7 shutting down — version=%s", __version__)
     await dispose_engine()

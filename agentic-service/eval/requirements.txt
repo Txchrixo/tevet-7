@@ -1,0 +1,10 @@
+# Tevet-7 eval suite — Python dependencies
+#
+# Both packages are already installed in the sandbox, but listing them
+# here makes the eval self-contained for anyone cloning the repo.
+#
+# Install with:  pip install -r eval/requirements.txt
+
+httpx>=0.27      # async HTTP client for POSTing cases to /api/chat
+sqlglot>=30.0    # local SQL parser (independent of the backend) for
+                 # the tables_allowed assertion

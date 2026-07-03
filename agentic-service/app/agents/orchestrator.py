@@ -30,8 +30,53 @@ from typing import Any, Protocol
 
 from app.connectors.base import QueryResult
 from app.tools.sql_tool import REFUSE_MARKER, SqlReadTool, ToolResult
+from app.tracing.base import Span, TraceContext, Tracer
 
 logger = logging.getLogger("tevet7.orchestrator")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# No-op tracer (used when callers don't supply one)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _NoopTracer:
+    """Fallback tracer that does nothing — used when callers don't supply one.
+
+    The chat API always passes a real tracer (LocalTracer or LangfuseTracer
+    via :func:`app.tracing.get_tracer`); this class only exists so the
+    orchestrator can be constructed in scripts and tests without a tracer.
+    """
+
+    def start_trace(self, user_message: str, identity: dict[str, Any]) -> TraceContext:
+        return TraceContext(
+            trace_id=TraceContext.new_trace_id(),
+            user_message=user_message,
+            identity=dict(identity),
+        )
+
+    def start_span(self, ctx: TraceContext, name: str, **metadata: Any) -> Span:
+        span = Span(name=name, started_at=time.monotonic(), metadata=dict(metadata))
+        ctx.spans.append(span)
+        return span
+
+    def end_span(
+        self,
+        ctx: TraceContext,
+        span: Span,
+        status: str = "ok",
+        **metadata: Any,
+    ) -> None:
+        span.ended_at = time.monotonic()
+        span.status = status
+        if metadata:
+            span.metadata.update(metadata)
+
+    async def end_trace(self, ctx: TraceContext, result: dict[str, Any]) -> str:
+        return ctx.trace_id
+
+    def flush(self) -> None:
+        return None
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Tool protocol
@@ -92,6 +137,9 @@ class AgentResponse:
     tables_touched: list[str] = field(default_factory=list)
     sources: list[dict[str, Any]] = field(default_factory=list)
     trace_url: str | None = None
+    # Phase 2 tracing — id of the row written to the ``traces`` table (and
+    # optionally to Langfuse). ``None`` means tracing was disabled.
+    trace_id: str | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -442,18 +490,126 @@ class AgentOrchestrator:
         sql_tool: SqlReadTool,
         role: str = "producer",
         producer_id: int | None = None,
+        *,
+        identity_id: str | None = None,
+        tracer: Tracer | None = None,
     ) -> None:
         self.sql_tool = sql_tool
         self.role = role
         self.producer_id = producer_id
+        self.identity_id = identity_id
+        # Phase 2 tracing — ``None`` falls back to a no-op tracer so the
+        # orchestrator stays usable in scripts/tests without the chat API.
+        self.tracer: Tracer = tracer if tracer is not None else _NoopTracer()
 
     async def run(self, user_message: str) -> AgentResponse:
-        """Execute the (rule-based) agent loop and return a structured response."""
+        """Execute the (rule-based) agent loop and return a structured response.
+
+        Tracing is additive: this method opens a trace, wraps each step in a
+        span, and calls ``tracer.end_trace`` with the full result dict before
+        returning. The returned ``AgentResponse`` carries the ``trace_id``
+        so the API layer can include it in the JSON response.
+        """
+        ctx = self.tracer.start_trace(
+            user_message,
+            {
+                "identity_id": self.identity_id,
+                "producer_id": self.producer_id,
+                "role": self.role,
+                "tenant_id": "dp",
+            },
+        )
+        try:
+            response = await self._run_inner(user_message, ctx)
+        except Exception as exc:  # noqa: BLE001 — never crash the caller
+            # Record the error in the trace, then re-raise so the API layer
+            # can return its own 200-with-error envelope.
+            await self.tracer.end_trace(
+                ctx,
+                {
+                    "answer": "",
+                    "error": str(exc),
+                    "refused": True,
+                    "tokens_in": 0,
+                    "tokens_out": 0,
+                    "latency_ms": int((time.monotonic() - ctx.started_at) * 1000),
+                },
+            )
+            raise
+        # Persist the trace (async — writes to SQLite + optionally Langfuse).
+        trace_result = self._build_trace_result(user_message, response, ctx)
+        trace_id = await self.tracer.end_trace(ctx, trace_result)
+        response.trace_id = trace_id
+        return response
+
+    def _build_trace_result(
+        self,
+        user_message: str,
+        response: AgentResponse,
+        ctx: TraceContext,
+    ) -> dict[str, Any]:
+        """Project an ``AgentResponse`` into the trace-row dict.
+
+        The ``intent`` field is filled from the first step's detail ("Intention
+        détectée : <intent>.") — the orchestrator records it there but not
+        as a top-level field on the response. ``sql_valid`` is True iff SQL
+        was generated AND sqlglot accepted it (``response.sql is not None``).
+        """
+        intent = None
+        for step in response.steps:
+            detail = step.get("detail") or ""
+            if "Intention détectée" in detail:
+                intent = detail.split("Intention détectée :", 1)[-1].strip().rstrip(".")
+                break
+        # Build a richer tool_calls list for the trace ({name, latency_ms,
+        # success}) — the API response keeps tool_calls as list[str].
+        tool_calls_detail: list[dict[str, Any]] = []
+        if response.tool_calls:
+            # Look up the execution span ("Exécution read-only") for latency.
+            exec_ms = 0
+            for span in ctx.spans:
+                if span.name == "sql_execution":
+                    exec_ms = span.duration_ms
+                    break
+            for name in response.tool_calls:
+                tool_calls_detail.append(
+                    {"name": name, "latency_ms": exec_ms, "success": not response.refused}
+                )
+        # ``scope_applied`` is True iff a non-null scope_clause was injected
+        # (i.e. the producer's row-level filter is in effect). Admin requests
+        # have ``scope_clause=None`` so scope_applied=False there.
+        scope_applied = response.scope_clause is not None
+        return {
+            "answer": response.answer,
+            "sql": response.sql,
+            "intent": intent,
+            "sql_valid": response.sql is not None and not response.refused,
+            "scope_applied": scope_applied,
+            "security_incident": any(
+                sc.get("label") == "Scope appliqué" and sc.get("status") == "warning"
+                for sc in response.security_checks
+            ),
+            "refused": response.refused,
+            "tool_calls": tool_calls_detail,
+            "steps": response.steps,
+            "tokens_in": response.tokens_in,
+            "tokens_out": response.tokens_out,
+            "latency_ms": response.latency_ms,
+            "error": None,
+        }
+
+    async def _run_inner(self, user_message: str, ctx: TraceContext) -> AgentResponse:
+        """Original agent loop body, instrumented with tracing spans.
+
+        Returns the ``AgentResponse`` — the public ``run()`` wraps this to
+        call ``end_trace``.
+        """
         started_at = time.monotonic()
         steps: list[StepTrace] = []
         security_checks: list[SecurityCheck] = []
 
         # ── Step 1 — comprehend the question ──
+        span = self.tracer.start_span(ctx, "comprehension")
         t = time.monotonic()
         intent = classify_question(user_message, self.role)
         steps.append(
@@ -465,8 +621,10 @@ class AgentOrchestrator:
                 duration_ms=int((time.monotonic() - t) * 1000),
             )
         )
+        self.tracer.end_span(ctx, span, status="ok", intent=intent)
 
         # ── Step 2 — tool selection ──
+        span = self.tracer.start_span(ctx, "tool_selection")
         t = time.monotonic()
         # Pre-refuse cross-producer questions for producers.
         if intent == "cross_producer" and self.role != "admin":
@@ -479,6 +637,8 @@ class AgentOrchestrator:
                     duration_ms=int((time.monotonic() - t) * 1000),
                 )
             )
+            self.tracer.end_span(ctx, span, status="blocked", reason="cross_producer_refusal")
+            span_val = self.tracer.start_span(ctx, "sqlglot_validation")
             security_checks = [
                 SecurityCheck("Read-only", "ok", "N/A — requête non exécutée"),
                 SecurityCheck("Scope appliqué", "blocked", "Violation : agrégation cross-producteur"),
@@ -503,6 +663,7 @@ class AgentOrchestrator:
                         duration_ms=int((time.monotonic() - tt) * 1000),
                     )
                 )
+            self.tracer.end_span(ctx, span_val, status="blocked", reason="cross_producer")
             answer = format_refusal(self.producer_id, reason="cross_producer")
             return AgentResponse(
                 answer=answer,
@@ -528,8 +689,10 @@ class AgentOrchestrator:
                 duration_ms=int((time.monotonic() - t) * 1000),
             )
         )
+        self.tracer.end_span(ctx, span, status="ok", tool="sql_read_tool")
 
         # ── Step 3 — SQL generation ──
+        span = self.tracer.start_span(ctx, "sql_generation")
         t = time.monotonic()
         try:
             raw_sql = self.sql_tool.generate_sql(user_message)
@@ -543,6 +706,7 @@ class AgentOrchestrator:
                     duration_ms=int((time.monotonic() - t) * 1000),
                 )
             )
+            self.tracer.end_span(ctx, span, status="error", error=str(exc))
             return AgentResponse(
                 answer=(
                     "Je n'ai pas pu générer de requête SQL pour cette question. "
@@ -576,8 +740,14 @@ class AgentOrchestrator:
                 duration_ms=int((time.monotonic() - t) * 1000),
             )
         )
+        self.tracer.end_span(
+            ctx, span,
+            status="blocked" if refused_by_generator else "ok",
+            raw_sql=raw_sql if not refused_by_generator else None,
+        )
 
         # ── Step 4 — sqlglot validation + scoping ──
+        span = self.tracer.start_span(ctx, "sqlglot_validation")
         t = time.monotonic()
         if refused_by_generator:
             steps.append(
@@ -589,12 +759,14 @@ class AgentOrchestrator:
                     duration_ms=int((time.monotonic() - t) * 1000),
                 )
             )
+            self.tracer.end_span(ctx, span, status="blocked", reason="cross_producer")
             security_checks = [
                 SecurityCheck("Read-only", "ok", "N/A — requête non exécutée"),
                 SecurityCheck("Scope appliqué", "blocked", "Violation : agrégation cross-producteur"),
                 SecurityCheck("Tables autorisées", "ok", "N/A"),
                 SecurityCheck("LIMIT 1000", "ok", "N/A"),
             ]
+            span_exec = self.tracer.start_span(ctx, "sql_execution")
             steps.append(
                 StepTrace(
                     index=5,
@@ -604,6 +776,8 @@ class AgentOrchestrator:
                     duration_ms=0,
                 )
             )
+            self.tracer.end_span(ctx, span_exec, status="blocked", reason="refused")
+            span_synth = self.tracer.start_span(ctx, "synthesis")
             steps.append(
                 StepTrace(
                     index=6,
@@ -613,6 +787,7 @@ class AgentOrchestrator:
                     duration_ms=0,
                 )
             )
+            self.tracer.end_span(ctx, span_synth, status="blocked", reason="refusal")
             return AgentResponse(
                 answer=format_refusal(self.producer_id, reason="cross_producer"),
                 sql=None,
@@ -641,6 +816,7 @@ class AgentOrchestrator:
                     duration_ms=int((time.monotonic() - t) * 1000),
                 )
             )
+            self.tracer.end_span(ctx, span, status="error", error=str(exc))
             return AgentResponse(
                 answer=(
                     "Votre question a été bloquée par la couche de sécurité. "
@@ -672,8 +848,16 @@ class AgentOrchestrator:
                 duration_ms=int((time.monotonic() - t) * 1000),
             )
         )
+        self.tracer.end_span(
+            ctx, span,
+            status="warning" if self.sql_tool._last_security_incident else "ok",
+            safe_sql=safe_sql,
+            scope_clause=scope_clause,
+            security_incident=self.sql_tool._last_security_incident,
+        )
 
         # ── Step 5 — execution ──
+        span = self.tracer.start_span(ctx, "sql_execution")
         t = time.monotonic()
         try:
             result = await self.sql_tool.execute(safe_sql)
@@ -687,6 +871,7 @@ class AgentOrchestrator:
                     duration_ms=int((time.monotonic() - t) * 1000),
                 )
             )
+            self.tracer.end_span(ctx, span, status="error", error=str(exc))
             return AgentResponse(
                 answer=(
                     "Une erreur est survenue lors de l'exécution de la requête sur la base "
@@ -716,8 +901,12 @@ class AgentOrchestrator:
                 duration_ms=int((time.monotonic() - t) * 1000),
             )
         )
+        self.tracer.end_span(
+            ctx, span, status="ok", rowcount=result.rowcount
+        )
 
         # ── Step 6 — synthesise the answer ──
+        span = self.tracer.start_span(ctx, "synthesis")
         t = time.monotonic()
         answer, chart = await format_answer(
             user_message, intent, result, self.producer_id, self.role
@@ -731,6 +920,7 @@ class AgentOrchestrator:
                 duration_ms=int((time.monotonic() - t) * 1000),
             )
         )
+        self.tracer.end_span(ctx, span, status="ok", has_chart=chart is not None)
 
         # Build the security checklist.
         tables_touched = self.sql_tool._extract_tables(safe_sql)  # noqa: SLF001

@@ -73,9 +73,28 @@ class Settings(BaseSettings):
     )
 
     # ── Langfuse ─────────────────────────────────────────────────────────────
-    langfuse_public_key: str = Field(default="pk-lf-replace-me")
-    langfuse_secret_key: str = Field(default="sk-lf-replace-me")
-    langfuse_host: str = Field(default="http://localhost:3001")
+    # Tracer backend. When BOTH ``langfuse_public_key`` and
+    # ``langfuse_secret_key`` are set to non-placeholder values, the tracing
+    # factory returns a ``LangfuseTracer`` (ships events to Langfuse in
+    # addition to the local SQLite ``traces`` table). When either is None /
+    # the placeholder, the factory falls back to ``LocalTracer`` only —
+    # this is the dev-mode default. See ``app/tracing/factory.py``.
+    langfuse_public_key: str | None = Field(
+        default=None,
+        description="Langfuse public key. None = use LocalTracer only.",
+    )
+    langfuse_secret_key: str | None = Field(
+        default=None,
+        description="Langfuse secret key. None = use LocalTracer only.",
+    )
+    langfuse_host: str | None = Field(
+        default=None,
+        description=(
+            "Langfuse host URL. None = Langfuse Cloud "
+            "(https://cloud.langfuse.com). Set to a self-hosted URL in "
+            "production if you run your own Langfuse instance."
+        ),
+    )
 
     # ── Drive Producteur connector (dev fallback) ────────────────────────────
     dp_api_base_url: str = Field(default="https://api.drive-producteur.example.com/v1")

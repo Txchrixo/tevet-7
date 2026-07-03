@@ -43,12 +43,13 @@ from __future__ import annotations
 import logging
 from typing import Any, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.agents.orchestrator import AgentOrchestrator
 from app.connectors.sqlite_connector import SqliteConnector
 from app.tools.sql_tool import SqlReadTool
+from app.tracing import get_tracer
 
 logger = logging.getLogger("tevet7.api.chat")
 
@@ -116,7 +117,11 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             role=req.role,
         )
         orchestrator = AgentOrchestrator(
-            sql_tool=sql_tool, role=req.role, producer_id=req.producer_id
+            sql_tool=sql_tool,
+            role=req.role,
+            producer_id=req.producer_id,
+            identity_id=req.identity_id,
+            tracer=get_tracer(),
         )
         response = await orchestrator.run(req.message)
 
@@ -137,6 +142,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             "refused": response.refused,
             "tables_touched": response.tables_touched,
             "sources": response.sources,
+            "trace_id": response.trace_id,
         }
     except Exception as exc:  # noqa: BLE001 — never crash the frontend
         logger.exception("Unhandled error in /chat")
@@ -157,6 +163,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             "refused": True,
             "tables_touched": [],
             "sources": [],
+            "trace_id": None,
             "error": str(exc),
         }
 
@@ -181,3 +188,49 @@ async def get_schema() -> dict[str, Any]:
 async def chat_health() -> dict[str, Any]:
     """Lightweight health probe scoped to the chat router."""
     return {"status": "ok", "router": "chat"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Traces endpoints — observability surface (Task 18 / Phase 2 tracing)
+# ─────────────────────────────────────────────────────────────────────────────
+# ``GET /api/traces``         → list the most recent 50 traces (summary).
+# ``GET /api/traces/{trace_id}`` → full trace detail (SQL, steps, tool_calls,
+#                                 tokens, cost, answer excerpt, …).
+#
+# The tracer itself (LocalTracer or LangfuseTracer) backs both endpoints —
+# the API layer is a thin wrapper that delegates to ``get_tracer()`` so
+# Langfuse-mode and local-mode expose the same HTTP surface.
+
+
+@router.get("/traces")
+async def list_traces(limit: int = 50) -> dict[str, Any]:
+    """List the most recent traces (newest first).
+
+    Returns the summary fields only (no SQL, no steps) — use
+    ``/api/traces/{id}`` for the full detail. The default ``limit=50`` keeps
+    the response payload small for the inspector UI.
+    """
+    tracer = get_tracer()
+    items = await tracer.list_recent(limit=max(1, min(limit, 200)))
+    # Normalise datetimes to ISO strings for JSON.
+    for item in items:
+        ca = item.get("created_at")
+        if ca is not None and hasattr(ca, "isoformat"):
+            item["created_at"] = ca.isoformat()
+    return {"count": len(items), "traces": items}
+
+
+@router.get("/traces/{trace_id}")
+async def get_trace(trace_id: str) -> dict[str, Any]:
+    """Return the full detail of one trace.
+
+    404 if the trace is not in the ring buffer nor in the SQLite table.
+    """
+    tracer = get_tracer()
+    row = await tracer.get(trace_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"trace {trace_id} not found")
+    ca = row.get("created_at")
+    if ca is not None and hasattr(ca, "isoformat"):
+        row["created_at"] = ca.isoformat()
+    return row

@@ -33,6 +33,7 @@ from sqlalchemy import (
     MetaData,
     String,
     Table,
+    Text,
     func,
     select,
 )
@@ -165,6 +166,42 @@ payments = Table(
     Column("status", String, nullable=False),
     Column("captured_at", DateTime, nullable=True),
     Column("created_at", DateTime, nullable=False),
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Observability — traces table (Task 18 / Phase 2 tracing)
+# ─────────────────────────────────────────────────────────────────────────────
+# One row per ``/api/chat`` request, written by ``LocalTracer.end_trace``.
+# The ``traces`` table is created in the same ``metadata.create_all`` call
+# as the business tables — no separate migration. JSON-shaped fields
+# (``tool_calls``, ``steps``) are stored as TEXT (JSON-encoded) because
+# SQLite has no native JSON column type and we want the schema portable to
+# Postgres without changes.
+traces_table = Table(
+    "traces",
+    metadata,
+    Column("id", String, primary_key=True),  # uuid4 hex
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow, index=True),
+    Column("tenant_id", String, nullable=False, default="dp", index=True),
+    Column("user_message", Text, nullable=False),
+    Column("identity_id", String, nullable=True, index=True),
+    Column("producer_id", Integer, nullable=True, index=True),
+    Column("role", String, nullable=True),
+    Column("intent", String, nullable=True),
+    Column("sql_generated", Text, nullable=True),
+    Column("sql_valid", Boolean, nullable=False, default=False),
+    Column("scope_applied", Boolean, nullable=False, default=False),
+    Column("security_incident", Boolean, nullable=False, default=False),
+    Column("refused", Boolean, nullable=False, default=False),
+    Column("tool_calls", Text, nullable=True),  # JSON list[{name,latency_ms,success}]
+    Column("steps", Text, nullable=True),  # JSON list[{index,title,status,duration_ms}]
+    Column("tokens_in", Integer, nullable=False, default=0),
+    Column("tokens_out", Integer, nullable=False, default=0),
+    Column("cost_usd", Float, nullable=False, default=0.0),
+    Column("latency_ms", Integer, nullable=False, default=0),
+    Column("error", Text, nullable=True),
+    Column("response_answer", Text, nullable=True),  # first 500 chars of the answer
 )
 
 
