@@ -129,7 +129,7 @@ export function CreateWorkspace() {
               type="submit"
               disabled={loading}
               className={cn(
-                "flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 font-body text-sm font-medium text-primary-foreground transition-colors",
+                "flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 font-body text-sm font-medium text-foreground transition-colors",
                 "hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50",
               )}
             >

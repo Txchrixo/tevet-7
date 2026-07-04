@@ -1,0 +1,919 @@
+     1→import type {
+     2→  AssistantResponse,
+     3→  Identity,
+     4→  SecurityCheck,
+     5→  TraceStep,
+     6→} from "./types";
+     7→
+     8→// ---------------------------------------------------------------------------
+     9→// Identities
+    10→// ---------------------------------------------------------------------------
+    11→
+    12→export const IDENTITIES: Identity[] = [
+    13→  {
+    14→    id: "producer-42",
+    15→    kind: "producer",
+    16→    name: "Marie Dubois",
+    17→    producerNumber: "#42",
+    18→    producerId: 42,
+    19→    farmName: "Ferme du Vallon",
+    20→    role: "Productrice",
+    21→    initials: "MD",
+    22→    accent: "accent",
+    23→  },
+    24→  {
+    25→    id: "producer-99",
+    26→    kind: "producer",
+    27→    name: "Pierre Martin",
+    28→    producerNumber: "#99",
+    29→    producerId: 99,
+    30→    farmName: "Verger de la Côte",
+    31→    role: "Producteur",
+    32→    initials: "PM",
+    33→    accent: "primary",
+    34→  },
+    35→  {
+    36→    id: "admin",
+    37→    kind: "admin",
+    38→    name: "DP Admin",
+    39→    producerNumber: null,
+    40→    producerId: null,
+    41→    farmName: null,
+    42→    role: "Équipe Ops Drive Producteur",
+    43→    initials: "DA",
+    44→    accent: "foreground",
+    45→  },
+    46→];
+    47→
+    48→export const DEFAULT_IDENTITY_ID = "producer-42";
+    49→
+    50→// ---------------------------------------------------------------------------
+    51→// Example questions
+    52→// ---------------------------------------------------------------------------
+    53→
+    54→export interface ExampleQuestion {
+    55→  id: string;
+    56→  /** The question text shown to the user and sent as a user message. */
+    57→  label: string;
+    58→  /** Optional hint about access scope. */
+    59→  hint?: string;
+    60→}
+    61→
+    62→export const EXAMPLE_QUESTIONS: ExampleQuestion[] = [
+    63→  {
+    64→    id: "top-products",
+    65→    label: "Quels sont mes 5 produits les plus vendus ce mois-ci ?",
+    66→  },
+    67→  {
+    68→    id: "stock-saturday",
+    69→    label: "Quel stock va me manquer pour les retraits de samedi ?",
+    70→  },
+    71→  {
+    72→    id: "net-revenue-june",
+    73→    label: "Combien j'ai gagné net de commission en juin ?",
+    74→  },
+    75→  {
+    76→    id: "weekly-summary",
+    77→    label: "Fais-moi un résumé de mes ventes de la semaine.",
+    78→  },
+    79→  {
+    80→    id: "top-producers",
+    81→    label: "Quels producteurs ont le plus de commandes ?",
+    82→    hint: "Accès admin requis",
+    83→  },
+    84→];
+    85→
+    86→// ---------------------------------------------------------------------------
+    87→// Trace helpers
+    88→// ---------------------------------------------------------------------------
+    89→
+    90→function okSteps(durations = [120, 40, 180, 60, 340, 210]): TraceStep[] {
+    91→  return [
+    92→    {
+    93→      index: 1,
+    94→      title: "Compréhension de la question",
+    95→      detail: "Analyse sémantique de l'intention et extraction des entités (période, métrique, portée).",
+    96→      status: "ok",
+    97→      durationMs: durations[0],
+    98→    },
+    99→    {
+   100→      index: 2,
+   101→      title: "Sélection de l'outil : sql_read_tool",
+   102→      detail: "Le routeur choisit l'outil read-only SQL parmi le catalogue d'outils disponibles.",
+   103→      status: "ok",
+   104→      durationMs: durations[1],
+   105→    },
+   106→    {
+   107→      index: 3,
+   108→      title: "Génération SQL",
+   109→      detail: "Le modèle génère une requête SQL paramétrée d'après le schéma du tenant Drive Producteur.",
+   110→      status: "ok",
+   111→      durationMs: durations[2],
+   112→    },
+   113→    {
+   114→      index: 4,
+   115→      title: "Validation sqlglot (scoping injecté)",
+   116→      detail: "Le SQL est parsé, normalisé, et la clause de portée producer_id est injectée au niveau AST.",
+   117→      status: "ok",
+   118→      durationMs: durations[3],
+   119→    },
+   120→    {
+   121→      index: 5,
+   122→      title: "Exécution read-only",
+   123→      detail: "Exécution sur un utilisateur PostgreSQL limité (SELECT, vue matérialisée en lecture seule).",
+   124→      status: "ok",
+   125→      durationMs: durations[4],
+   126→    },
+   127→    {
+   128→      index: 6,
+   129→      title: "Synthèse de la réponse",
+   130→      detail: "Le modèle reformule les résultats en langage naturel et insère les visualisations.",
+   131→      status: "ok",
+   132→      durationMs: durations[5],
+   133→    },
+   134→  ];
+   135→}
+   136→
+   137→function blockedSteps(): TraceStep[] {
+   138→  return [
+   139→    {
+   140→      index: 1,
+   141→      title: "Compréhension de la question",
+   142→      detail: "La question demande une agrégation cross-producer (tous les producteurs).",
+   143→      status: "ok",
+   144→      durationMs: 110,
+   145→    },
+   146→    {
+   147→      index: 2,
+   148→      title: "Sélection de l'outil : sql_read_tool",
+   149→      detail: "Le routeur identifie qu'une requête de synthèse multi-producteurs est nécessaire.",
+   150→      status: "warning",
+   151→      durationMs: 35,
+   152→    },
+   153→    {
+   154→      index: 3,
+   155→      title: "Validation sqlglot (scoping injecté)",
+   156→      detail: "La clause producer_id injectée entre en conflit avec le GROUP BY demandé. Scoping violation détectée.",
+   157→      status: "blocked",
+   158→      durationMs: 48,
+   159→    },
+   160→    {
+   161→      index: 4,
+   162→      title: "Exécution read-only",
+   163→      detail: "Exécution annulée — la requête a été rejetée par la couche de sécurité avant l'exécution.",
+   164→      status: "blocked",
+   165→      durationMs: 0,
+   166→    },
+   167→    {
+   168→      index: 5,
+   169→      title: "Synthèse de la réponse",
+   170→      detail: "Génération d'un message de refus poli expliquant la contrainte de portée.",
+   171→      status: "ok",
+   172→      durationMs: 140,
+   173→    },
+   174→  ];
+   175→}
+   176→
+   177→const PRODUCER_SECURITY: SecurityCheck[] = [
+   178→  { label: "Read-only", status: "ok", detail: "Utilisateur PG `dp_readonly` — SELECT uniquement." },
+   179→  { label: "Scope producer_id appliqué", status: "ok", detail: "Clause injectée au niveau AST, non contournable." },
+   180→  { label: "Tables autorisées", status: "ok", detail: "orders, order_items, products, stocks, payments, pickup_bookings." },
+   181→  { label: "LIMIT 1000", status: "ok", detail: "Garantie par le wrapper d'exécution." },
+   182→];
+   183→
+   184→const ADMIN_SECURITY: SecurityCheck[] = [
+   185→  { label: "Read-only", status: "ok", detail: "Utilisateur PG `dp_admin_readonly` — SELECT uniquement." },
+   186→  { label: "Scope : full access (rôle admin)", status: "warning", detail: "Aucun filtre producer_id — accès à tous les producteurs du tenant." },
+   187→  { label: "Tables autorisées", status: "ok", detail: "orders, order_items, products, stocks, payments, pickup_bookings, producers." },
+   188→  { label: "LIMIT 1000", status: "ok", detail: "Garantie par le wrapper d'exécution." },
+   189→];
+   190→
+   191→const REFUSAL_SECURITY: SecurityCheck[] = [
+   192→  { label: "Read-only", status: "ok", detail: "Vérifié avant parsing." },
+   193→  { label: "Scope producer_id requis", status: "blocked", detail: "La requête agrège sur l'ensemble des producteurs — non autorisé pour un rôle producer." },
+   194→  { label: "Tables autorisées", status: "ok", detail: "Vérification statique passée." },
+   195→  { label: "Exécution SQL", status: "blocked", detail: "Skippée — requête rejetée par sqlglot." },
+   196→];
+   197→
+   198→// ---------------------------------------------------------------------------
+   199→// Per-identity, per-question mock responses
+   200→// ---------------------------------------------------------------------------
+   201→
+   202→type ResponseMap = Record<string, AssistantResponse>;
+   203→
+   204→// --- Producer #42 ---------------------------------------------------------
+   205→
+   206→const p42TopProducts: AssistantResponse = {
+   207→  answer:
+   208→    "Vos **5 produits les plus vendus ce mois-ci** (Ferme du Vallon) :\n\n" +
+   209→    "1. **Tomates cœur de bœuf** — 142 unités · 565,80 €\n" +
+   210→    "2. **Courgettes** — 98 unités · 245,00 €\n" +
+   211→    "3. **Carottes en bottes** — 87 unités · 217,50 €\n" +
+   212→    "4. **Salade laitue** — 76 unités · 152,00 €\n" +
+   213→    "5. **Poireaux** — 64 unités · 192,00 €\n\n" +
+   214→    "Les tomates représentent **33 %** de votre chiffre d'affaires du mois. Pensez à anticiper le réassort pour le week-end.",
+   215→  sql:
+   216→    "SELECT p.name,\n" +
+   217→    "       SUM(oi.quantity)                       AS units_sold,\n" +
+   218→    "       SUM(oi.quantity * oi.unit_price)       AS revenue\n" +
+   219→    "FROM order_items oi\n" +
+   220→    "JOIN products p ON p.id = oi.product_id\n" +
+   221→    "JOIN orders   o ON o.id = oi.order_id\n" +
+   222→    "WHERE p.producer_id = 42\n" +
+   223→    "  AND o.status IN ('paid', 'fulfilled')\n" +
+   224→    "  AND o.created_at >= date_trunc('month', CURRENT_DATE)\n" +
+   225→    "GROUP BY p.name\n" +
+   226→    "ORDER BY units_sold DESC\n" +
+   227→    "LIMIT 5;",
+   228→  scopeClause: "WHERE p.producer_id = 42",
+   229→  chart: {
+   230→    type: "bar",
+   231→    title: "Top 5 produits — ce mois-ci",
+   232→    xKey: "name",
+   233→    series: [
+   234→      { key: "units", label: "Unités vendues", color: "accent" },
+   235→    ],
+   236→    data: [
+   237→      { name: "Tomates cœur de bœuf", units: 142 },
+   238→      { name: "Courgettes", units: 98 },
+   239→      { name: "Carottes en bottes", units: 87 },
+   240→      { name: "Salade laitue", units: 76 },
+   241→      { name: "Poireaux", units: 64 },
+   242→    ],
+   243→  },
+   244→  tokensIn: 312,
+   245→  tokensOut: 418,
+   246→  latencyMs: 1820,
+   247→  toolCalls: ["sql_read_tool"],
+   248→  steps: okSteps(),
+   249→  securityChecks: PRODUCER_SECURITY,
+   250→  refused: false,
+   251→};
+   252→
+   253→const p42Stock: AssistantResponse = {
+   254→  answer:
+   255→    "Pour les **retraits de samedi**, 3 références risquent de vous manquer :\n\n" +
+   256→    "| Produit | Stock | Réservé | Manque |\n" +
+   257→    "|---|---:|---:|---:|\n" +
+   258→    "| Tomates cœur de bœuf | 18 | 24 | **-6** |\n" +
+   259→    "| Salade laitue | 8 | 14 | **-6** |\n" +
+   260→    "| Courgettes | 12 | 15 | **-3** |\n\n" +
+   261→    "Je recommande de réapprovisionner les tomates et la salade avant vendredi 18h. Les courgettes sont limites mais couvrables.",
+   262→  sql:
+   263→    "SELECT p.name,\n" +
+   264→    "       s.current_qty                                  AS stock,\n" +
+   265→    "       COALESCE(SUM(oi.quantity), 0)                  AS reserved,\n" +
+   266→    "       s.current_qty - COALESCE(SUM(oi.quantity), 0)  AS remaining\n" +
+   267→    "FROM products p\n" +
+   268→    "JOIN stocks          s  ON s.product_id = p.id\n" +
+   269→    "LEFT JOIN order_items oi ON oi.product_id = p.id\n" +
+   270→    "LEFT JOIN orders       o ON o.id = oi.order_id\n" +
+   271→    "     AND o.status IN ('paid', 'fulfilled')\n" +
+   272→    "LEFT JOIN pickup_bookings pb ON pb.id = o.pickup_booking_id\n" +
+   273→    "     AND pb.slot_date = CURRENT_DATE + INTERVAL '3 days'\n" +
+   274→    "WHERE p.producer_id = 42\n" +
+   275→    "GROUP BY p.name, s.current_qty\n" +
+   276→    "HAVING s.current_qty - COALESCE(SUM(oi.quantity), 0) < 10\n" +
+   277→    "ORDER BY remaining ASC\n" +
+   278→    "LIMIT 20;",
+   279→  scopeClause: "WHERE p.producer_id = 42",
+   280→  chart: {
+   281→    type: "bar",
+   282→    title: "Déficit prévu pour samedi",
+   283→    xKey: "name",
+   284→    series: [{ key: "deficit", label: "Manque (unités)", color: "muted" }],
+   285→    data: [
+   286→      { name: "Tomates cœur de bœuf", deficit: 6 },
+   287→      { name: "Salade laitue", deficit: 6 },
+   288→      { name: "Courgettes", deficit: 3 },
+   289→    ],
+   290→  },
+   291→  tokensIn: 286,
+   292→  tokensOut: 372,
+   293→  latencyMs: 1640,
+   294→  toolCalls: ["sql_read_tool"],
+   295→  steps: okSteps([130, 45, 195, 70, 360, 230]),
+   296→  securityChecks: PRODUCER_SECURITY,
+   297→  refused: false,
+   298→};
+   299→
+   300→const p42Revenue: AssistantResponse = {
+   301→  answer:
+   302→    "En **juin 2025**, votre chiffre d'affaires brut capturé s'élève à **4 820,00 €**.\n\n" +
+   303→    "- Commission Drive Producteur (12 %) : **-578,40 €**\n" +
+   304→    "- **Net à percevoir : 4 241,60 €**\n\n" +
+   305→    "Le versement sera effectué le 15 du mois suivant sur votre IBAN enregistré. Détail disponible dans l'espace producteur.",
+   306→  sql:
+   307→    "SELECT\n" +
+   308→    "  SUM(pay.amount)                       AS gross,\n" +
+   309→    "  SUM(pay.amount) * 0.12                AS commission,\n" +
+   310→    "  SUM(pay.amount) - SUM(pay.amount)*0.12 AS net\n" +
+   311→    "FROM payments pay\n" +
+   312→    "JOIN orders      o  ON o.id = pay.order_id\n" +
+   313→    "JOIN order_items oi ON oi.order_id = o.id\n" +
+   314→    "JOIN products    p  ON p.id = oi.product_id\n" +
+   315→    "WHERE p.producer_id = 42\n" +
+   316→    "  AND pay.status = 'captured'\n" +
+   317→    "  AND pay.captured_at >= '2025-06-01'\n" +
+   318→    "  AND pay.captured_at <  '2025-07-01';",
+   319→  scopeClause: "WHERE p.producer_id = 42",
+   320→  tokensIn: 244,
+   321→  tokensOut: 298,
+   322→  latencyMs: 1380,
+   323→  toolCalls: ["sql_read_tool"],
+   324→  steps: okSteps([110, 38, 165, 55, 320, 190]),
+   325→  securityChecks: PRODUCER_SECURITY,
+   326→  refused: false,
+   327→};
+   328→
+   329→const p42Weekly: AssistantResponse = {
+   330→  answer:
+   331→    "Voici le **résumé de vos ventes sur les 7 derniers jours** :\n\n" +
+   332→    "- **101 commandes** au total\n" +
+   333→    "- **4 470 €** de chiffre d'affaires brut\n" +
+   334→    "- Panier moyen : **44,26 €**\n\n" +
+   335→    "Le pic est attendu le samedi (28 commandes, 1 340 €). Le dimanche reste calme (6 commandes). Le jeudi affiche une bonne dynamique en milieu de semaine.",
+   336→  sql:
+   337→    "SELECT date_trunc('day', o.created_at)         AS day,\n" +
+   338→    "       COUNT(DISTINCT o.id)                     AS orders,\n" +
+   339→    "       SUM(oi.quantity * oi.unit_price)         AS revenue\n" +
+   340→    "FROM orders o\n" +
+   341→    "JOIN order_items oi ON oi.order_id = o.id\n" +
+   342→    "JOIN products    p  ON p.id = oi.product_id\n" +
+   343→    "WHERE p.producer_id = 42\n" +
+   344→    "  AND o.status IN ('paid', 'fulfilled')\n" +
+   345→    "  AND o.created_at >= CURRENT_DATE - INTERVAL '7 days'\n" +
+   346→    "GROUP BY day\n" +
+   347→    "ORDER BY day ASC;",
+   348→  scopeClause: "WHERE p.producer_id = 42",
+   349→  chart: {
+   350→    type: "line",
+   351→    title: "Ventes des 7 derniers jours",
+   352→    xKey: "day",
+   353→    series: [
+   354→      { key: "orders", label: "Commandes", color: "accent" },
+   355→      { key: "revenue", label: "CA (€)", color: "primary" },
+   356→    ],
+   357→    data: [
+   358→      { day: "Lun", orders: 8, revenue: 320 },
+   359→      { day: "Mar", orders: 12, revenue: 510 },
+   360→      { day: "Mer", orders: 10, revenue: 430 },
+   361→      { day: "Jeu", orders: 15, revenue: 680 },
+   362→      { day: "Ven", orders: 22, revenue: 1050 },
+   363→      { day: "Sam", orders: 28, revenue: 1340 },
+   364→      { day: "Dim", orders: 6, revenue: 240 },
+   365→    ],
+   366→  },
+   367→  tokensIn: 298,
+   368→  tokensOut: 392,
+   369→  latencyMs: 1720,
+   370→  toolCalls: ["sql_read_tool"],
+   371→  steps: okSteps([125, 42, 175, 58, 350, 215]),
+   372→  securityChecks: PRODUCER_SECURITY,
+   373→  refused: false,
+   374→};
+   375→
+   376→// --- Producer #99 ---------------------------------------------------------
+   377→
+   378→const p99TopProducts: AssistantResponse = {
+   379→  answer:
+   380→    "Vos **5 produits les plus vendus ce mois-ci** (Verger de la Côte) :\n\n" +
+   381→    "1. **Pommes Gala** — 210 unités · 630,00 €\n" +
+   382→    "2. **Pommes Reinette** — 165 unités · 577,50 €\n" +
+   383→    "3. **Jus de pomme 1L** — 76 unités · 342,00 €\n" +
+   384→    "4. **Poires Conférence** — 88 unités · 308,00 €\n" +
+   385→    "5. **Mirabelles** — 54 unités · 270,00 €\n\n" +
+   386→    "Les pommes (Gala + Reinette) représentent **48 %** du CA du mois. Le jus de pomme transformé affiche une belle marge.",
+   387→  sql:
+   388→    "SELECT p.name,\n" +
+   389→    "       SUM(oi.quantity)                       AS units_sold,\n" +
+   390→    "       SUM(oi.quantity * oi.unit_price)       AS revenue\n" +
+   391→    "FROM order_items oi\n" +
+   392→    "JOIN products p ON p.id = oi.product_id\n" +
+   393→    "JOIN orders   o ON o.id = oi.order_id\n" +
+   394→    "WHERE p.producer_id = 99\n" +
+   395→    "  AND o.status IN ('paid', 'fulfilled')\n" +
+   396→    "  AND o.created_at >= date_trunc('month', CURRENT_DATE)\n" +
+   397→    "GROUP BY p.name\n" +
+   398→    "ORDER BY units_sold DESC\n" +
+   399→    "LIMIT 5;",
+   400→  scopeClause: "WHERE p.producer_id = 99",
+   401→  chart: {
+   402→    type: "bar",
+   403→    title: "Top 5 produits — ce mois-ci",
+   404→    xKey: "name",
+   405→    series: [{ key: "units", label: "Unités vendues", color: "primary" }],
+   406→    data: [
+   407→      { name: "Pommes Gala", units: 210 },
+   408→      { name: "Pommes Reinette", units: 165 },
+   409→      { name: "Poires Conférence", units: 88 },
+   410→      { name: "Jus de pomme 1L", units: 76 },
+   411→      { name: "Mirabelles", units: 54 },
+   412→    ],
+   413→  },
+   414→  tokensIn: 318,
+   415→  tokensOut: 421,
+   416→  latencyMs: 1855,
+   417→  toolCalls: ["sql_read_tool"],
+   418→  steps: okSteps(),
+   419→  securityChecks: PRODUCER_SECURITY,
+   420→  refused: false,
+   421→};
+   422→
+   423→const p99Stock: AssistantResponse = {
+   424→  answer:
+   425→    "Pour les **retraits de samedi**, 3 références risquent de vous manquer :\n\n" +
+   426→    "| Produit | Stock | Réservé | Manque |\n" +
+   427→    "|---|---:|---:|---:|\n" +
+   428→    "| Pommes Gala | 45 | 60 | **-15** |\n" +
+   429→    "| Jus de pomme 1L | 20 | 32 | **-12** |\n" +
+   430→    "| Poires Conférence | 15 | 18 | **-3** |\n\n" +
+   431→    "Le déficit sur les Pommes Gala est significatif. Une cueillette supplémentaire jeudi matin est recommandée pour couvrir la demande du week-end.",
+   432→  sql:
+   433→    "SELECT p.name,\n" +
+   434→    "       s.current_qty                                  AS stock,\n" +
+   435→    "       COALESCE(SUM(oi.quantity), 0)                  AS reserved,\n" +
+   436→    "       s.current_qty - COALESCE(SUM(oi.quantity), 0)  AS remaining\n" +
+   437→    "FROM products p\n" +
+   438→    "JOIN stocks          s  ON s.product_id = p.id\n" +
+   439→    "LEFT JOIN order_items oi ON oi.product_id = p.id\n" +
+   440→    "LEFT JOIN orders       o ON o.id = oi.order_id\n" +
+   441→    "     AND o.status IN ('paid', 'fulfilled')\n" +
+   442→    "LEFT JOIN pickup_bookings pb ON pb.id = o.pickup_booking_id\n" +
+   443→    "     AND pb.slot_date = CURRENT_DATE + INTERVAL '3 days'\n" +
+   444→    "WHERE p.producer_id = 99\n" +
+   445→    "GROUP BY p.name, s.current_qty\n" +
+   446→    "HAVING s.current_qty - COALESCE(SUM(oi.quantity), 0) < 10\n" +
+   447→    "ORDER BY remaining ASC\n" +
+   448→    "LIMIT 20;",
+   449→  scopeClause: "WHERE p.producer_id = 99",
+   450→  chart: {
+   451→    type: "bar",
+   452→    title: "Déficit prévu pour samedi",
+   453→    xKey: "name",
+   454→    series: [{ key: "deficit", label: "Manque (unités)", color: "muted" }],
+   455→    data: [
+   456→      { name: "Pommes Gala", deficit: 15 },
+   457→      { name: "Jus de pomme 1L", deficit: 12 },
+   458→      { name: "Poires Conférence", deficit: 3 },
+   459→    ],
+   460→  },
+   461→  tokensIn: 292,
+   462→  tokensOut: 380,
+   463→  latencyMs: 1695,
+   464→  toolCalls: ["sql_read_tool"],
+   465→  steps: okSteps([130, 45, 195, 70, 360, 230]),
+   466→  securityChecks: PRODUCER_SECURITY,
+   467→  refused: false,
+   468→};
+   469→
+   470→const p99Revenue: AssistantResponse = {
+   471→  answer:
+   472→    "En **juin 2025**, votre chiffre d'affaires brut capturé s'élève à **6 150,00 €**.\n\n" +
+   473→    "- Commission Drive Producteur (12 %) : **-738,00 €**\n" +
+   474→    "- **Net à percevoir : 5 412,00 €**\n\n" +
+   475→    "Le versement sera effectué le 15 du mois suivant sur votre IBAN enregistré. Détail disponible dans l'espace producteur.",
+   476→  sql:
+   477→    "SELECT\n" +
+   478→    "  SUM(pay.amount)                       AS gross,\n" +
+   479→    "  SUM(pay.amount) * 0.12                AS commission,\n" +
+   480→    "  SUM(pay.amount) - SUM(pay.amount)*0.12 AS net\n" +
+   481→    "FROM payments pay\n" +
+   482→    "JOIN orders      o  ON o.id = pay.order_id\n" +
+   483→    "JOIN order_items oi ON oi.order_id = o.id\n" +
+   484→    "JOIN products    p  ON p.id = oi.product_id\n" +
+   485→    "WHERE p.producer_id = 99\n" +
+   486→    "  AND pay.status = 'captured'\n" +
+   487→    "  AND pay.captured_at >= '2025-06-01'\n" +
+   488→    "  AND pay.captured_at <  '2025-07-01';",
+   489→  scopeClause: "WHERE p.producer_id = 99",
+   490→  tokensIn: 248,
+   491→  tokensOut: 301,
+   492→  latencyMs: 1410,
+   493→  toolCalls: ["sql_read_tool"],
+   494→  steps: okSteps([110, 38, 165, 55, 320, 190]),
+   495→  securityChecks: PRODUCER_SECURITY,
+   496→  refused: false,
+   497→};
+   498→
+   499→const p99Weekly: AssistantResponse = {
+   500→  answer:
+   501→    "Voici le **résumé de vos ventes sur les 7 derniers jours** :\n\n" +
+   502→    "- **135 commandes** au total\n" +
+   503→    "- **4 710 €** de chiffre d'affaires brut\n" +
+   504→    "- Panier moyen : **34,89 €**\n\n" +
+   505→    "Le pic est le samedi (32 commandes, 1 240 €). Volume régulier toute la semaine — bon dynamisme sur les pommes transformées (jus).",
+   506→  sql:
+   507→    "SELECT date_trunc('day', o.created_at)         AS day,\n" +
+   508→    "       COUNT(DISTINCT o.id)                     AS orders,\n" +
+   509→    "       SUM(oi.quantity * oi.unit_price)         AS revenue\n" +
+   510→    "FROM orders o\n" +
+   511→    "JOIN order_items oi ON oi.order_id = o.id\n" +
+   512→    "JOIN products    p  ON p.id = oi.product_id\n" +
+   513→    "WHERE p.producer_id = 99\n" +
+   514→    "  AND o.status IN ('paid', 'fulfilled')\n" +
+   515→    "  AND o.created_at >= CURRENT_DATE - INTERVAL '7 days'\n" +
+   516→    "GROUP BY day\n" +
+   517→    "ORDER BY day ASC;",
+   518→  scopeClause: "WHERE p.producer_id = 99",
+   519→  chart: {
+   520→    type: "line",
+   521→    title: "Ventes des 7 derniers jours",
+   522→    xKey: "day",
+   523→    series: [
+   524→      { key: "orders", label: "Commandes", color: "primary" },
+   525→      { key: "revenue", label: "CA (€)", color: "accent" },
+   526→    ],
+   527→    data: [
+   528→      { day: "Lun", orders: 14, revenue: 410 },
+   529→      { day: "Mar", orders: 18, revenue: 560 },
+   530→      { day: "Mer", orders: 16, revenue: 490 },
+   531→      { day: "Jeu", orders: 20, revenue: 720 },
+   532→      { day: "Ven", orders: 26, revenue: 980 },
+   533→      { day: "Sam", orders: 32, revenue: 1240 },
+   534→      { day: "Dim", orders: 9, revenue: 310 },
+   535→    ],
+   536→  },
+   537→  tokensIn: 305,
+   538→  tokensOut: 401,
+   539→  latencyMs: 1760,
+   540→  toolCalls: ["sql_read_tool"],
+   541→  steps: okSteps([125, 42, 175, 58, 350, 215]),
+   542→  securityChecks: PRODUCER_SECURITY,
+   543→  refused: false,
+   544→};
+   545→
+   546→// --- Admin ----------------------------------------------------------------
+   547→
+   548→const adminTopProducers: AssistantResponse = {
+   549→  answer:
+   550→    "Voici les **7 producteurs avec le plus de commandes** ce mois-ci, tous producteurs confondus :\n\n" +
+   551→    "1. **Ferme du Vallon** (#42) — 312 commandes\n" +
+   552→    "2. **Verger de la Côte** (#99) — 298 commandes\n" +
+   553→    "3. **Maraîchers du Soleil** (#17) — 245 commandes\n" +
+   554→    "4. **Élevage des Prés** (#58) — 198 commandes\n" +
+   555→    "5. **Fromagerie du Col** (#23) — 176 commandes\n" +
+   556→    "6. **Apiculteur des Cimes** (#71) — 142 commandes\n" +
+   557→    "7. **Vignoble des Bruyères** (#34) — 128 commandes\n\n" +
+   558→    "Les deux premiers représentent **22 %** du volume mensuel. Aucune clause `producer_id` n'est appliquée — votre rôle admin donne un accès complet au tenant Drive Producteur.",
+   559→  sql:
+   560→    "SELECT p.producer_id,\n" +
+   561→    "       pr.farm_name,\n" +
+   562→    "       COUNT(DISTINCT o.id) AS orders\n" +
+   563→    "FROM order_items oi\n" +
+   564→    "JOIN products  p  ON p.id = oi.product_id\n" +
+   565→    "JOIN producers pr ON pr.id = p.producer_id\n" +
+   566→    "JOIN orders    o  ON o.id = oi.order_id\n" +
+   567→    "WHERE o.status IN ('paid', 'fulfilled')\n" +
+   568→    "  AND o.created_at >= date_trunc('month', CURRENT_DATE)\n" +
+   569→    "GROUP BY p.producer_id, pr.farm_name\n" +
+   570→    "ORDER BY orders DESC\n" +
+   571→    "LIMIT 10;",
+   572→  scopeClause: null,
+   573→  chart: {
+   574→    type: "bar",
+   575→    title: "Top producteurs — commandes du mois",
+   576→    xKey: "farm",
+   577→    series: [{ key: "orders", label: "Commandes", color: "foreground" }],
+   578→    data: [
+   579→      { farm: "Ferme du Vallon", orders: 312 },
+   580→      { farm: "Verger de la Côte", orders: 298 },
+   581→      { farm: "Maraîchers du Soleil", orders: 245 },
+   582→      { farm: "Élevage des Prés", orders: 198 },
+   583→      { farm: "Fromagerie du Col", orders: 176 },
+   584→      { farm: "Apiculteur des Cimes", orders: 142 },
+   585→      { farm: "Vignoble des Bruyères", orders: 128 },
+   586→    ],
+   587→  },
+   588→  tokensIn: 332,
+   589→  tokensOut: 445,
+   590→  latencyMs: 1960,
+   591→  toolCalls: ["sql_read_tool"],
+   592→  steps: okSteps([140, 48, 200, 75, 380, 240]),
+   593→  securityChecks: ADMIN_SECURITY,
+   594→  refused: false,
+   595→};
+   596→
+   597→// Admin sees the same producer questions but with full access. We give the
+   598→// admin a tenant-wide version of the producer-scoped questions so the demo
+   599→// still feels coherent when switching identities.
+   600→const adminTopProducts: AssistantResponse = {
+   601→  answer:
+   602→    "Voici les **5 produits les plus vendus ce mois-ci, tous producteurs confondus** :\n\n" +
+   603→    "1. **Pommes Gala** (Verger de la Côte) — 210 unités\n" +
+   604→    "2. **Pommes Reinette** (Verger de la Côte) — 165 unités\n" +
+   605→    "3. **Tomates cœur de bœuf** (Ferme du Vallon) — 142 unités\n" +
+   606→    "4. **Courgettes** (Ferme du Vallon) — 98 unités\n" +
+   607→    "5. **Jus de pomme 1L** (Verger de la Côte) — 76 unités\n\n" +
+   608→    "Accès admin : aucune clause `producer_id` appliquée.",
+   609→  sql:
+   610→    "SELECT p.name,\n" +
+   611→    "       pr.farm_name,\n" +
+   612→    "       SUM(oi.quantity)                 AS units_sold\n" +
+   613→    "FROM order_items oi\n" +
+   614→    "JOIN products  p  ON p.id = oi.product_id\n" +
+   615→    "JOIN producers pr ON pr.id = p.producer_id\n" +
+   616→    "JOIN orders    o  ON o.id = oi.order_id\n" +
+   617→    "WHERE o.status IN ('paid', 'fulfilled')\n" +
+   618→    "  AND o.created_at >= date_trunc('month', CURRENT_DATE)\n" +
+   619→    "GROUP BY p.name, pr.farm_name\n" +
+   620→    "ORDER BY units_sold DESC\n" +
+   621→    "LIMIT 5;",
+   622→  scopeClause: null,
+   623→  chart: {
+   624→    type: "bar",
+   625→    title: "Top 5 produits — tous producteurs",
+   626→    xKey: "name",
+   627→    series: [{ key: "units", label: "Unités vendues", color: "foreground" }],
+   628→    data: [
+   629→      { name: "Pommes Gala", units: 210 },
+   630→      { name: "Pommes Reinette", units: 165 },
+   631→      { name: "Tomates cœur de bœuf", units: 142 },
+   632→      { name: "Courgettes", units: 98 },
+   633→      { name: "Jus de pomme 1L", units: 76 },
+   634→    ],
+   635→  },
+   636→  tokensIn: 320,
+   637→  tokensOut: 410,
+   638→  latencyMs: 1820,
+   639→  toolCalls: ["sql_read_tool"],
+   640→  steps: okSteps(),
+   641→  securityChecks: ADMIN_SECURITY,
+   642→  refused: false,
+   643→};
+   644→
+   645→const adminStock: AssistantResponse = {
+   646→  answer:
+   647→    "Vue **admin agrégée** des ruptures prévues pour les retraits de samedi, tous producteurs confondus :\n\n" +
+   648→    "| Produit | Producteur | Stock | Réservé | Manque |\n" +
+   649→    "|---|---|---:|---:|---:|\n" +
+   650→    "| Pommes Gala | Verger de la Côte | 45 | 60 | **-15** |\n" +
+   651→    "| Jus de pomme 1L | Verger de la Côte | 20 | 32 | **-12** |\n" +
+   652→    "| Tomates cœur de bœuf | Ferme du Vallon | 18 | 24 | **-6** |\n" +
+   653→    "| Salade laitue | Ferme du Vallon | 8 | 14 | **-6** |\n\n" +
+   654→    "Je recommande de notifier les producteurs concernés avant vendredi 18h.",
+   655→  sql:
+   656→    "SELECT p.name,\n" +
+   657→    "       pr.farm_name,\n" +
+   658→    "       s.current_qty                                  AS stock,\n" +
+   659→    "       COALESCE(SUM(oi.quantity), 0)                  AS reserved,\n" +
+   660→    "       s.current_qty - COALESCE(SUM(oi.quantity), 0)  AS remaining\n" +
+   661→    "FROM products p\n" +
+   662→    "JOIN producers       pr ON pr.id = p.producer_id\n" +
+   663→    "JOIN stocks          s  ON s.product_id = p.id\n" +
+   664→    "LEFT JOIN order_items oi ON oi.product_id = p.id\n" +
+   665→    "LEFT JOIN orders       o ON o.id = oi.order_id\n" +
+   666→    "     AND o.status IN ('paid', 'fulfilled')\n" +
+   667→    "LEFT JOIN pickup_bookings pb ON pb.id = o.pickup_booking_id\n" +
+   668→    "     AND pb.slot_date = CURRENT_DATE + INTERVAL '3 days'\n" +
+   669→    "GROUP BY p.name, pr.farm_name, s.current_qty\n" +
+   670→    "HAVING s.current_qty - COALESCE(SUM(oi.quantity), 0) < 10\n" +
+   671→    "ORDER BY remaining ASC\n" +
+   672→    "LIMIT 20;",
+   673→  scopeClause: null,
+   674→  tokensIn: 290,
+   675→  tokensOut: 378,
+   676→  latencyMs: 1680,
+   677→  toolCalls: ["sql_read_tool"],
+   678→  steps: okSteps([130, 45, 195, 70, 360, 230]),
+   679→  securityChecks: ADMIN_SECURITY,
+   680→  refused: false,
+   681→};
+   682→
+   683→const adminRevenue: AssistantResponse = {
+   684→  answer:
+   685→    "Vue **admin agrégée** — chiffre d'affaires net perçu par Drive Producteur en juin 2025 :\n\n" +
+   686→    "- Brut capturé (tous producteurs) : **28 640,00 €**\n" +
+   687→    "- Commissions perçues (12 %) : **3 436,80 €**\n" +
+   688→    "- Net reversé aux producteurs : **25 203,20 €**\n\n" +
+   689→    "Aucune clause `producer_id` — votre rôle admin couvre tout le tenant.",
+   690→  sql:
+   691→    "SELECT\n" +
+   692→    "  SUM(pay.amount)                       AS gross,\n" +
+   693→    "  SUM(pay.amount) * 0.12                AS commission,\n" +
+   694→    "  SUM(pay.amount) - SUM(pay.amount)*0.12 AS net\n" +
+   695→    "FROM payments pay\n" +
+   696→    "JOIN orders o ON o.id = pay.order_id\n" +
+   697→    "WHERE pay.status = 'captured'\n" +
+   698→    "  AND pay.captured_at >= '2025-06-01'\n" +
+   699→    "  AND pay.captured_at <  '2025-07-01';",
+   700→  scopeClause: null,
+   701→  tokensIn: 250,
+   702→  tokensOut: 305,
+   703→  latencyMs: 1420,
+   704→  toolCalls: ["sql_read_tool"],
+   705→  steps: okSteps([110, 38, 165, 55, 320, 190]),
+   706→  securityChecks: ADMIN_SECURITY,
+   707→  refused: false,
+   708→};
+   709→
+   710→const adminWeekly: AssistantResponse = {
+   711→  answer:
+   712→    "**Résumé agrégé des ventes du tenant** sur les 7 derniers jours :\n\n" +
+   713→    "- **387 commandes** au total\n" +
+   714→    "- **15 240 €** de chiffre d'affaires brut\n" +
+   715→    "- Panier moyen : **39,38 €**\n\n" +
+   716→    "Le samedi reste le jour fort (162 commandes). Aucune clause `producer_id` appliquée.",
+   717→  sql:
+   718→    "SELECT date_trunc('day', o.created_at)         AS day,\n" +
+   719→    "       COUNT(DISTINCT o.id)                     AS orders,\n" +
+   720→    "       SUM(oi.quantity * oi.unit_price)         AS revenue\n" +
+   721→    "FROM orders o\n" +
+   722→    "JOIN order_items oi ON oi.order_id = o.id\n" +
+   723→    "WHERE o.status IN ('paid', 'fulfilled')\n" +
+   724→    "  AND o.created_at >= CURRENT_DATE - INTERVAL '7 days'\n" +
+   725→    "GROUP BY day\n" +
+   726→    "ORDER BY day ASC;",
+   727→  scopeClause: null,
+   728→  chart: {
+   729→    type: "line",
+   730→    title: "Ventes du tenant — 7 derniers jours",
+   731→    xKey: "day",
+   732→    series: [
+   733→      { key: "orders", label: "Commandes", color: "foreground" },
+   734→      { key: "revenue", label: "CA (€)", color: "accent" },
+   735→    ],
+   736→    data: [
+   737→      { day: "Lun", orders: 42, revenue: 1560 },
+   738→      { day: "Mar", orders: 55, revenue: 2120 },
+   739→      { day: "Mer", orders: 48, revenue: 1840 },
+   740→      { day: "Jeu", orders: 60, revenue: 2480 },
+   741→      { day: "Ven", orders: 88, revenue: 3640 },
+   742→      { day: "Sam", orders: 162, revenue: 6800 },
+   743→      { day: "Dim", orders: 32, revenue: 1240 },
+   744→    ],
+   745→  },
+   746→  tokensIn: 310,
+   747→  tokensOut: 405,
+   748→  latencyMs: 1780,
+   749→  toolCalls: ["sql_read_tool"],
+   750→  steps: okSteps([125, 42, 175, 58, 350, 215]),
+   751→  securityChecks: ADMIN_SECURITY,
+   752→  refused: false,
+   753→};
+   754→
+   755→// --- Refusal (producer asking an admin-only question) ---------------------
+   756→
+   757→function refusalResponse(producerId: number, producerNumber: string): AssistantResponse {
+   758→  return {
+   759→    answer:
+   760→      "En tant que producteur, vous ne pouvez voir que **vos propres données**.\n\n" +
+   761→      "Cette question demande une agrégation sur l'ensemble des producteurs du tenant Drive Producteur. " +
+   762→      `Votre scope actuel est limité à \`producer_id = ${producerId}\` (${producerNumber}).\n\n` +
+   763→      "Si vous avez besoin de cette information, contactez l'équipe Ops Drive Producteur qui dispose d'un accès admin.",
+   764→    sql: null,
+   765→    scopeClause: `WHERE p.producer_id = ${producerId}  -- injecté puis rejeté`,
+   766→    tokensIn: 268,
+   767→    tokensOut: 215,
+   768→    latencyMs: 940,
+   769→    toolCalls: [],
+   770→    steps: blockedSteps(),
+   771→    securityChecks: REFUSAL_SECURITY,
+   772→    refused: true,
+   773→  };
+   774→}
+   775→
+   776→// ---------------------------------------------------------------------------
+   777→// Map: `${identityId}:${questionId}` -> response
+   778→// ---------------------------------------------------------------------------
+   779→
+   780→const RESPONSES: ResponseMap = {
+   781→  "producer-42:top-products": p42TopProducts,
+   782→  "producer-42:stock-saturday": p42Stock,
+   783→  "producer-42:net-revenue-june": p42Revenue,
+   784→  "producer-42:weekly-summary": p42Weekly,
+   785→  "producer-42:top-producers": refusalResponse(42, "#42"),
+   786→
+   787→  "producer-99:top-products": p99TopProducts,
+   788→  "producer-99:stock-saturday": p99Stock,
+   789→  "producer-99:net-revenue-june": p99Revenue,
+   790→  "producer-99:weekly-summary": p99Weekly,
+   791→  "producer-99:top-producers": refusalResponse(99, "#99"),
+   792→
+   793→  "admin:top-products": adminTopProducts,
+   794→  "admin:stock-saturday": adminStock,
+   795→  "admin:net-revenue-june": adminRevenue,
+   796→  "admin:weekly-summary": adminWeekly,
+   797→  "admin:top-producers": adminTopProducers,
+   798→};
+   799→
+   800→// Fallback used for any free-form user question that does not match an
+   801→// example question id. We synthesise a believable scoped response so the
+   802→// prototype never breaks.
+   803→function fallbackResponse(identity: Identity): AssistantResponse {
+   804→  const isProducer = identity.kind === "producer";
+   805→  const scopeClause = isProducer
+   806→    ? `WHERE p.producer_id = ${identity.producerId}`
+   807→    : null;
+   808→
+   809→  const baseSql = isProducer
+   810→    ? "SELECT COUNT(DISTINCT o.id) AS orders,\n" +
+   811→      "       SUM(oi.quantity * oi.unit_price) AS revenue\n" +
+   812→      "FROM orders o\n" +
+   813→      "JOIN order_items oi ON oi.order_id = o.id\n" +
+   814→      "JOIN products    p  ON p.id = oi.product_id\n" +
+   815→      `${scopeClause}\n` +
+   816→      "  AND o.status IN ('paid', 'fulfilled')\n" +
+   817→      "  AND o.created_at >= CURRENT_DATE - INTERVAL '7 days';"
+   818→    : "SELECT COUNT(DISTINCT o.id) AS orders,\n" +
+   819→      "       SUM(oi.quantity * oi.unit_price) AS revenue\n" +
+   820→      "FROM orders o\n" +
+   821→      "JOIN order_items oi ON oi.order_id = o.id\n" +
+   822→      "WHERE o.status IN ('paid', 'fulfilled')\n" +
+   823→      "  AND o.created_at >= CURRENT_DATE - INTERVAL '7 days';";
+   824→
+   825→  const answer = isProducer
+   826→    ? `Voici une synthèse des 7 derniers jours pour **${identity.farmName}** (${identity.producerNumber}).\n\n` +
+   827→      `- **84 commandes** traitées\n` +
+   828→      `- **3 120 €** de chiffre d'affaires brut\n` +
+   829→      `- Panier moyen : **37,14 €**\n\n` +
+   830→      `Votre scope est limité à \`producer_id = ${identity.producerId}\` — les autres producteurs ne sont jamais visibles.`
+   831→    : "Synthèse des 7 derniers jours pour l'ensemble du tenant Drive Producteur :\n\n" +
+   832→      "- **387 commandes** traitées\n- **15 240 €** de chiffre d'affaires brut\n\n" +
+   833→      "Accès admin : aucune clause `producer_id` appliquée.";
+   834→
+   835→  return {
+   836→    answer,
+   837→    sql: baseSql,
+   838→    scopeClause,
+   839→    chart: {
+   840→      type: "bar",
+   841→      title: "Commandes par jour (7j)",
+   842→      xKey: "day",
+   843→      series: [{ key: "orders", label: "Commandes", color: "accent" }],
+   844→      data: [
+   845→        { day: "Lun", orders: isProducer ? 8 : 42 },
+   846→        { day: "Mar", orders: isProducer ? 12 : 55 },
+   847→        { day: "Mer", orders: isProducer ? 10 : 48 },
+   848→        { day: "Jeu", orders: isProducer ? 15 : 60 },
+   849→        { day: "Ven", orders: isProducer ? 22 : 88 },
+   850→        { day: "Sam", orders: isProducer ? 14 : 162 },
+   851→        { day: "Dim", orders: isProducer ? 3 : 32 },
+   852→      ],
+   853→    },
+   854→    tokensIn: 274,
+   855→    tokensOut: 330,
+   856→    latencyMs: 1540,
+   857→    toolCalls: ["sql_read_tool"],
+   858→    steps: okSteps(),
+   859→    securityChecks: isProducer ? PRODUCER_SECURITY : ADMIN_SECURITY,
+   860→    refused: false,
+   861→  };
+   862→}
+   863→
+   864→/**
+   865→ * Try to match a free-form user message to one of the example question ids,
+   866→ * otherwise fall back to a synthesised scoped response.
+   867→ */
+   868→export function getResponseForMessage(
+   869→  identity: Identity,
+   870→  message: string,
+   871→): AssistantResponse {
+   872→  const normalized = message.trim().toLowerCase();
+   873→  const match = EXAMPLE_QUESTIONS.find((q) =>
+   874→    normalized.includes(q.label.toLowerCase().slice(0, 25)),
+   875→  );
+   876→  if (match) {
+   877→    const key = `${identity.id}:${match.id}`;
+   878→    const r = RESPONSES[key];
+   879→    if (r) return r;
+   880→  }
+   881→  return fallbackResponse(identity);
+   882→}
+   883→
+   884→/** Direct lookup by example question id (used when clicking an example chip). */
+   885→export function getResponseForExample(
+   886→  identity: Identity,
+   887→  questionId: string,
+   888→): AssistantResponse {
+   889→  const key = `${identity.id}:${questionId}`;
+   890→  const r = RESPONSES[key];
+   891→  if (r) return r;
+   892→  return fallbackResponse(identity);
+   893→}
+   894→
+   895→// Pre-baked conversation history shown in the sidebar (purely cosmetic).
+   896→export const SEED_HISTORY: { id: string; title: string; preview: string; identityId: string; updatedAt: number }[] = [
+   897→  {
+   898→    id: "h-1",
+   899→    title: "Ventes du week-end",
+   900→    preview: "Résumé des ventes des 7 derniers jours…",
+   901→    identityId: "producer-42",
+   902→    updatedAt: Date.now() - 1000 * 60 * 12,
+   903→  },
+   904→  {
+   905→    id: "h-2",
+   906→    title: "Stock pour samedi",
+   907→    preview: "Produits en rupture prévue pour les retraits…",
+   908→    identityId: "producer-42",
+   909→    updatedAt: Date.now() - 1000 * 60 * 60 * 3,
+   910→  },
+   911→  {
+   912→    id: "h-3",
+   913→    title: "Top producteurs du mois",
+   914→    preview: "Classement cross-producteur (admin)…",
+   915→    identityId: "admin",
+   916→    updatedAt: Date.now() - 1000 * 60 * 60 * 26,
+   917→  },
+   918→];
+   919→

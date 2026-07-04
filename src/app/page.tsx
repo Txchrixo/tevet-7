@@ -8,7 +8,7 @@ import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Zap } from "@/components/ui/feather-icons";
 
-import { EXAMPLE_QUESTIONS } from "@/lib/mock-data";
+import { FALLBACK_QUESTIONS } from "@/lib/mock-data";
 import { useCopilotStore } from "@/lib/store";
 import { APP_NAME, APP_PHASE } from "@/lib/constants";
 
@@ -19,6 +19,7 @@ import { ChatMessage, TypingIndicator } from "@/components/producer-copilot/chat
 import { Footer } from "@/components/producer-copilot/footer";
 import { Header } from "@/components/producer-copilot/header";
 import { Inspector } from "@/components/producer-copilot/inspector";
+import { OnboardingWizard } from "@/components/producer-copilot/onboarding-wizard";
 import { Sidebar } from "@/components/producer-copilot/sidebar";
 import { BrandMark } from "@/components/producer-copilot/brand-mark";
 import { CreateWorkspace } from "@/components/producer-copilot/create-workspace";
@@ -28,6 +29,7 @@ export default function Home() {
   const authMode = useCopilotStore((s) => s.authMode);
   const bootstrap = useCopilotStore((s) => s.bootstrap);
   const tenants = useCopilotStore((s) => s.tenants);
+  const activeTenant = useCopilotStore((s) => s.activeTenant);
 
   // Validate the stored JWT (if any) on first mount. Sets `authMode` to
   // "authenticated" / "anonymous" / "demo" depending on the outcome.
@@ -37,22 +39,18 @@ export default function Home() {
 
   // While we're checking the stored JWT, render a minimal placeholder so the
   // AuthScreen doesn't flash before we know whether the user is logged in.
-  // The heptagon "breathes" (scale 0.8 → 1 → 0.8, infinite) — the only
-  // animation on this screen, kept minimal per the design system.
+  // Uses pure CSS animation (no framer-motion) for instant render — the
+  // loading state can be very brief (<100ms) and framer-motion's init delay
+  // sometimes means the loader never even appears before the page swaps.
   if (authMode === "loading") {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background">
-        <motion.div
-          initial={{ scale: 0.8, opacity: 0.85 }}
-          animate={{ scale: [0.8, 1, 0.8], opacity: [0.85, 1, 0.85] }}
-          transition={{
-            duration: 1.8,
-            repeat: Infinity,
-            ease: "easeInOut",
-          }}
+        <div
+          className="animate-pulse"
+          style={{ animationDuration: "1.5s" }}
         >
           <BrandMark size={48} />
-        </motion.div>
+        </div>
         <p className="mt-5 text-[11px] uppercase tracking-wide text-muted-foreground">
           {APP_NAME} · chargement
         </p>
@@ -68,6 +66,20 @@ export default function Home() {
   // Authenticated but no tenants → CreateWorkspace (onboarding gate).
   if (authMode === "authenticated" && tenants.length === 0) {
     return <CreateWorkspace />;
+  }
+
+  // Authenticated with tenants but not onboarded → Onboarding Wizard.
+  // The wizard handles connect-data → detect-schema → select-tables →
+  // define-roles → complete. After `completeOnboarding()` the active
+  // tenant's `onboarded` flag flips to true and the gate lets the user
+  // through to the chat surface.
+  if (
+    authMode === "authenticated" &&
+    tenants.length > 0 &&
+    activeTenant &&
+    !activeTenant.onboarded
+  ) {
+    return <OnboardingWizard tenantId={activeTenant.tenant_id} />;
   }
 
   // Admin / platform surfaces replace the chat layout entirely.
@@ -203,7 +215,7 @@ function CopilotHome() {
         rule: only one close affordance per surface).
       */}
       <Sheet open={sidebarSheet} onOpenChange={setSidebarSheet}>
-        <SheetContent side="left" className="w-[300px] gap-0 p-0">
+        <SheetContent side="left" className="w-[300px] gap-0 p-0" hideClose>
           <SheetTitle className="sr-only">Menu</SheetTitle>
           <Sidebar onNavigate={() => setSidebarSheet(false)} />
         </SheetContent>
@@ -285,7 +297,7 @@ function WelcomeState({
       </div>
 
       <div className="mt-7 grid gap-2 sm:grid-cols-2">
-        {EXAMPLE_QUESTIONS.map((q) => (
+        {FALLBACK_QUESTIONS.map((q) => (
           <button
             key={q.id}
             type="button"

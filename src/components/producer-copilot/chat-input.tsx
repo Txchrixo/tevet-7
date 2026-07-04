@@ -41,7 +41,7 @@ export function ChatInput() {
         disabled={!value.trim() || isStreaming}
         aria-label={isStreaming ? "Génération en cours" : "Envoyer"}
         className={cn(
-          "flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors",
+          "flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-foreground transition-colors",
           "hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-40",
         )}
       >

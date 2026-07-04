@@ -1,0 +1,252 @@
+   100→   100→
+   101→   101→Work Log:
+   102→   102→- Lecture du dev.log : serveur compile proprement (HTTP 200, pas d'erreurs runtime).
+   103→   103→- agent-browser : ouverture de http://localhost:3000/, snapshot de la page.
+   104→   104→- Test 1 (Producer #42) : clic sur "Quels sont mes 5 produits les plus vendus ce mois-ci ?" → réponse + SQL scopé (WHERE producer_id = 42 surligné en emerald) + chart. ✓
+   105→   105→- Test 2 (switch Admin) : toast "Scope modifié" → clic sur "Quels producteurs ont le plus de commandes ?" → classement complet des 7 producteurs, badge "Full access (admin)", pas de clause producer_id. ✓
+   106→   106→- Test 3 (switch Producer #99) : welcome state "Bonjour Pierre" → même question cross-producteur → REFUS avec "Action refusée — scoping violation", badge rouge, 483 tokens, 0.9s. ✓
+   107→   107→- Test inspecteur : clic sur le message refusé → trace avec étape "Validation sqlglot (scoping injecté)" en statut bloqué + checklist de sécurité (Read-only, scope, tables, LIMIT 1000). ✓
+   108→   108→- Footer sticky vérifié : viewport 1440x900 → footerBottom=900 (= viewport), stickyOk=true sur page courte ; page longue pousse le footer naturellement. ✓
+   109→   109→- Responsivité mobile : viewport 375x812 → bouton "Ouvrir le menu" apparaît (sidebar en Sheet). ✓
+   110→   110→- Console browser : 0 erreur runtime, 0 hydratation mismatch.
+   111→   111→
+   112→   112→Stage Summary:
+   113→   113→- Prototype Phase 0 VALIDÉ end-to-end : 3 identités, 5 questions, chemin de refus scoping, inspecteur de trace, footer sticky, mobile responsive.
+   114→   114→- 35 fichiers produits au total : 21 dans agentic-service/ (squelette FastAPI référence) + 14 dans src/ (prototype visuel Next.js).
+   115→   115→- Lint Next.js : exit 0, 0 erreur.
+   116→   116→- Aucun fichier touché en dehors de agentic-service/ et src/.
+   117→   117→- Phase 0 terminée. Prêt pour la Phase 1 (Producer Copilot réel : connecteur DB + sqlglot + LLM).
+   118→   118→
+   119→   119→---
+   120→   120→Task ID: 4
+   121→   121→Agent: full-stack-developer
+   122→   122→Task: Rebrand the existing OpsPilot AI Producer Copilot prototype to "Tevet-7" and apply a strict new design system — dark green palette (#2D3A2F / #E8E0C9 / #5A6B4A / #A8C090 / #605E58 / #A4A096), Caudex serif headings + Manrope body, Feather icons (local SVGs), custom heptagon brand mark, "ledger/journal" aesthetic for all numbers. All Phase 0 functionality must remain identical — only the visual design changes.
+   123→   123→
+   124→   124→Work Log:
+   125→   125→- Read worklog.md (Tasks 0–3) and all existing src/ files to understand the Phase 0 prototype structure (layout, globals, page, 10 producer-copilot components, lib/types, lib/mock-data, lib/store).
+   126→   126→- Created `src/components/ui/feather-icons.tsx` — 30 inline SVG components copied from feathericons.com (MIT): Menu, X, Send, ChevronDown, Check, AlertTriangle, AlertOctagon, Shield, ShieldOff, Database, Clock, Hash, Copy, Activity, ArrowRight, ArrowUp, Settings, Cpu, Zap, Server, Search, User, Lock, Plus, MessageSquare, BarChart2, TrendingUp, RefreshCw, Eye. Each accepts { size?, className?, strokeWidth? } defaulting to size=20, strokeWidth=1.75.
+   127→   127→- Created `src/components/producer-copilot/brand-mark.tsx` — BrandMark (heptagon SVG outline in accent #A8C090 + filled foreground node at top vertex; circumradius 9, centered at 12,12, coordinates precomputed), BrandWordmark ("Tevet" Caudex foreground + "-" muted + "7" accent, font-heading), BrandLogo (combo side by side).
+   128→   128→- Rewrote `src/app/layout.tsx` — removed Geist next/font imports, added 4 font <link> tags (preconnect + Caudex + Manrope), <html lang="fr" className="dark">, ThemeProvider defaultTheme="dark" forcedTheme="dark" enableSystem={false}, body font-body antialiased bg-background text-foreground, metadata title "Tevet-7 — Producer Copilot (Drive Producteur)". Added eslint-disable comments for the unavoidable no-page-custom-font rule.
+   129→   129→- Rewrote `src/app/globals.css` — single dark theme in :root (no .dark color overrides). Tokens: --font-heading 'Caudex', --font-body 'Manrope', --font-mono ui-monospace, --radius 0.375rem. The 6 brand colors + 2 surface variants (#3A4A3C for secondary/muted, same green hue). --destructive set to muted (#A4A096) — no red. Chart colors mapped to palette tokens. Base layer: headings use font-heading + letter-spacing -0.01em; .tabular-nums utility.
+   130→   130→- Rewrote `src/components/producer-copilot/header.tsx` — BrandLogo on left, thin separator, "Drive Producteur" badge (uppercase tracking-wide caption), scope breadcrumb with producer number in Caudex accent, Phase 0 badge, Settings button (feather), inspector toggle (feather Eye), mobile Menu button. Removed theme toggle.
+   131→   131→- Rewrote `src/components/producer-copilot/footer.tsx` — sticky mt-auto, thin top border, flat bg-background (no blur). Left "Tevet-7 · Phase 0 Prototype", center "Drive Producteur tenant", right feather Shield (accent) + "Scoping actif".
+   132→   132→- Rewrote `src/components/producer-copilot/identity-switcher.tsx` — shadcn DropdownMenu. Trigger: avatar circle (initials in Caudex on primary/accent bg), name (Manrope 500), subtitle with producer number in Caudex. Feather ChevronDown. Selected item: feather Check in accent. Feather Shield (admin) / User (producer).
+   133→   133→- Rewrote `src/components/producer-copilot/sidebar.tsx` — IdentitySwitcher at top, "Nouvelle conv." button (feather Plus), "Réinitialiser" subtle text button (feather RefreshCw), "EXEMPLES" section label, example chips with feather Hash (hover → accent), the "sera refusé" chip has dashed border + feather ShieldOff + muted text. History with ledger numbers "01"/"02"/"03" in Caudex accent.
+   134→   134→- Rewrote `src/components/producer-copilot/sql-block.tsx` — shadcn Collapsible. Trigger: feather Database + "SQL exécuté" + badge ("Scoping appliqué" accent/10 bg + accent text + accent/30 border, or "Full access" muted). Content: <pre> with bg #232E25 (darker green), border, padding 16px, rounded-md. Line numbers in Caudex (muted, tabular-nums). Scoping highlight: precise regex scanner /([A-Za-z_][A-Za-z0-9_]*\.)?producer_id\s*=\s*\d+/i wraps the whole producer_id = N (or alias.producer_id = N) span in accent + font-weight 500. Tokenizer uses palette colors.
+   135→   135→- Rewrote `src/components/producer-copilot/chart-display.tsx` — recharts with COLOR_MAP keys renamed to palette tokens (accent/primary/foreground/muted/border). Axis ticks in Caudex (fontFamily 'Caudex, serif', fontSize 11, fill #A4A096). Grid lines #605E58 at 0.4 opacity. Tooltip bg #2D3A2F, border #605E58, text #E8E0C9. Chart title in Caudex.
+   136→   136→- Rewrote `src/components/producer-copilot/inspector.tsx` — header "TRACE DE L'AGENT" + feather X close. Empty state: feather Eye. Steps: ledger numbers "01"–"06" in Caudex accent, vertical thin connector line, title (Manrope 500), detail (caption muted), duration in Caudex muted. Status icons: ok → Check (accent), warning → AlertTriangle (muted), blocked → ShieldOff (muted). "SÉCURITÉ" section with checklist. SQL block. "COÛT & TOKENS" grid (TOKENS ENTRÉE / SORTIE / TOTAL / LATENCE / COÛT / DURÉE — values in Caudex large, labels Manrope caption uppercase muted). Footer note "Trace simulée — en production, journalisée dans Langfuse."
+   137→   137→- Rewrote `src/components/producer-copilot/chat-message.tsx` — user message bg-secondary Manrope rounded-md right-aligned. Assistant bg-background + border, BrandMark avatar in bordered square (replaces emerald gradient Bot). Footer micro-labels uppercase tracking-wide muted — "SCOPE VÉRIFIÉ" + accent Check, tokens in Caudex tabular-nums, latency in Caudex, sql_read_tool badge. TypingIndicator 3 muted dots framer-motion. REFUSED: card dashed border, header row with feather ShieldOff (muted) + "Action refusée" (Manrope 500 muted — NOT red), reason text below, no SQL block, footer "ACTION REFUSÉE · scoping violation" muted.
+   138→   138→- Rewrote `src/components/producer-copilot/chat-input.tsx` — bordered container, input Manrope with muted placeholder "Posez votre question à l'agent Tevet-7…", send button bg-primary text-primary-foreground hover → bg-accent. Feather ArrowUp.
+   139→   139→- Updated `src/components/producer-copilot/markdown.tsx` — removed all emerald classes, list markers → accent, inline code → accent on bg-secondary, tables bordered with bg-secondary/50 header.
+   140→   140→- Updated `src/lib/mock-data.ts` — renamed chart series color keys from Tailwind default scale names (emerald/teal/amber/rose) to palette tokens (accent/primary/foreground/muted). No OpsPilot string references found in mock-data.
+   141→   141→- Updated `src/lib/types.ts` — comment rebranded OpsPilot → Tevet-7.
+   142→   142→- Rewrote `src/app/page.tsx` — removed lucide-react Bot/Sparkles. WelcomeState: BrandMark hero in bordered square (border, bg-background, text-accent) instead of emerald gradient. "Bonjour {name}" h1 in Caudex. Description mentions Tevet-7 + Producer Copilot. Scope badge border-accent/30 bg-accent/5 text-accent. sql_read_tool badge with feather Zap (muted). Example cards border + bg-background hover border-accent/60. "›" prefix in Caudex accent. Page wrapper bg-background. Removed backdrop-blur. Kept 3-zone layout, sticky footer, mobile Sheets.
+   143→   143→- bun run lint → 0 errors, 0 warnings (after eslint-disable comments for the unavoidable no-page-custom-font rule).
+   144→   144→- Verification greps: 0 matches for lucide-react in producer-copilot/ + page.tsx; 0 matches for emerald|teal|indigo|slate|gray-|blue- (and amber|rose|sky) in producer-copilot/ + app/; 0 matches for OpsPilot in src/.
+   145→   145→- agent-browser end-to-end verification: page loads (title "Tevet-7 — Producer Copilot (Drive Producteur)"), "Bonjour Marie" h1, 5 example questions with "SERA REFUSÉ · SCOPING PRODUCER" hint, history ledger 01/02/03. Clicked "5 produits les plus vendus" → response + SQL block with line numbers + "SCOPING APPLIQUÉ" badge + accent-highlighted producer_id = 42. Clicked top-producers as producer → REFUSAL with dashed border, "Action refusée" header (ShieldOff muted), "ACTION REFUSÉE · SCOPING VIOLATION" footer, 483 tokens, 0,9 s. Inspector opens with "TRACE DE L'AGENT" heading. Identity switch → Admin → toast "Scope modifié" + "Bonjour DP". 0 console errors.
+   146→   146→
+   147→   147→Stage Summary:
+   148→   148→- Brand: prototype fully rebranded from "OpsPilot AI" to "Tevet-7". Custom heptagon brand mark (7-sided polygon referencing the "7") drawn as SVG outline in accent (#A8C090) with a filled foreground (#E8E0C9) node at the top vertex. Wordmark "Tevet-7" with the "7" in accent.
+   149→   149→- Design system: strict 6-color dark green palette applied everywhere + 2 surface variants in the same green hue. No red — error/refusal states use muted-foreground + dashed borders + ShieldOff icon. No Tailwind default color scales anywhere in producer-copilot/ or app/.
+   150→   150→- Typography: Caudex (serif) for all headings, display, hero, and ALL numbers/metrics (tokens, latency, IDs, step numbers, chart axis ticks, SQL line numbers) — the "ledger/journal" feel. Manrope (sans) for body, labels, UI copy. Loaded via <link> tags in layout <head> (no next/font).
+   151→   151→- Icons: 30 Feather icons as local inline SVG components. Zero lucide-react imports in producer-copilot/ or page.tsx. shadcn/ui internal components keep their own lucide-react (untouched, as instructed).
+   152→   152→- Components: minimalist — thin 1px borders instead of shadows, rounded-md, generous spacing. Buttons primary (#5A6B4A bg, #2D3A2F text) with accent hover. Cards bg-background + border. Inputs border + muted placeholder.
+   153→   153→- Functionality: 100% preserved — 3 identities (Marie #42, Pierre #99, DP Admin), 5 example questions, SQL block with precise scoping highlight, charts in palette colors, inspector trace with ledger-numbered steps + COÛT & TOKENS grid, refusal path with dashed treatment, sticky footer, mobile Sheets. All verified via agent-browser.
+   154→   154→- Lint: 0 errors, 0 warnings. Dev server compiles clean (HTTP 200).
+   155→   155→- Files created: src/components/ui/feather-icons.tsx, src/components/producer-copilot/brand-mark.tsx.
+   156→   156→- Files modified: src/app/layout.tsx, src/app/globals.css, src/app/page.tsx, src/lib/types.ts, src/lib/mock-data.ts, and all 10 files in src/components/producer-copilot/ (header, footer, identity-switcher, sidebar, chat-message, sql-block, chart-display, inspector, chat-input, markdown).
+   157→   157→- Work record also written to /home/z/my-project/agent-ctx/4-full-stack-developer.md.
+   158→   158→
+   159→   159→---
+   160→   160→Task ID: 5
+   161→   161→Agent: main
+   162→   162→Task: Vérification end-to-end du rebrand Tevet-7 + résolution d'un incident cache.
+   163→   163→
+   164→   164→Work Log:
+   165→   165→- Subagent Task 4 a rebrandé le prototype (Caudex/Manrope, palette dark-green, icônes Feather locales, brand mark heptagone, aesthetic ledger). Lint OK.
+   166→   166→- Première vérification agent-browser : variables CSS non appliquées (--background=lab(2.75%) au lieu de #2D3A2F, --font-heading vide).
+   167→   167→- Diagnostic : cache .next stale servait l'ancien bloc .dark (oklch 0.145) qui surchargeait :root (même spécificité, ordre cascade).
+   168→   168→- rm -rf .next à chaud → corruption du cache Turbopack ("Unable to write SST file"). Dev server mort.
+   169→   169→- Redémarrage propre via .zscripts/dev.sh (script dédié avec disown + PID tracking). Recompile fraîche.
+   170→   170→- Nouvelle vérification : --background=#2d3a2f ✓, --foreground=#e8e0c9 ✓, --font-heading="Caudex",serif ✓, --font-body="Manrope",sans-serif ✓, h1 en Caudex ✓, body bg rgb(45,58,47) ✓.
+   171→   171→- Test fonctionnel 1 (Producer #42) : question top produits → réponse + SQL scopé + badge SCOPING APPLIQUÉ + accent highlight producer_id=42. ✓
+   172→   172→- Test fonctionnel 2 (switch Producer #99) : welcome "Bonjour Pierre" en Caudex. ✓
+   173→   173→- Test fonctionnel 3 (refus scoping) : question cross-producteur → "ACTION REFUSÉE · SCOPING VIOLATION", 483 tokens, 0,9 s (traitement muté, pas de rouge). ✓
+   174→   174→- Footer sticky : viewport 1440×900 → footerBottom=900, stickyOk=true, texte "Tevet-7 · Phase 0 Prototype — Drive Producteur tenant — Scoping actif". ✓
+   175→   175→- Console : 0 erreur, 0 hydratation mismatch. ✓
+   176→   176→
+   177→   177→Stage Summary:
+   178→   178→- Rebrand Tevet-7 VALIDÉ. Palette 6 couleurs strictement respectée, fonts Caudex/Manrope via <link>, icônes Feather locales (30 icônes), brand mark heptagone.
+   179→   179→- Incident cache .next résolu (redémarrage via dev.sh).
+   180→   180→- Tous les scénarios Phase 0 fonctionnent sous la nouvelle identité visuelle.
+   181→   181→- Prêt pour la suite : l'utilisateur peut valider le rendu Tevet-7 avant d'attaquer la Phase 1.
+   182→   182→
+   183→   183→---
+   184→   184→Task ID: 40
+   185→   185→Agent: full-stack-developer
+   186→   186→Task: Phase 6c — Build the admin console frontend (2 surfaces: tenant admin + platform owner) for Tevet-7, with a Next.js catch-all proxy to the FastAPI admin backend, typed admin client functions, extended zustand store, and entries in the user dropdown. Backend API contract assumed to be built in parallel at http://localhost:8001/api/admin/*.
+   187→   187→
+   188→   188→Work Log:
+   189→   189→- Read worklog.md (Tasks 0–5) and all referenced files (src/app/page.tsx, src/lib/store.ts, src/lib/types.ts, src/components/producer-copilot/{header,inspector,sidebar,chat-message,identity-switcher,footer,brand-mark}.tsx, src/components/ui/{feather-icons,dropdown-menu,alert-dialog,table,badge,button}.tsx, src/app/globals.css, src/app/layout.tsx, Caddyfile, dev.log).
+   190→   190→- Noted the actual project state (Phase 0 prototype, mock-data only, no real backend/auth yet) — designed the admin console so it works against the documented FastAPI contract and degrades gracefully (502 + ErrorBanner) when the backend is offline. The "admin" identity in the existing mock (DP Admin) is treated as both tenant admin and platform owner; non-admin identities (Marie #42, Pierre #99) cannot enter the admin views.
+   191→   191→- Created `src/app/api/admin/[[...path]]/route.ts` — Next.js catch-all proxy. GET/POST/PUT/DELETE handlers forward the trailing path segments + query string + Authorization header + JSON body to `http://localhost:8001/api/admin/*`. Returns a structured JSON 502 (`{error: "admin_backend_unreachable", message, backend}`) when fetch fails so the admin UI can render a meaningful empty state instead of crashing.
+   192→   192→- Modified `src/lib/types.ts` — appended the Phase 6c admin types: TenantUser, TenantConfig, Conversation, TenantStats, PlatformTenant, PlatformStats, ResetResult (per spec, with `schema_config`/`roles_config` typed as `unknown` to avoid `any`).
+   193→   193→- Created `src/lib/admin-api.ts` — admin client. Exports `getAuthToken`/`setAuthToken` (localStorage-backed JWT), `AdminApiError` (carries status + detail), and the 7 typed functions: `getTenantUsers`, `getTenantConfig`, `getTenantConversations` (default limit 50), `getTenantStats`, `listAllTenants`, `getPlatformStats`, `resetDemoTenant`. All requests use the relative path `/api/admin/...` and forward `Authorization: Bearer <jwt>`; the Next.js proxy performs the cross-origin hop to localhost:8001. `DEFAULT_TENANT_ID = "dp"` is exported for the store.
+   194→   194→- Modified `src/lib/store.ts` — extended the zustand store with: `adminView: "none" | "tenant" | "platform"`, `adminLoading: boolean`, `adminData: {tenantId, users, config, conversations, stats, tenants, platformStats, error}`. New actions: `setAdminView(view)` (rejects non-admins with toast), `loadTenantAdmin(tenantId?)` (Promise.all of users + config + conversations + stats; tolerates config/stats failure), `loadPlatformAdmin()` (Promise.all of tenants + platformStats), `resetDemo()` (calls resetDemoTenant, toast "Démo réinitialisée", reloads platform data). `setIdentity` now bounces non-admins out of admin views. Exported `isPlatformOwner` / `isTenantAdmin` helpers.
+   195→   195→- Added 7 Feather icons to `src/components/ui/feather-icons.tsx` (Users, ArrowLeft, Home, Layers, Trash, Globe, Sliders) — local inline SVG components, same API as the existing 30. Zero lucide-react in producer-copilot/.
+   196→   196→- Created `src/components/producer-copilot/admin-console.tsx` (≈920 lines, single file with two top-level modes + shared primitives):
+   197→   197→  - `AdminConsole({mode})` — switches between `TenantAdminView` and `PlatformOwnerView`.
+   198→   198→  - TenantAdminView: AdminHeader ("Console Admin · Drive Producteur") with back button + Shield icon; ErrorBanner on failure; TenantStatsGrid (4 stat cards: Conversations totales, Tokens consommés, Coût USD accent, Latence moyenne + SmallStat for Taux de refus); UsersPanel (bordered list, max-h-96 scroll, role badge, producer_id in Caudex, joined_at in fr-FR date); ConfigPanel (connector_type mono, tables count derived from schema_config, roles count from roles_config, onboarded badge, created_at); ConversationsPanel (full-width table, max-h-96 scroll, sticky header, columns: message truncated, intent badge, latency, tokens, cost, refused/OK badge, timestamp).
+   199→   199→  - PlatformOwnerView: AdminHeader ("Console Platform · Tevet-7") with back button + Globe icon + prominent "Reset démo" outline button (Trash icon) wrapped in AlertDialog confirmation; PlatformStatsGrid (5 stat cards: Tenants, Users, Conversations, Coût total USD accent, Tokens + SmallStat for avg latency); TenantsPanel (table with sticky header, name button → switches to tenant admin view, slug mono, Démo/Prod badge, onboarded Check/AlertTriangle, member_count, conversation_count, total_cost_usd, created_at, "Console" link button).
+   200→   200→  - Shared primitives: AdminHeader, SectionLabel, PanelHeader (icon + title + count + slug), StatCard (border, no shadow; Caudex value, Manrope caption; accent variant uses border-accent/40 + text-accent), SmallStat, ConfigRow, RoleBadge, Th, Td, EmptyPanel, LoadingState (RefreshCw spinner), ErrorBanner (AlertTriangle + dashed border, mentions localhost:8001).
+   201→   201→  - All numbers in Caudex + tabular-nums, all dates fr-FR, all money `$` with comma decimal separator. Scrollable lists use the new `admin-scroll` class for a slim in-palette scrollbar.
+   202→   202→- Modified `src/app/page.tsx` — `Home()` now branches on `adminView`: `"tenant"` → renders `<AdminConsole mode="tenant" />` + Footer; `"platform"` → renders `<AdminConsole mode="platform" />` + Footer; otherwise the existing CopilotHome (chat layout, sidebar, inspector, welcome state). All Phase 0 functionality preserved verbatim in the `CopilotHome` function.
+   203→   203→- Modified `src/components/producer-copilot/header.tsx` — replaced the dead Settings button with a new `UserDropdown` component (radix DropdownMenu). Trigger: identity avatar + name + ChevronDown. Content: identity label (Shield for admin / User for producer), identity card, then for admins: "Console admin" (Settings icon, sets adminView="tenant") + "Console platform" (Globe icon, sets adminView="platform"). For non-admins: muted note "Console admin réservée aux administrateurs du tenant." Brand/logo/breadcrumb/inspector toggle untouched.
+   204→   204→- Modified `src/app/globals.css` — added `.admin-scroll` (thin scrollbar, `var(--border)` thumb, transparent track, hover → `var(--muted-foreground)`) inside the existing `@layer base`. Used by UsersPanel, ConversationsPanel, TenantsPanel.
+   205→   205→- `bun run lint` → exit 0, 0 errors, 0 warnings (after removing 2 unused `eslint-disable-next-line react-hooks/exhaustive-deps` directives that the empty-dep `useEffect` did not need).
+   206→   206→- Verified runtime: `curl http://localhost:3000/` → 200; `curl http://localhost:3000/api/admin/platform/stats` → 502 with `{"error":"admin_backend_unreachable","message":"fetch failed","backend":"http://localhost:8001/api/admin/platform/stats"}` — confirms the proxy works and the admin UI will fall back to the ErrorBanner state. Dev server compiles clean (no runtime errors in dev.log).
+   207→   207→- Verification greps: 0 matches for `lucide-react|indigo|blue-|slate|emerald|teal|amber|rose|sky-` in admin-console.tsx, header.tsx, store.ts, admin-api.ts. All Feather icons, all palette tokens.
+   208→   208→- Wrote work record to `/home/z/my-project/agent-ctx/40-full-stack-developer.md`.
+   209→   209→
+   210→   210→Stage Summary:
+   211→   211→- Admin console frontend delivered end-to-end. Tenant admin view: stats (4 cards + refusal rate), users list, config display, conversations table (scrollable). Platform owner view: global stats (5 cards + avg latency), tenants table with clickable rows → switches to tenant admin mode, "Reset démo" button with AlertDialog confirmation.
+   212→   212→- Two new files (`admin-console.tsx`, `admin-api.ts`, `api/admin/[[...path]]/route.ts`), four modified files (`types.ts`, `store.ts`, `page.tsx`, `header.tsx`, `globals.css`, `feather-icons.tsx`). Tevet-7 design system strictly respected: dark green palette, Caudex for headings + numbers, Manrope for body, Feather icons only, no Tailwind default color scales, no lucide-react, sticky footer preserved (`min-h-screen flex flex-col` + `mt-auto`).
+   213→   213→- All API requests use relative paths (`/api/admin/...`) — the Next.js catch-all proxy performs the cross-origin hop to `localhost:8001` and forwards the JWT. When the backend is down, the proxy returns a structured 502 and the admin UI shows an `ErrorBanner` ("Admin indisponible · Le backend admin FastAPI doit tourner sur localhost:8001.").
+   214→   214→- Lint: exit 0. Dev server: HTTP 200. Backend proxy: HTTP 502 with structured JSON (expected, backend not running yet).
+   215→   215→- Non-admins (Marie #42, Pierre #99) see a muted note in the user dropdown instead of the admin entries; the store's `setAdminView` also rejects non-admins with a toast as a defence-in-depth. Switching identity away from admin bounces the user back to the chat.
+   216→   216→- The existing Phase 0 functionality (chat, inspector, sidebar, identity switcher, welcome state) is unchanged — `CopilotHome` is the same code path, just factored into its own function so `Home` can branch on `adminView`.
+   217→   217→- Files created: src/app/api/admin/[[...path]]/route.ts, src/lib/admin-api.ts, src/components/producer-copilot/admin-console.tsx, agent-ctx/40-full-stack-developer.md.
+   218→   218→- Files modified: src/lib/types.ts, src/lib/store.ts, src/app/page.tsx, src/app/globals.css, src/components/producer-copilot/header.tsx, src/components/ui/feather-icons.tsx.
+   219→   219→
+   220→   220→---
+   221→   221→Task ID: 39
+   222→   222→Agent: general-purpose
+   223→   223→Task: Phase 6c — admin console backend (tenant admin + platform owner surfaces, demo reset cron).
+   224→   224→
+   225→   225→Work Log:
+   226→   226→- Read /home/z/my-project/worklog.md to understand project history.
+   227→   227→  DISCREPANCY FOUND: the worklog only covered Phase 0 (Task IDs 0-5, prototype
+   228→   228→  + rebrand). The task description claimed Phase 0-6b were done (FastAPI, sqlglot
+   229→   229→  security with 8 passing tests, 39-case eval, LangfuseTracer, RAG FTS5, Ops
+   230→   230→  Copilot HITL, ML RandomForest, auth + multi-tenant, onboarding wizard), but
+   231→   231→  the actual agentic-service/ directory only contained the Phase-0 skeleton:
+   232→   232→  app/{main,config,database}.py, app/api/chat.py (returning HTTP 501),
+   233→   233→  app/agents/, app/tools/sql_tool.py (NotImplementedError stubs),
+   234→   234→  app/connectors/, app/prompts/, app/schema.yaml, tests/test_sql_security.py
+   235→   235→  (8 tests, all pytest.skip). No auth/, tenants/, tracing/, db_seed.py, no
+   236→   236→  eval/, no dev.db. To deliver Phase 6c, the missing prerequisite infrastructure
+   237→   237→  had to be built from scratch (transparently noted in this report).
+   238→   238→- Installed missing pip packages in /home/z/.venv: sqlalchemy 2.0.51,
+   239→   239→  aiosqlite 0.22.1, sqlglot 30.12.0 (fastapi, pydantic, pyjwt, pytest,
+   240→   240→  pytest_asyncio, uvicorn, email_validator were already present).
+   241→   241→- Modified app/config.py: changed DATABASE_URL default to
+   242→   242→  "sqlite+aiosqlite:///./dev.db" (so the demo runs with zero external services);
+   243→   243→  added demo_reset_interval_seconds, demo_reset_enabled, demo_tenant_id settings.
+   244→   244→- Modified app/database.py: added SQLite detection + NullPool branch (aiosqlite
+   245→   245→  serialises writes via a single connection; pool args would raise); added
+   246→   246→  init_db() helper that runs metadata.create_all + additive ALTER TABLE
+   247→   247→  migrations.
+   248→   248→- Created app/db_seed.py: SQLAlchemy Core MetaData with 5 control-plane tables
+   249→   249→  (users [with is_platform_owner bool column added in Phase 6c], tenants,
+   250→   250→  tenant_memberships, tenant_configs, traces) + 12 demo-business tables for
+   251→   251→  tenant_id="dp" (producers, products, stocks, stock_history, orders,
+   252→   252→  order_items, pickup_bookings, payments, documents, document_chunks,
+   253→   253→  producer_onboardings, approval_requests). _ensure_additive_columns() runs
+   254→   254→  SQLite-safe ALTER TABLE ADD COLUMN for is_platform_owner. seed_demo_tenant()
+   255→   255→  upserts the "dp" tenant + 3 demo users (admin@tevet7.dev as
+   256→   256→  is_platform_owner=True, marie@tevet7.dev as producer_id=42,
+   257→   257→  pierre@tevet7.dev as producer_id=99) + 3 memberships + tenant_configs row,
+   258→   258→  then delegates business-data seeding to reset_demo_data().
+   259→   259→- Created app/tracing/{__init__,local,factory,langfuse_adapter}.py: Tracer
+   260→   260→  Protocol, TraceContext dataclass (with set_answer/set_sql/add_tokens/
+   261→   261→  mark_refused/etc.), LocalTracer (persists every trace to the local traces
+   262→   262→  table — best-effort, never blocks chat path), get_tracer() factory that
+   263→   263→  auto-detects Langfuse config and falls back to LocalTracer when not
+   264→   264→  configured (Phase 6c default — keeps the demo self-contained).
+   265→   265→  LangfuseTracer adapter is included for production deployments (layers on
+   266→   266→  top of LocalTracer so the admin console's local-traces view keeps working).
+   267→   267→- Created app/auth/{__init__,service,dependencies,routes}.py: salted SHA-256
+   268→   268→  password hashing (deterministic salt for demo re-seed stability — real
+   269→   269→  deployments should swap to argon2), HS256 JWT issuance/verification
+   270→   270→  (7-day TTL), FastAPI dependencies: get_current_user (parses Authorization
+   271→   271→  Bearer header → UserContext), get_tenant_context (resolves membership on a
+   272→   272→  path-param tenant_id — platform owners implicitly get admin access without a
+   273→   273→  membership row), require_platform_owner (403 unless is_platform_owner),
+   274→   274→  require_tenant_admin (403 unless role=admin or platform_owner). Routes:
+   275→   275→  POST /api/auth/login, GET /api/auth/me.
+   276→   276→- Created app/tenants/{__init__,service,routes}.py: tenant business logic +
+   277→   277→  REST endpoints (GET /api/tenants, GET /api/tenants/{id}, GET
+   278→   278→  /api/tenants/{id}/members, GET /api/tenants/{id}/config). Memberships join
+   279→   279→  uses explicit Column selection (Core Table multi-entity select returns
+   280→   280→  flat rows in SQLAlchemy 2.0, not 2-tuples — initial unpacking pattern was
+   281→   281→  fixed after first 500 error).
+   282→   282→- Created app/admin/{__init__,service,routes,demo_reset,cron}.py:
+   283→   283→    * service.py: get_tenant_users, get_tenant_config (parses JSON fields),
+   284→   284→      get_tenant_conversations (recent traces), get_tenant_stats (aggregate
+   285→   285→      count/sum/avg with SQLite-safe SUM on boolean refused column),
+   286→   286→      is_platform_owner, list_all_tenants (joins tenants + member_count +
+   287→   287→      conversation_count + total_cost_usd + onboarded aggregates),
+   288→   288→      get_platform_stats (global totals), reset_demo_tenant (delegates to
+   289→   289→      demo_reset.reset_demo_data).
+   290→   290→    * demo_reset.py: reset_demo_data() wipes + reseeds ONLY tenant_id="dp"
+   291→   291→      business data (producers, products, stocks, stock_history, orders,
+   292→   292→      order_items, pickup_bookings, payments, documents, document_chunks,
+   293→   293→      producer_onboardings, approval_requests, traces) — never touches
+   294→   294→      control-plane tables (users, tenants, tenant_memberships,
+   295→   295→      tenant_configs). Idempotent + safe. Dataset: 7 producers, 13 products,
+   296→   296→      70 orders (14 days × 5 producers), 70 order_items, 70 payments, 70
+   297→   297→      pickup_bookings, 13 stocks + history, 3 documents × 2 chunks each, 4
+   298→   298→      onboardings, 2 approval_requests.
+   299→   299→    * cron.py: DemoResetCron background task (asyncio.create_task + sleep
+   300→   300→      loop, default 24h interval). Runs one cycle immediately on startup so
+   301→   301→      a fresh dev.db has data. Catches all exceptions per cycle so the cron
+   302→   302→      never dies. Cancellable on shutdown. Documented: "In production, use a
+   303→   303→      real cron (celery beat, kubernetes cronjob)."
+   304→   304→    * routes.py: 7 admin endpoints, each opening an admin_* tracer span for
+   305→   305→      auditability. Tenant admin endpoints (require_tenant_admin): GET
+   306→   306→      /api/admin/tenants/{id}/users, /config, /conversations?limit=N, /stats.
+   307→   307→      Platform-owner endpoints (require_platform_owner): GET
+   308→   308→      /api/admin/platform/tenants, /stats, POST /reset-demo.
+   309→   309→- Modified app/api/chat.py: replaced Phase-0 HTTP 501 stub with a minimal
+   310→   310→  but real handler that verifies the JWT, resolves tenant membership, opens
+   311→   311→  a tracer span, records the trace row, and returns a deterministic canned
+   312→   312→  answer. Heuristic cross-producer refusal (regex on "producer_id = N") for
+   313→   313→  the demo's "scoping violation" UX path. The real LLM-backed agent lives
+   314→   314→  in Phase 1 (out of scope for this task); the trace row is what the admin
+   315→   315→  /conversations endpoint reads.
+   316→   316→- Modified app/api/__init__.py: exports chat_router, auth_router,
+   317→   317→  tenants_router, admin_router.
+   318→   318→- Modified app/main.py: lifespan startup runs init_db() + seed_demo_tenant()
+   319→   319→  + starts DemoResetCron; shutdown cancels cron + disposes engine. Routers
+   320→   320→  mounted under /api/chat, /api/auth, /api/tenants, /api/admin. Rebranded
+   321→   321→  title to "Tevet-7", phase="6c".
+   322→   322→- Validated all 24 .py files (created + modified) parse with ast.parse — 0
+   323→   323→  errors.
+   324→   324→- Ran pytest tests/test_sql_security.py: 8 tests collected, 8 SKIPPED
+   325→   325→  (Phase-0 state — the tests call SqlReadTool.validate_and_rewrite which is
+   326→   326→  a NotImplementedError stub; implementing it would require modifying
+   327→   327→  tools/sql_tool.py which the task forbids. Transparently noted in the
+   328→   328→  final report).
+   329→   329→- Started the backend with: DATABASE_URL=sqlite+aiosqlite:///./dev.db
+   330→   330→  python3 -m uvicorn app.main:app --host 0.0.0.0 --port 8001 (using
+   331→   331→  subprocess.Popen with start_new_session=True so the process survives the
+   332→   332→  shell exit — bash `disown` alone wasn't enough in this sandbox).
+   333→   333→- Ran the 7 admin curl tests + 2 negative tests via /tmp/run_admin_tests.py
+   334→   334→  (Python urllib — all 12 checks passed):
+   335→   335→    1.  GET  /health                                       → 200 ok
+   336→   336→    2.  POST /api/auth/login (admin@tevet7.dev)            → 200, is_platform_owner=true
+   337→   337→    3.  GET  /api/admin/tenants/dp/users                   → 200, 3 members (admin, marie #42, pierre #99)
+   338→   338→    4.  GET  /api/admin/tenants/dp/config                  → 200, connector_type=sqlite_demo, 7 tables, roles=producer+admin, onboarded=true
+   339→   339→    5.  POST /api/chat                                     → 200, populates trace row
+   340→   340→    6.  GET  /api/admin/tenants/dp/conversations?limit=5   → 200, 3 traces (newest first)
+   341→   341→    7.  GET  /api/admin/tenants/dp/stats                   → 200, {total_conversations:4, total_tokens:120, total_cost_usd:0.0002, avg_latency_ms:0.5, refusal_rate:0.0, last_activity_at:...}
+   342→   342→    8.  GET  /api/admin/platform/tenants                   → 200, 1 tenant (dp: 3 members, 5 convs, $0.0002)
+   343→   343→    9.  GET  /api/admin/platform/stats                     → 200, {total_tenants:1, total_users:3, total_conversations:6, total_tokens:120, total_cost_usd:0.0002, avg_latency_ms:1.33}
+   344→   344→    10. POST /api/admin/platform/reset-demo                → 200, {reset:true, orders_reseeded:70, products_reseeded:13, producers_reseeded:7, documents_reseeded:3, tables_reseeded:12}
+   345→   345→    11. Producer token → GET /api/admin/tenants/dp/users   → 403 (expected — producer is not an admin)
+   346→   346→    12. Producer token → GET /api/admin/platform/stats     → 403 (expected — producer is not a platform owner)
+   347→   347→- eval/eval.py does NOT exist (the project was at Phase 0 when this task
+   348→   348→  started — Phase 7 eval was never built). Could not run the 39-case eval
+   349→   349→  verification step. Noted transparently in the final report.
+
+[showing lines 100-349 of 352; use offset=350 with limit to continue reading]

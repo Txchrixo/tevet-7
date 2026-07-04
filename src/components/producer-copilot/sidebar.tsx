@@ -14,7 +14,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { EXAMPLE_QUESTIONS, IDENTITIES } from "@/lib/mock-data";
 import { useCopilotStore } from "@/lib/store";
 import type { TenantMembership } from "@/lib/types";
 import {
@@ -25,7 +24,7 @@ import {
   Plus,
   RefreshCw,
   ShieldOff,
-  Users,
+  X,
 } from "@/components/ui/feather-icons";
 
 import { IdentitySwitcher } from "./identity-switcher";
@@ -45,30 +44,50 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const tenants = useCopilotStore((s) => s.tenants);
   const activeTenant = useCopilotStore((s) => s.activeTenant);
   const switchTenant = useCopilotStore((s) => s.switchTenant);
+  // Phase 6d — example questions are now dynamic, fetched per-tenant from
+  // `/api/tenants/{id}/example-questions` (see `loadExampleQuestions` in
+  // the store). The store initialises this to the hardcoded
+  // `FALLBACK_QUESTIONS` so the sidebar always has something to render
+  // before the first fetch resolves AND when the fetch fails / the
+  // tenant is in demo mode.
+  const exampleQuestions = useCopilotStore((s) => s.exampleQuestions);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/*
-       * Identity / tenant panel — fixed at the top of the sidebar. Does NOT
-       * carry a close button: on mobile the wrapping Sheet already renders
-       * its own X (top-right) and adding a second one here is what produced
-       * the duplicate-close-button bug. On desktop there's nothing to close
-       * (the sidebar is always visible).
+       * Top bar: identity/tenant panel + close button (mobile only).
+       * The close button is a feather X icon that calls onNavigate (which
+       * closes the mobile Sheet). On desktop it's hidden — the sidebar is
+       * always visible.
        */}
       <div className="shrink-0 p-3">
-        {authMode === "authenticated" && user ? (
-          <TenantUserPanel
-            user={user}
-            tenants={tenants}
-            activeTenant={activeTenant}
-            onSwitchTenant={(id) => {
-              void switchTenant(id);
-              onNavigate?.();
-            }}
-          />
-        ) : (
-          <IdentitySwitcher />
-        )}
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">
+            {authMode === "authenticated" && user ? (
+              <TenantUserPanel
+                user={user}
+                tenants={tenants}
+                activeTenant={activeTenant}
+                onSwitchTenant={(id) => {
+                  void switchTenant(id);
+                  onNavigate?.();
+                }}
+              />
+            ) : (
+              <IdentitySwitcher />
+            )}
+          </div>
+          {onNavigate && (
+            <button
+              type="button"
+              onClick={onNavigate}
+              className="shrink-0 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground md:hidden"
+              aria-label="Fermer le menu"
+            >
+              <X size={16} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/*
@@ -112,7 +131,12 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           <section>
             <SectionLabel icon={<Hash size={12} />}>Exemples</SectionLabel>
             <div className="mt-2 space-y-1.5">
-              {EXAMPLE_QUESTIONS.map((q) => {
+              {exampleQuestions.map((q) => {
+                // The "top-producers" id is the only hardcoded admin-only
+                // question (lives in FALLBACK_QUESTIONS, surfaces the
+                // "Sera refusé · scoping producer" hint when a producer
+                // is signed in). Dynamic questions don't carry this id
+                // so the check is a no-op for them.
                 const adminOnly = q.id === "top-producers";
                 const disabledForProducer =
                   adminOnly && identity.kind === "producer";
@@ -141,24 +165,26 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                         className="mt-0.5 shrink-0 text-muted-foreground group-hover:text-accent"
                       />
                     )}
-                    <span className="flex-1 font-body text-foreground">
-                      {q.label}
-                    </span>
-                    {adminOnly && disabledForProducer && (
-                      <div className="mt-1 flex items-center gap-1 pl-5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                        Sera refusé · scoping producer
-                      </div>
-                    )}
+                    <div className="min-w-0 flex-1">
+                      <span className="block font-body text-foreground">
+                        {q.label}
+                      </span>
+                      {adminOnly && disabledForProducer && (
+                        <span className="mt-1 block text-[10px] uppercase tracking-wide text-muted-foreground">
+                          Sera refusé · scoping producer
+                        </span>
+                      )}
+                      {q.hint && !disabledForProducer && (
+                        <span className="mt-1 block text-[10px] uppercase tracking-wide text-muted-foreground">
+                          {q.hint}
+                        </span>
+                      )}
+                    </div>
                   </button>
                 );
               })}
             </div>
           </section>
-
-          {/* Demo identity quick-switch (only on demo tenant) */}
-          {authMode === "authenticated" && activeTenant?.is_demo && (
-            <DemoIdentitySwitcher />
-          )}
         </div>
       </ScrollArea>
     </div>
@@ -221,7 +247,7 @@ function TenantUserPanel({
           className="flex w-full items-center justify-between gap-2 rounded-md border border-border bg-background px-2.5 py-2 text-left transition-colors hover:border-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
         >
           <div className="flex min-w-0 items-center gap-2">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-primary text-primary-foreground">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-primary text-foreground">
               <span className="font-heading text-[11px] font-medium">
                 {initials}
               </span>
@@ -282,73 +308,3 @@ function TenantUserPanel({
   );
 }
 
-/**
- * Demo identity quick-switcher — shown only on the demo tenant ("dp").
- * Lets the user instantly switch between Marie (#42), Pierre (#99), and
- * DP Admin WITHOUT re-logging in. Uses a demo identity override that
- * sends body identity (no JWT) to the chat endpoint, so the backend's
- * dual-mode fallback handles the scoping.
- */
-function DemoIdentitySwitcher() {
-  const demoIdentityOverride = useCopilotStore((s) => s.demoIdentityOverride);
-  const setDemoIdentityOverride = useCopilotStore(
-    (s) => s.setDemoIdentityOverride,
-  );
-  const reset = useCopilotStore((s) => s.resetConversation);
-
-  return (
-    <section>
-      <SectionLabel icon={<Users size={12} />}>
-        Identité démo
-      </SectionLabel>
-      <div className="mt-2 space-y-1.5">
-        {IDENTITIES.map((ident) => {
-          const isActive =
-            demoIdentityOverride?.id === ident.id ||
-            (!demoIdentityOverride && ident.id === "producer-42");
-          return (
-            <button
-              key={ident.id}
-              type="button"
-              onClick={() => {
-                setDemoIdentityOverride(isActive ? null : ident.id);
-                reset();
-              }}
-              className={cn(
-                "flex w-full items-center gap-2 rounded-md border border-border bg-background px-2.5 py-2 text-left text-xs transition-colors hover:border-accent/60 hover:bg-secondary/40",
-                isActive && "border-accent/50 bg-secondary/30",
-              )}
-            >
-              <span
-                className={cn(
-                  "flex size-6 shrink-0 items-center justify-center rounded-full border border-border text-[10px] font-heading font-medium",
-                  isActive
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-muted-foreground",
-                )}
-              >
-                {ident.initials}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate font-medium text-foreground">
-                  {ident.name}
-                </div>
-                <div className="truncate text-[10px] text-muted-foreground">
-                  {ident.kind === "admin"
-                    ? "Admin · full access"
-                    : `Producer ${ident.producerNumber} · ${ident.farmName}`}
-                </div>
-              </div>
-              {isActive && (
-                <Check size={13} className="shrink-0 text-accent" />
-              )}
-            </button>
-          );
-        })}
-      </div>
-      <p className="mt-2 px-1 text-[10px] uppercase tracking-wide text-muted-foreground/70">
-        Override démo — sans re-login
-      </p>
-    </section>
-  );
-}

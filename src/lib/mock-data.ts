@@ -1,5 +1,6 @@
 import type {
   AssistantResponse,
+  ExampleQuestion,
   Identity,
   SecurityCheck,
   TraceStep,
@@ -50,16 +51,16 @@ export const DEFAULT_IDENTITY_ID = "producer-42";
 // ---------------------------------------------------------------------------
 // Example questions
 // ---------------------------------------------------------------------------
+// NOTE: Phase 6d moved to dynamic, schema-driven questions served by
+// `GET /api/tenants/{id}/example-questions` (see `src/lib/api.ts`). These
+// hardcoded questions are kept as a FALLBACK for three cases:
+//   1. The user is in demo mode (no backend → no API call).
+//   2. The backend is unreachable (the fetcher returns [] on error).
+//   3. The active tenant returns an empty question list.
+// `src/lib/store.ts::loadExampleQuestions()` falls back to this list when
+// any of the above happens.
 
-export interface ExampleQuestion {
-  id: string;
-  /** The question text shown to the user and sent as a user message. */
-  label: string;
-  /** Optional hint about access scope. */
-  hint?: string;
-}
-
-export const EXAMPLE_QUESTIONS: ExampleQuestion[] = [
+export const FALLBACK_QUESTIONS: ExampleQuestion[] = [
   {
     id: "top-products",
     label: "Quels sont mes 5 produits les plus vendus ce mois-ci ?",
@@ -870,7 +871,7 @@ export function getResponseForMessage(
   message: string,
 ): AssistantResponse {
   const normalized = message.trim().toLowerCase();
-  const match = EXAMPLE_QUESTIONS.find((q) =>
+  const match = FALLBACK_QUESTIONS.find((q) =>
     normalized.includes(q.label.toLowerCase().slice(0, 25)),
   );
   if (match) {

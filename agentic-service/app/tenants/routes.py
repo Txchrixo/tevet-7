@@ -47,12 +47,14 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from pydantic import BaseModel, Field
 
 from app.auth.dependencies import get_current_user, try_get_tenant_context
+from app.tenants.example_questions import GENERIC_QUESTIONS, generate_example_questions
 from app.tenants.onboarding import (
     complete_onboarding,
     connect_csv,
     connect_postgres,
     detect_schema,
     get_onboarding_status,
+    get_tenant_config_row,
     save_roles,
     save_schema,
     start_onboarding,
@@ -529,3 +531,86 @@ async def onboarding_status_endpoint(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return await get_onboarding_status(tenant_id)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 6d — Dynamic example questions
+# ─────────────────────────────────────────────────────────────────────────────
+# Returns up to 5 natural-language French questions generated from the
+# tenant's schema_config so the sidebar's "Exemples" section reflects the
+# tenant's ACTUAL tables/columns (not hardcoded Drive Producteur questions).
+#
+# Falls back to 3 generic questions ("Combien de lignes dans ma table ?", …)
+# when the tenant is not onboarded yet (no schema_config / empty tables).
+#
+# Auth model mirrors the onboarding status endpoint above: JWT (with
+# membership verification) OR ?admin=true for the demo / eval path.
+
+
+@router.get("/tenants/{tenant_id}/example-questions")
+async def example_questions_endpoint(
+    tenant_id: str,
+    request: Request,
+    admin: bool = Query(
+        False,
+        description=(
+            "Demo / eval bypass — when true, skip membership verification "
+            "so the curl-based worklog verification can probe the demo "
+            "tenant without a JWT. Real callers (the frontend) MUST send "
+            "a Bearer JWT instead."
+        ),
+    ),
+) -> dict[str, Any]:
+    """Return up to 5 example questions for the tenant, generated from
+    its ``schema_config``.
+
+    Returns ``{"questions": [{id, label}, ...]}`` with at most 5 items.
+    Falls back to :data:`app.tenants.example_questions.GENERIC_QUESTIONS`
+    (3 items) when the tenant is not onboarded yet or its schema_config
+    is empty.
+
+    Auth model
+    ----------
+    Two paths are supported (mirrors ``onboarding_status_endpoint``):
+
+    1. **JWT path** — the caller sends ``Authorization: Bearer <jwt>``.
+       Membership is verified server-side (403 if the user is not a
+       member of the tenant).
+    2. **Demo path** — the caller sends ``?admin=true`` (no JWT). The
+       tenant's existence is verified (404 if unknown) but membership is
+       NOT verified — used by the curl-based worklog verification.
+
+    If neither a JWT nor ``?admin=true`` is provided, returns 401.
+    """
+    jwt_ctx = try_get_tenant_context(request)
+    if jwt_ctx is not None:
+        # JWT path — verify membership.
+        await _verify_membership(tenant_id, jwt_ctx.user_id)
+    elif admin:
+        # Demo path — verify the tenant exists (don't 404 on a typo).
+        tenant = await get_tenant(tenant_id)
+        if tenant is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"tenant {tenant_id!r} not found",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "Send Authorization: Bearer <jwt> OR ?admin=true for the "
+                "demo path."
+            ),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    config = await get_tenant_config_row(tenant_id)
+    # Not onboarded → generic questions (the agent has no schema to read
+    # against yet, so questions referencing specific tables/columns would
+    # be misleading).
+    if config is None or not config.get("onboarded") or not config.get("schema_config"):
+        return {"questions": GENERIC_QUESTIONS}
+    questions = generate_example_questions(config["schema_config"])
+    if not questions:
+        return {"questions": GENERIC_QUESTIONS}
+    return {"questions": questions}

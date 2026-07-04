@@ -1,0 +1,1866 @@
+     1→"""SQLite schema + fictitious Drive Producteur data.
+     2→
+     3→Phase 1: the Tevet-7 agentic service runs against an in-process SQLite
+     4→database so the demo is self-contained (no Postgres / Docker needed). This
+     5→module owns:
+     6→
+     7→1. The SQLAlchemy ``MetaData`` that mirrors ``app/schema.yaml`` (producers,
+     8→   shops, products, stocks, orders, order_items, pickup_bookings, payments).
+     9→2. A seed routine that populates 7 fictitious producers with realistic
+    10→   French agricultural data — different catalogs and sales volumes per
+    11→   producer so the row-level scoping demo is tangible.
+    12→3. ``init_db()`` — idempotent: drops + recreates all tables and reseeds.
+    13→4. ``get_engine()`` — lazy singleton async engine.
+    14→
+    15→The data is FICTITIOUS. Producer names, SIRET, IBAN, addresses are all
+    16→invented for the demo.
+    17→"""
+    18→
+    19→from __future__ import annotations
+    20→
+    21→import logging
+    22→import math
+    23→import random
+    24→from datetime import datetime, timedelta
+    25→from typing import Any
+    26→
+    27→from sqlalchemy import (
+    28→    Boolean,
+    29→    Column,
+    30→    DateTime,
+    31→    Float,
+    32→    ForeignKey,
+    33→    Integer,
+    34→    MetaData,
+    35→    String,
+    36→    Table,
+    37→    Text,
+    38→    UniqueConstraint,
+    39→    func,
+    40→    select,
+    41→    text,
+    42→)
+    43→from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+    44→
+    45→from app.config import get_settings
+    46→
+    47→logger = logging.getLogger("tevet7.db_seed")
+    48→
+    49→# Commission rate applied by the marketplace on every order (stored as a
+    50→# constant, NOT in the DB). Used by the orchestrator to compute net revenue.
+    51→COMMISSION_RATE = 0.12
+    52→
+    53→# Consistent PRNG so the seeded data is deterministic across runs (makes the
+    54→# "Marie's top product is Tomates" guarantee stable).
+    55→_RNG = random.Random(20240601)
+    56→
+    57→metadata = MetaData()
+    58→
+    59→# ─────────────────────────────────────────────────────────────────────────────
+    60→# Table definitions (mirror app/schema.yaml)
+    61→# ─────────────────────────────────────────────────────────────────────────────
+    62→
+    63→producers = Table(
+    64→    "producers",
+    65→    metadata,
+    66→    Column("id", Integer, primary_key=True),
+    67→    Column("legal_name", String, nullable=False),
+    68→    Column("display_name", String, nullable=False),
+    69→    Column("email", String, nullable=False),
+    70→    Column("phone", String, nullable=False),
+    71→    Column("siret", String, nullable=False),
+    72→    Column("created_at", DateTime, nullable=False),
+    73→    Column("is_active", Boolean, nullable=False, default=True),
+    74→)
+    75→
+    76→shops = Table(
+    77→    "shops",
+    78→    metadata,
+    79→    Column("id", Integer, primary_key=True),
+    80→    Column("producer_id", Integer, ForeignKey("producers.id"), nullable=False, index=True),
+    81→    Column("name", String, nullable=False),
+    82→    Column("address", String, nullable=False),
+    83→    Column("city", String, nullable=False),
+    84→    Column("postal_code", String, nullable=False),
+    85→    Column("latitude", Float, nullable=True),
+    86→    Column("longitude", Float, nullable=True),
+    87→    Column("opening_hours", String, nullable=True),
+    88→    Column("is_active", Boolean, nullable=False, default=True),
+    89→)
+    90→
+    91→products = Table(
+    92→    "products",
+    93→    metadata,
+    94→    Column("id", Integer, primary_key=True),
+    95→    Column("producer_id", Integer, ForeignKey("producers.id"), nullable=False, index=True),
+    96→    Column("shop_id", Integer, ForeignKey("shops.id"), nullable=False, index=True),
+    97→    Column("sku", String, nullable=False),
+    98→    Column("name", String, nullable=False),
+    99→    Column("category", String, nullable=False),
+   100→    Column("unit", String, nullable=False),
+   101→    Column("price_eur", Float, nullable=False),
+   102→    Column("vat_rate", Float, nullable=False, default=0.055),
+   103→    Column("is_organic", Boolean, nullable=False, default=False),
+   104→    Column("is_available", Boolean, nullable=False, default=True),
+   105→    Column("created_at", DateTime, nullable=False),
+   106→    # ── Phase 5 ML columns ────────────────────────────────────────────────
+   107→    # Three columns the RandomForest forecast model uses as features. They
+   108→    # are derived from the existing ``category`` + ``weights`` at seed time so
+   109→    # we don't have to extend the ``_PRODUCERS`` tuple schema. ``base_popularity``
+   110→    # is the normalised sales weight (0..1); ``is_perishable`` flags categories
+   111→    # that rotate fast (légumes, fruits, viande, produits laitiers);
+   112→    # ``seasonality_peak_month`` is the 1..12 month when demand peaks.
+   113→    Column("base_popularity", Float, nullable=False, default=1.0),
+   114→    Column("is_perishable", Boolean, nullable=False, default=False),
+   115→    Column("seasonality_peak_month", Integer, nullable=True),
+   116→)
+   117→
+   118→stocks = Table(
+   119→    "stocks",
+   120→    metadata,
+   121→    Column("id", Integer, primary_key=True),
+   122→    Column("producer_id", Integer, ForeignKey("producers.id"), nullable=False, index=True),
+   123→    Column("product_id", Integer, ForeignKey("products.id"), nullable=False, index=True),
+   124→    Column("shop_id", Integer, ForeignKey("shops.id"), nullable=False, index=True),
+   125→    Column("quantity", Float, nullable=False),
+   126→    Column("reserved", Float, nullable=False, default=0),
+   127→    Column("available", Float, nullable=False),
+   128→    Column("updated_at", DateTime, nullable=False),
+   129→)
+   130→
+   131→orders = Table(
+   132→    "orders",
+   133→    metadata,
+   134→    Column("id", Integer, primary_key=True),
+   135→    Column("producer_id", Integer, ForeignKey("producers.id"), nullable=False, index=True),
+   136→    Column("customer_id", Integer, nullable=False),
+   137→    Column("shop_id", Integer, ForeignKey("shops.id"), nullable=False, index=True),
+   138→    Column("pickup_slot", DateTime, nullable=True),
+   139→    Column("total_amount", Float, nullable=False),
+   140→    Column("status", String, nullable=False),
+   141→    Column("created_at", DateTime, nullable=False, index=True),
+   142→    Column("updated_at", DateTime, nullable=False),
+   143→)
+   144→
+   145→order_items = Table(
+   146→    "order_items",
+   147→    metadata,
+   148→    Column("id", Integer, primary_key=True),
+   149→    Column("order_id", Integer, ForeignKey("orders.id"), nullable=False, index=True),
+   150→    Column("producer_id", Integer, ForeignKey("producers.id"), nullable=False, index=True),
+   151→    Column("product_id", Integer, ForeignKey("products.id"), nullable=False, index=True),
+   152→    Column("quantity", Float, nullable=False),
+   153→    Column("unit_price_eur", Float, nullable=False),
+   154→    Column("line_total_eur", Float, nullable=False),
+   155→)
+   156→
+   157→
+   158→# ─────────────────────────────────────────────────────────────────────────────
+   159→# Phase 5 — ML training table: daily stock snapshots per (product, date).
+   160→# ─────────────────────────────────────────────────────────────────────────────
+   161→# One row per (product_id, date) over the 90+ day history window. Each row
+   162→# captures the start-of-day stock_level, the day's actual sales (sum of
+   163→# order_items.quantity for that product on that date), the restock quantity
+   164→# applied that day, and a stockout_flag set to 1 when daily_sales >
+   165→# stock_level (rupture).
+   166→#
+   167→# This is the **training data source** for the RandomForest stock-shortage
+   168→# model — see ``ml/train_stock_model.py``. The forecast tool at inference
+   169→# time builds features from this same table (sales_7d, sales_3d, sales_1d,
+   170→# days_since_last_stockout, avg_sales_30d) plus the current ``stocks``
+   171→# snapshot, so the live features match the training distribution.
+   172→#
+   173→# The rupture target is computed by the training script as
+   174→# ``stockout_next_3d = 1 if stockout_flag=1 in any of date+1, date+2, date+3``.
+   175→stock_history = Table(
+   176→    "stock_history",
+   177→    metadata,
+   178→    Column("id", Integer, primary_key=True),
+   179→    Column("producer_id", Integer, ForeignKey("producers.id"), nullable=False, index=True),
+   180→    Column("product_id", Integer, ForeignKey("products.id"), nullable=False, index=True),
+   181→    Column("date", DateTime, nullable=False, index=True),  # snapshot date (midnight)
+   182→    Column("stock_level", Float, nullable=False),         # start-of-day stock
+   183→    Column("reserved", Float, nullable=False, default=0),
+   184→    Column("available", Float, nullable=False),            # start-of-day available
+   185→    Column("daily_sales", Float, nullable=False, default=0),    # demand that day
+   186→    Column("restocked_qty", Float, nullable=False, default=0),  # restock applied that day
+   187→    Column("stockout_flag", Boolean, nullable=False, default=False),
+   188→    Column("day_of_week", Integer, nullable=False),       # 0=Mon .. 6=Sun
+   189→    Column("is_weekend", Boolean, nullable=False),        # True if Fri(4) or Sat(5)
+   190→    Column("month", Integer, nullable=False),             # 1..12
+   191→    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+   192→)
+   193→
+   194→pickup_bookings = Table(
+   195→    "pickup_bookings",
+   196→    metadata,
+   197→    Column("id", Integer, primary_key=True),
+   198→    Column("producer_id", Integer, ForeignKey("producers.id"), nullable=False, index=True),
+   199→    Column("shop_id", Integer, ForeignKey("shops.id"), nullable=False, index=True),
+   200→    Column("customer_id", Integer, nullable=False),
+   201→    Column("slot_start", DateTime, nullable=False),
+   202→    Column("slot_end", DateTime, nullable=False),
+   203→    Column("status", String, nullable=False),
+   204→    Column("created_at", DateTime, nullable=False),
+   205→)
+   206→
+   207→payments = Table(
+   208→    "payments",
+   209→    metadata,
+   210→    Column("id", Integer, primary_key=True),
+   211→    Column("order_id", Integer, ForeignKey("orders.id"), nullable=False, index=True),
+   212→    Column("producer_id", Integer, ForeignKey("producers.id"), nullable=False, index=True),
+   213→    Column("provider", String, nullable=False),
+   214→    Column("provider_ref", String, nullable=False),
+   215→    Column("amount_eur", Float, nullable=False),
+   216→    Column("status", String, nullable=False),
+   217→    Column("captured_at", DateTime, nullable=True),
+   218→    Column("created_at", DateTime, nullable=False),
+   219→)
+   220→
+   221→
+   222→# ─────────────────────────────────────────────────────────────────────────────
+   223→# Documentary RAG tables (Task 23 / Phase 3 — RAG layer)
+   224→# ─────────────────────────────────────────────────────────────────────────────
+   225→# Two physical tables plus one FTS5 virtual table.
+   226→#
+   227→# ``documents`` — one row per uploaded document (PDF, text, manual note).
+   228→#   ``producer_id`` is NULL for tenant-wide documents (CGV, FAQ, etc.) or
+   229→#   an int for producer-private documents.
+   230→#
+   231→# ``document_chunks`` — paragraph-sized chunks (200-400 chars) ready for
+   232→#   full-text search. Each chunk carries the same ``tenant_id`` and
+   233→#   ``producer_id`` as its parent document so the RAG tool can apply
+   234→#   row-level scoping at search time without joining back to ``documents``.
+   235→#
+   236→# ``document_chunks_fts`` — SQLite FTS5 virtual table (BM25 ranking) that
+   237→#   mirrors ``document_chunks``. We chose MANUAL sync (not triggers) so
+   238→#   the ingest pipeline keeps full control of the FTS content and so the
+   239→#   DELETE endpoint can remove the FTS rows explicitly (FTS5 external
+   240→#   content tables are trickier to keep in sync than a manual mirror).
+   241→#
+   242→#   We chose FTS5 over pgvector / OpenAI embeddings on purpose:
+   243→#   - No external API key needed (vs OpenAI embeddings).
+   244→#   - No Postgres/Docker to run (in-process SQLite only).
+   245→#   - Sufficient for a small corpus (< 100 chunks per tenant).
+   246→#   - Embeddings-ready architecture: ``RagSearchTool.search()`` is the
+   247→#     single point of swap — replace the FTS5 SELECT with a vector
+   248→#     similarity query in Phase 6 without touching the orchestrator.
+   249→documents = Table(
+   250→    "documents",
+   251→    metadata,
+   252→    Column("id", Integer, primary_key=True),
+   253→    Column("tenant_id", String, nullable=False, default="dp", index=True),
+   254→    Column("title", String, nullable=False),
+   255→    Column("source_type", String, nullable=False),  # "pdf" | "text" | "manual"
+   256→    Column("source_filename", String, nullable=True),
+   257→    Column("content_raw", Text, nullable=False),
+   258→    Column("producer_id", Integer, nullable=True, index=True),  # NULL = tenant-wide
+   259→    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+   260→)
+   261→
+   262→document_chunks = Table(
+   263→    "document_chunks",
+   264→    metadata,
+   265→    Column("id", Integer, primary_key=True),
+   266→    Column("document_id", Integer, ForeignKey("documents.id"), nullable=False, index=True),
+   267→    Column("chunk_index", Integer, nullable=False),
+   268→    Column("content", Text, nullable=False),
+   269→    Column("tenant_id", String, nullable=False, default="dp", index=True),
+   270→    Column("producer_id", Integer, nullable=True, index=True),
+   271→    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+   272→)
+   273→
+   274→
+   275→# ─────────────────────────────────────────────────────────────────────────────
+   276→# Ops Copilot — human-in-the-loop onboarding tables (Task 26 / Phase 4)
+   277→# ─────────────────────────────────────────────────────────────────────────────
+   278→# Two tables that materialise the HITL contract: the agent pre-analyzes
+   279→# a producer-onboarding dossier, writes its structured analysis into
+   280→# ``approval_requests.agent_analysis`` (JSON) + ``proposed_decision`` +
+   281→# ``proposed_reason``, and waits. A human admin later closes the loop via
+   282→# ``POST /api/approvals/{id}/decide`` which flips ``approval_requests.status``
+   283→# AND ``producer_onboardings.status`` in the same transaction.
+   284→#
+   285→# Design notes
+   286→# ------------
+   287→# * ``producer_onboardings`` mirrors the dossier structure described in the
+   288→#   DP onboarding procedure (one of the 4 RAG documents): legal_name, SIRET,
+   289→#   RIB, ID, professional certificate, declared address vs document address.
+   290→#   ``siret_valid`` is the result of the (out-of-band) SIRENE API call — we
+   291→#   store it rather than call INSEE live so the demo is self-contained.
+   292→# * ``approval_requests`` is intentionally generic (``request_type`` column)
+   293→#   so Phase 5+ can reuse it for ticket classification, refund approval,
+   294→#   etc. — every "agent proposes, human decides" workflow lives here.
+   295→# * ``trace_id`` carries the Langfuse trace_id of the agent's pre-analysis
+   296→#   so the audit trail links the human decision back to the agent run.
+   297→producer_onboardings = Table(
+   298→    "producer_onboardings",
+   299→    metadata,
+   300→    Column("id", Integer, primary_key=True),
+   301→    Column("tenant_id", String, nullable=False, default="dp", index=True),
+   302→    Column("legal_name", String, nullable=False),
+   303→    Column("siret", String, nullable=False),
+   304→    Column("siret_valid", Boolean, nullable=False, default=False),
+   305→    Column("email", String, nullable=True),
+   306→    Column("phone", String, nullable=True),
+   307→    Column("declared_address", String, nullable=True),
+   308→    Column("rib_document_present", Boolean, nullable=False, default=False),
+   309→    Column("id_document_present", Boolean, nullable=False, default=False),
+   310→    Column("professional_certificate_present", Boolean, nullable=False, default=False),
+   311→    Column("professional_certificate_expiry", String, nullable=True),  # ISO date
+   312→    Column("document_address", String, nullable=True),
+   313→    Column("submitted_at", DateTime, nullable=False, default=datetime.utcnow),
+   314→    Column("status", String, nullable=False, default="pending"),  # pending|approved|rejected
+   315→    Column("rejection_reason", String, nullable=True),
+   316→)
+   317→
+   318→approval_requests = Table(
+   319→    "approval_requests",
+   320→    metadata,
+   321→    Column("id", Integer, primary_key=True),
+   322→    Column("tenant_id", String, nullable=False, default="dp", index=True),
+   323→    Column(
+   324→        "onboarding_id",
+   325→        Integer,
+   326→        ForeignKey("producer_onboardings.id"),
+   327→        nullable=False,
+   328→        index=True,
+   329→    ),
+   330→    Column("request_type", String, nullable=False, default="onboarding_analysis"),
+   331→    Column("agent_analysis", Text, nullable=True),  # JSON string
+   332→    Column("proposed_decision", String, nullable=False, default="approve"),
+   333→    # "approve" | "reject" | "request_info"
+   334→    Column("proposed_reason", Text, nullable=True),
+   335→    Column("status", String, nullable=False, default="pending"),
+   336→    # "pending" | "approved" | "rejected" | "overridden"
+   337→    Column("decided_by", String, nullable=True),
+   338→    Column("decided_at", DateTime, nullable=True),
+   339→    Column("human_reason", Text, nullable=True),
+   340→    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+   341→    Column("trace_id", String, nullable=True),  # Langfuse trace_id of the agent run
+   342→)
+   343→
+   344→
+   345→# ─────────────────────────────────────────────────────────────────────────────
+   346→# Observability — traces table (Task 18 / Phase 2 tracing)
+   347→# ─────────────────────────────────────────────────────────────────────────────
+   348→# One row per ``/api/chat`` request, written by ``LocalTracer.end_trace``.
+   349→# The ``traces`` table is created in the same ``metadata.create_all`` call
+   350→# as the business tables — no separate migration. JSON-shaped fields
+   351→# (``tool_calls``, ``steps``) are stored as TEXT (JSON-encoded) because
+   352→# SQLite has no native JSON column type and we want the schema portable to
+   353→# Postgres without changes.
+   354→traces_table = Table(
+   355→    "traces",
+   356→    metadata,
+   357→    Column("id", String, primary_key=True),  # uuid4 hex
+   358→    Column("created_at", DateTime, nullable=False, default=datetime.utcnow, index=True),
+   359→    Column("tenant_id", String, nullable=False, default="dp", index=True),
+   360→    Column("user_message", Text, nullable=False),
+   361→    Column("identity_id", String, nullable=True, index=True),
+   362→    Column("producer_id", Integer, nullable=True, index=True),
+   363→    Column("role", String, nullable=True),
+   364→    Column("intent", String, nullable=True),
+   365→    Column("sql_generated", Text, nullable=True),
+   366→    Column("sql_valid", Boolean, nullable=False, default=False),
+   367→    Column("scope_applied", Boolean, nullable=False, default=False),
+   368→    Column("security_incident", Boolean, nullable=False, default=False),
+   369→    Column("refused", Boolean, nullable=False, default=False),
+   370→    Column("tool_calls", Text, nullable=True),  # JSON list[{name,latency_ms,success}]
+   371→    Column("steps", Text, nullable=True),  # JSON list[{index,title,status,duration_ms}]
+   372→    Column("tokens_in", Integer, nullable=False, default=0),
+   373→    Column("tokens_out", Integer, nullable=False, default=0),
+   374→    Column("cost_usd", Float, nullable=False, default=0.0),
+   375→    Column("latency_ms", Integer, nullable=False, default=0),
+   376→    Column("error", Text, nullable=True),
+   377→    Column("response_answer", Text, nullable=True),  # first 500 chars of the answer
+   378→)
+   379→
+   380→
+   381→# ─────────────────────────────────────────────────────────────────────────────
+   382→# Phase 6a — Auth + multi-tenant platform tables
+   383→# ─────────────────────────────────────────────────────────────────────────────
+   384→# Three new tables that turn Tevet-7 from a single-tenant demo into a
+   385→# multi-tenant platform. They are created in the same ``metadata.create_all``
+   386→# call as the business tables (no separate migration) and live in the SAME
+   387→# SQLite file. The CORE agentic (agents/tools/tracing) never imports these
+   388→# tables — only ``app/auth`` and ``app/tenants`` do. The HTTP layer
+   389→# (app/api/*) extracts the identity from the JWT and passes plain
+   390→# ``role``/``producer_id``/``tenant_id`` strings down to the orchestrator.
+   391→#
+   392→# Schema:
+   393→#   users               — id, email (unique), name, password_hash (bcrypt), created_at
+   394→#   tenants             — id (str, e.g. "dp"), name, slug (unique), is_demo,
+   395→#                         created_at, owner_user_id (FK→users.id)
+   396→#   tenant_memberships  — id, user_id, tenant_id, role, producer_id,
+   397→#                         is_active, created_at. UNIQUE(user_id, tenant_id).
+   398→#                         A user has at most one is_active=True row at a time
+   399→#                         (enforced by set_active_membership in app.tenants.service).
+   400→users = Table(
+   401→    "users",
+   402→    metadata,
+   403→    Column("id", Integer, primary_key=True),
+   404→    Column("email", String, nullable=False, unique=True, index=True),
+   405→    Column("name", String, nullable=False),
+   406→    Column("password_hash", String, nullable=False),
+   407→    Column("is_platform_owner", Boolean, nullable=False, default=False),
+   408→    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+   409→)
+   410→
+   411→tenants = Table(
+   412→    "tenants",
+   413→    metadata,
+   414→    Column("id", String, primary_key=True),  # e.g. "dp" (== slug)
+   415→    Column("name", String, nullable=False),
+   416→    Column("slug", String, nullable=False, unique=True, index=True),
+   417→    Column("is_demo", Boolean, nullable=False, default=False),
+   418→    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+   419→    Column("owner_user_id", Integer, ForeignKey("users.id"), nullable=True),
+   420→)
+   421→
+   422→tenant_memberships = Table(
+   423→    "tenant_memberships",
+   424→    metadata,
+   425→    Column("id", Integer, primary_key=True),
+   426→    Column(
+   427→        "user_id",
+   428→        Integer,
+   429→        ForeignKey("users.id"),
+   430→        nullable=False,
+   431→        index=True,
+   432→    ),
+   433→    Column(
+   434→        "tenant_id",
+   435→        String,
+   436→        ForeignKey("tenants.id"),
+   437→        nullable=False,
+   438→        index=True,
+   439→    ),
+   440→    Column("role", String, nullable=False),  # "producer"|"admin"|"customer"
+   441→    Column("producer_id", Integer, nullable=True),  # row-level scope; NULL for admin
+   442→    Column("is_active", Boolean, nullable=False, default=False),
+   443→    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+   444→    # UNIQUE(user_id, tenant_id) — a user can be a member of a tenant at
+   445→    # most once. Enforced by SQLite via the composite unique below.
+   446→    UniqueConstraint("user_id", "tenant_id", name="uq_user_tenant"),
+   447→)
+   448→
+   449→
+   450→# ─────────────────────────────────────────────────────────────────────────────
+   451→# Phase 6b — Onboarding backend (tenant_configs)
+   452→# ─────────────────────────────────────────────────────────────────────────────
+   453→# One row per tenant storing the onboarding wizard output:
+   454→#
+   455→#   connector_type   — "sqlite_demo" | "postgres" | "csv"
+   456→#   connection_url   — the tenant's Postgres URL (NULL for sqlite_demo / csv)
+   457→#   csv_path         — path to the uploaded CSV file (NULL for postgres / sqlite_demo)
+   458→#   schema_config    — JSON string with the same shape as app/schema.yaml
+   459→#                      (tables, columns, scope, allowed_for_roles, ...). Saved
+   460→#                      by the onboarding wizard after the user reviews the
+   461→#                      auto-detected draft.
+   462→#   roles_config     — JSON string with the tenant's role definitions + scope
+   463→#                      columns (e.g. {"producer": {"scope_column": "producer_id"},
+   464→#                                     "admin": {"scope_column": null}, ...}).
+   465→#   onboarded        — bool, False until the user completes the wizard. The
+   466→#                      chat endpoint refuses to run for tenants where this is
+   467→#                      False (returns a clear "complete onboarding" message).
+   468→#
+   469→# The demo tenant "dp" is seeded with connector_type="sqlite_demo",
+   470→# schema_config=<app/schema.yaml as JSON>, onboarded=True — so the demo
+   471→# keeps working unchanged (the factory returns a SqliteConnector for it).
+   472→tenant_configs = Table(
+   473→    "tenant_configs",
+   474→    metadata,
+   475→    Column("id", Integer, primary_key=True),
+   476→    Column(
+   477→        "tenant_id",
+   478→        String,
+   479→        ForeignKey("tenants.id"),
+   480→        nullable=False,
+   481→        unique=True,
+   482→        index=True,
+   483→    ),
+   484→    Column("connector_type", String, nullable=False, default="sqlite_demo"),
+   485→    # "sqlite_demo" | "postgres" | "csv"
+   486→    Column("connection_url", String, nullable=True),  # for postgres
+   487→    Column("csv_path", String, nullable=True),  # for csv
+   488→    Column("schema_config", Text, nullable=True),  # JSON string
+   489→    Column("roles_config", Text, nullable=True),  # JSON string
+   490→    Column("onboarded", Boolean, nullable=False, default=False),
+   491→    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+   492→    Column("updated_at", DateTime, nullable=False, default=datetime.utcnow),
+   493→)
+   494→
+   495→
+   496→# ─────────────────────────────────────────────────────────────────────────────
+   497→# Engine singleton
+   498→# ─────────────────────────────────────────────────────────────────────────────
+   499→
+   500→_engine: AsyncEngine | None = None
+   501→
+   502→
+   503→def get_engine() -> AsyncEngine:
+   504→    """Return the lazy singleton async engine for the SQLite DB."""
+   505→    global _engine
+   506→    if _engine is None:
+   507→        settings = get_settings()
+   508→        _engine = create_async_engine(
+   509→            settings.database_url,
+   510→            echo=False,
+   511→            future=True,
+   512→        )
+   513→    return _engine
+   514→
+   515→
+   516→# ─────────────────────────────────────────────────────────────────────────────
+   517→# Seed data
+   518→# ─────────────────────────────────────────────────────────────────────────────
+   519→
+   520→# Producer 42 — Marie Dubois, Ferme du Vallon (vegetables).
+   521→# Producer 99 — Pierre Martin, Verger de la Côte (apples/pears/cider).
+   522→# Producer 17 — Maraîchers du Soleil (vegetables, organic, larger).
+   523→# Producer 58 — Élevage des Prés (meat).
+   524→# Producer 23 — Fromagerie du Col (dairy / cheese).
+   525→# Producer 71 — Apiculteur des Cimes (honey).
+   526→# Producer 34 — Vignoble des Bruyères (wine).
+   527→
+   528→_PRODUCERS = [
+   529→    {
+   530→        "id": 42,
+   531→        "legal_name": "EARL Dubois",
+   532→        "display_name": "Ferme du Vallon",
+   533→        "email": "marie.dubois@ferme-du-vallon.fr",
+   534→        "phone": "+33 4 50 12 34 56",
+   535→        "siret": "812 345 678 00012",
+   536→        "shop": {
+   537→            "name": "Ferme du Vallon — Annecy",
+   538→            "address": "12 route du Vallon",
+   539→            "city": "Annecy",
+   540→            "postal_code": "74000",
+   541→            "lat": 45.9021,
+   542→            "lng": 6.1280,
+   543→        },
+   544→        "products": [
+   545→            ("Tomates cœur de bœuf", "légumes", "kg", 4.50, True),
+   546→            ("Courgettes", "légumes", "pièce", 1.20, True),
+   547→            ("Carottes en bottes", "légumes", "botte", 2.80, True),
+   548→            ("Salade laitue", "légumes", "pièce", 1.80, True),
+   549→            ("Poireaux", "légumes", "botte", 3.20, True),
+   550→            ("Radis roses", "légumes", "botte", 2.20, False),
+   551→            ("Aubergines", "légumes", "kg", 4.20, False),
+   552→            ("Poivrons rouges", "légumes", "kg", 5.00, True),
+   553→            ("Blettes", "légumes", "botte", 2.90, False),
+   554→            ("Courges butternut", "légumes", "kg", 3.50, False),
+   555→        ],
+   556→        # weights control sales volume distribution (first product = top seller)
+   557→        "weights": [142, 98, 76, 65, 54, 33, 28, 22, 18, 12],
+   558→        "orders_per_month": {"current": 312, "june": 188},
+   559→    },
+   560→    {
+   561→        "id": 99,
+   562→        "legal_name": "GAEC Martin",
+   563→        "display_name": "Verger de la Côte",
+   564→        "email": "pierre.martin@verger-de-la-cote.fr",
+   565→        "phone": "+33 4 50 98 76 54",
+   566→        "siret": "823 456 789 00099",
+   567→        "shop": {
+   568→            "name": "Verger de la Côte — Cruseilles",
+   569→            "address": "5 chemin des Pommiers",
+   570→            "city": "Cruseilles",
+   571→            "postal_code": "74350",
+   572→            "lat": 46.0421,
+   573→            "lng": 6.1085,
+   574→        },
+   575→        "products": [
+   576→            ("Pommes Gala", "fruits", "kg", 2.80, False),
+   577→            ("Poires Conference", "fruits", "kg", 3.20, False),
+   578→            ("Jus de pomme", "boissons", "litre", 4.50, False),
+   579→            ("Cidre brut", "boissons", "litre", 6.80, False),
+   580→            ("Pommes à cuire", "fruits", "kg", 2.20, False),
+   581→            ("Compote maison", "épicerie", "pot", 3.80, False),
+   582→            ("Abricots", "fruits", "kg", 5.50, True),
+   583→            ("Mirabelles", "fruits", "kg", 6.20, False),
+   584→            ("Gelée de coings", "épicerie", "pot", 5.20, False),
+   585→            ("Pommeau de Savoie", "boissons", "litre", 9.50, False),
+   586→        ],
+   587→        "weights": [128, 84, 72, 56, 48, 31, 22, 18, 14, 9],
+   588→        "orders_per_month": {"current": 298, "june": 174},
+   589→    },
+   590→    {
+   591→        "id": 17,
+   592→        "legal_name": "SAS Maraîchers du Soleil",
+   593→        "display_name": "Maraîchers du Soleil",
+   594→        "email": "contact@maraichers-soleil.fr",
+   595→        "phone": "+33 4 50 11 22 33",
+   596→        "siret": "801 234 567 00017",
+   597→        "shop": {
+   598→            "name": "Maraîchers du Soleil — Rumilly",
+   599→            "address": "8 route des Champs",
+   600→            "city": "Rumilly",
+   601→            "postal_code": "74150",
+   602→            "lat": 45.8633,
+   603→            "lng": 6.0051,
+   604→        },
+   605→        "products": [
+   606→            ("Tomates grappe", "légumes", "kg", 3.20, False),
+   607→            ("Concombres", "légumes", "pièce", 1.50, False),
+   608→            ("Salades batavia", "légumes", "pièce", 1.60, True),
+   609→            ("Épinards frais", "légumes", "botte", 2.40, True),
+   610→            ("Betteraves rouges", "légumes", "kg", 2.20, False),
+   611→            ("Oignons jaunes", "légumes", "kg", 1.80, False),
+   612→            ("Ail rose", "légumes", "pièce", 1.20, False),
+   613→            ("Courgettes vertes", "légumes", "pièce", 1.10, False),
+   614→            ("Fraises Mara des Bois", "fruits", "barquette", 4.80, True),
+   615→            ("Framboises", "fruits", "barquette", 5.20, True),
+   616→            ("Citrouilles", "légumes", "pièce", 6.50, False),
+   617→        ],
+   618→        "weights": [110, 88, 72, 60, 52, 44, 38, 30, 24, 18, 8],
+   619→        "orders_per_month": {"current": 245, "june": 132},
+   620→    },
+   621→    {
+   622→        "id": 58,
+   623→        "legal_name": "EARL Élevage des Prés",
+   624→        "display_name": "Élevage des Prés",
+   625→        "email": "contact@elevage-des-pres.fr",
+   626→        "phone": "+33 4 50 65 43 21",
+   627→        "siret": "814 567 890 00058",
+   628→        "shop": {
+   629→            "name": "Élevage des Prés — La Roche-sur-Foron",
+   630→            "address": "23 route des Prés",
+   631→            "city": "La Roche-sur-Foron",
+   632→            "postal_code": "74800",
+   633→            "lat": 46.0667,
+   634→            "lng": 6.3167,
+   635→        },
+   636→        "products": [
+   637→            ("Steak haché 5% MG", "viande", "kg", 14.50, False),
+   638→            ("Entrecôte de bœuf", "viande", "kg", 26.00, False),
+   639→            ("Poulet fermier entier", "viande", "pièce", 12.50, False),
+   640→            ("Saucisses de Toulouse", "charcuterie", "kg", 13.20, False),
+   641→            ("Jambon cru de Savoie", "charcuterie", "kg", 28.00, False),
+   642→            ("Côte de porc", "viande", "kg", 11.80, False),
+   643→            ("Pommes de terre grenaille", "légumes", "kg", 2.50, False),
+   644→            ("Œufs frais", "épicerie", "boîte de 6", 3.20, True),
+   645→            ("Escalopes de dinde", "viande", "kg", 12.00, False),
+   646→            ("Rôti de veau", "viande", "kg", 22.50, False),
+   647→        ],
+   648→        "weights": [95, 42, 70, 58, 36, 48, 32, 64, 28, 22],
+   649→        "orders_per_month": {"current": 178, "june": 96},
+   650→    },
+   651→    {
+   652→        "id": 23,
+   653→        "legal_name": "SCEA Fromagerie du Col",
+   654→        "display_name": "Fromagerie du Col",
+   655→        "email": "contact@fromagerie-du-col.fr",
+   656→        "phone": "+33 4 50 78 90 12",
+   657→        "siret": "825 678 901 00023",
+   658→        "shop": {
+   659→            "name": "Fromagerie du Col — Thônes",
+   660→            "address": "1 place du Col",
+   661→            "city": "Thônes",
+   662→            "postal_code": "74230",
+   663→            "lat": 45.8867,
+   664→            "lng": 6.3217,
+   665→        },
+   666→        "products": [
+   667→            ("Tomme de Savoie", "produits laitiers", "kg", 18.50, False),
+   668→            ("Reblochon AOP", "produits laitiers", "kg", 22.00, False),
+   669→            ("Beaufort d'été", "produits laitiers", "kg", 32.00, False),
+   670→            ("Raclette nature", "produits laitiers", "kg", 16.50, False),
+   671→            ("Raclette fumée", "produits laitiers", "kg", 18.20, False),
+   672→            ("Tomme de chèvre", "produits laitiers", "kg", 24.00, False),
+   673→            ("Yaourt nature", "produits laitiers", "pot de 125g", 0.90, False),
+   674→            ("Fromage blanc", "produits laitiers", "pot de 500g", 3.20, False),
+   675→            ("Persillé des Aravis", "produits laitiers", "kg", 28.50, False),
+   676→            ("Carré frais aux herbes", "produits laitiers", "pièce", 2.80, False),
+   677→        ],
+   678→        "weights": [88, 102, 56, 78, 64, 42, 130, 95, 28, 36],
+   679→        "orders_per_month": {"current": 203, "june": 117},
+   680→    },
+   681→    {
+   682→        "id": 71,
+   683→        "legal_name": "Apiculteur des Cimes",
+   684→        "display_name": "Apiculteur des Cimes",
+   685→        "email": "contact@apiculteur-des-cimes.fr",
+   686→        "phone": "+33 4 50 34 56 78",
+   687→        "siret": "836 789 012 00071",
+   688→        "shop": {
+   689→            "name": "Apiculteur des Cimes — Sallanches",
+   690→            "address": "4 route des Ruchers",
+   691→            "city": "Sallanches",
+   692→            "postal_code": "74700",
+   693→            "lat": 45.9444,
+   694→            "lng": 6.6306,
+   695→        },
+   696→        "products": [
+   697→            ("Miel de montagne", "épicerie", "pot de 500g", 8.50, False),
+   698→            ("Miel de sapin", "épicerie", "pot de 500g", 12.00, False),
+   699→            ("Miel de fleurs", "épicerie", "pot de 500g", 7.80, False),
+   700→            ("Pollen frais", "épicerie", "pot de 250g", 9.50, False),
+   701→            ("Propolis", "épicerie", "pot de 30g", 14.00, False),
+   702→            ("Gelée royale", "épicerie", "pot de 10g", 18.00, False),
+   703→            ("Cire d'abeille", "épicerie", "pièce de 500g", 6.50, False),
+   704→            ("Pain d'épices", "épicerie", "pièce", 5.50, False),
+   705→            ("Nougat blanc", "épicerie", "barquette de 200g", 7.20, False),
+   706→        ],
+   707→        "weights": [62, 38, 55, 22, 18, 12, 8, 42, 28],
+   708→        "orders_per_month": {"current": 96, "june": 58},
+   709→    },
+   710→    {
+   711→        "id": 34,
+   712→        "legal_name": "Vignoble des Bruyères",
+   713→        "display_name": "Vignoble des Bruyères",
+   714→        "email": "contact@vignoble-des-bruyeres.fr",
+   715→        "phone": "+33 4 50 21 43 65",
+   716→        "siret": "847 890 123 00034",
+   717→        "shop": {
+   718→            "name": "Vignoble des Bruyères — Frangy",
+   719→            "address": "17 route des Vignes",
+   720→            "city": "Frangy",
+   721→            "postal_code": "74270",
+   722→            "lat": 45.9933,
+   723→            "lng": 5.9217,
+   724→        },
+   725→        "products": [
+   726→            ("Vin rouge Savoie AOP", "boissons", "bouteille 75cl", 11.50, False),
+   727→            ("Vin blanc Roussette", "boissons", "bouteille 75cl", 12.80, False),
+   728→            ("Vin rosé", "boissons", "bouteille 75cl", 9.50, False),
+   729→            ("Vin rouge Gamay", "boissons", "bouteille 75cl", 9.80, False),
+   730→            ("Vin pétillant Crémant", "boissons", "bouteille 75cl", 16.50, False),
+   731→            ("Vin moût de raisin", "boissons", "bouteille 50cl", 6.20, False),
+   732→            ("Vin rouge Mondeuse", "boissons", "bouteille 75cl", 14.50, False),
+   733→            ("Marc de Savoie", "boissons", "bouteille 70cl", 28.00, False),
+   734→            ("Vin blanc Apremont", "boissons", "bouteille 75cl", 11.20, False),
+   735→        ],
+   736→        "weights": [85, 78, 62, 50, 38, 18, 42, 14, 60],
+   737→        "orders_per_month": {"current": 156, "june": 88},
+   738→    },
+   739→]
+   740→
+   741→# Reference "now" — fixed to make June visible in the dataset for the
+   742→# "combien j'ai gagné en juin" question. We pretend the demo runs in
+   743→# mid-July 2024 so June is a complete prior month.
+   744→_REFERENCE_NOW = datetime(2024, 7, 15, 10, 0, 0)
+   745→_JUNE_START = datetime(2024, 6, 1, 0, 0, 0)
+   746→_JUNE_END = datetime(2024, 6, 30, 23, 59, 59)
+   747→_CURRENT_MONTH_START = datetime(2024, 7, 1, 0, 0, 0)
+   748→
+   749→# ── Phase 5 ML history window ──────────────────────────────────────────────
+   750→# 90 days of history (2024-04-15 → 2024-07-14) + the current demo day
+   751→# (2024-07-15). The seed generates orders across the full window using a
+   752→# daily demand model (weekend_boost + seasonality + gaussian noise) so the
+   753→# RandomForest has 90+ days × ~10 products × 7 producers ≈ 6300+ rows of
+   754→# training data in ``stock_history``.
+   755→_HISTORY_START = datetime(2024, 4, 15, 0, 0, 0)
+   756→_HISTORY_END = datetime(2024, 7, 14, 23, 59, 59)
+   757→_HISTORY_DAYS = 91  # 2024-04-15 → 2024-07-14 inclusive
+   758→
+   759→# Per-producer average orders/day (Phase 5). Tuned so the 91-day window +
+   760→# July-current yields ~5000 orders total (was 2341 with the old June+July
+   761→# split). The values reflect each producer's catalogue size + customer base:
+   762→# Marie (vegetables, high volume) > Pierre (orchard) > Maraîchers > Élevage
+   763→# ≈ Fromagerie > Vignoble > Apiculteur (niche, low volume).
+   764→_PRODUCER_DAILY_ORDERS: dict[int, float] = {
+   765→    42: 8.5,   # Marie — Ferme du Vallon
+   766→    99: 8.0,   # Pierre — Verger de la Côte
+   767→    17: 7.0,   # Maraîchers du Soleil
+   768→    58: 6.5,   # Élevage des Prés
+   769→    23: 7.0,   # Fromagerie du Col
+   770→    71: 5.0,   # Apiculteur des Cimes
+   771→    34: 6.0,   # Vignoble des Bruyères
+   772→}
+   773→
+   774→# Per-category seasonality peak month (1..12). Used by both the seed demand
+   775→# generator (so the rupture signal is correlated with the season) and the
+   776→# ML feature builder (so the model learns seasonal demand).
+   777→# légumes → July (summer tomatoes/courgettes), fruits → September (apples),
+   778→# viande/charcuterie → July (BBQ), produits laitiers → December (raclette),
+   779→# épicerie/boissons → December (holidays).
+   780→_CATEGORY_PEAK_MONTH: dict[str, int] = {
+   781→    "légumes": 7,
+   782→    "fruits": 9,
+   783→    "viande": 7,
+   784→    "charcuterie": 7,
+   785→    "produits laitiers": 12,
+   786→    "épicerie": 12,
+   787→    "boissons": 12,
+   788→}
+   789→
+   790→# Categories that rotate fast (perishable) — the seed gives them a smaller
+   791→# stock buffer and smaller restock quantity so they rupture more often.
+   792→_PERISHABLE_CATEGORIES = {"légumes", "fruits", "viande", "charcuterie", "produits laitiers"}
+   793→
+   794→
+   795→def _derive_product_meta(category: str, weight: int, max_weight: int) -> dict[str, Any]:
+   796→    """Derive the three ML feature columns for a product row.
+   797→
+   798→    Returns ``{base_popularity, is_perishable, seasonality_peak_month}``.
+   799→    ``base_popularity`` is normalised to 0.1..1.0 (small floor so even the
+   800→    least-popular product has non-zero demand); ``is_perishable`` is True
+   801→    for fast-rotating categories; ``seasonality_peak_month`` comes from
+   802→    the lookup table above (None if the category is unknown).
+   803→    """
+   804→    norm = (weight / max_weight) if max_weight > 0 else 1.0
+   805→    base_popularity = max(0.1, round(norm, 3))
+   806→    return {
+   807→        "base_popularity": base_popularity,
+   808→        "is_perishable": category in _PERISHABLE_CATEGORIES,
+   809→        "seasonality_peak_month": _CATEGORY_PEAK_MONTH.get(category),
+   810→    }
+   811→
+   812→
+   813→def _seasonality_factor(month: int, peak_month: int | None) -> float:
+   814→    """Cosine seasonality factor in [0.6, 1.0].
+   815→
+   816→    1.0 at the peak month, 0.6 at the opposite month. Used to multiply the
+   817→    daily demand so summer vegetables get a demand bump in July, etc. The
+   818→    amplitude (0.2) is intentionally modest so off-season producers (e.g.
+   819→    Fromagerie peaking in December) still rupture during the April-July
+   820→    seed window — otherwise the RandomForest would never see a positive
+   821→    example for those producers and the forecast demo would be flat.
+   822→    """
+   823→    if peak_month is None:
+   824→        return 1.0
+   825→    return 0.8 + 0.2 * math.cos((month - peak_month) * 2.0 * math.pi / 12.0)
+   826→
+   827→
+   828→def _generate_orders_and_history(
+   829→    producer_id: int,
+   830→    shop_id: int,
+   831→    product_rows: list[dict[str, Any]],
+   832→    weights: list[int],
+   833→    base_orders_per_day: float,
+   834→) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+   835→    """Build orders + stock_history rows for one producer over the 91-day
+   836→    history window plus July-current (2024-04-15 → 2024-07-15).
+   837→
+   838→    Returns ``(orders, stock_history_rows)``.
+   839→
+   840→    Demand model
+   841→    ------------
+   842→    For each day d and each product p:
+   843→        daily_demand[p, d] = max(0, round(
+   844→            base_popularity[p] * scale
+   845→            * weekend_boost(d)
+   846→            * seasonality_factor(month(d), peak_month[p])
+   847→            * gauss(1, 0.2)
+   848→        ))
+   849→    where ``scale = 1.5`` maps base_popularity (0.1..1.0) to ~0.15..1.5
+   850→    units/day, and ``weekend_boost = 1.4`` on Fri/Sat else 1.0.
+   851→
+   852→    Orders per day
+   853→    --------------
+   854→    Each day gets ``round(base_orders_per_day * gauss(1, 0.15))`` orders.
+   855→    Each order picks 1-5 products weighted by popularity, with quantity 1-6.
+   856→
+   857→    Stock simulation
+   858→    ----------------
+   859→    Each product starts with ``reorder_point + random`` units. Every 7 days
+   860→    (per-product restock offset) it gets ``reorder_qty`` units added. Daily
+   861→    sales decrement the stock; if daily_sales > stock_level the product
+   862→    ruptures that day (stockout_flag=1, stock_level → 0). Perishables get a
+   863→    tighter buffer (3 days) than shelf-stable products (5 days) so they
+   864→    rupture more often.
+   865→    """
+   866→    orders_out: list[dict[str, Any]] = []
+   867→    stock_history_out: list[dict[str, Any]] = []
+   868→    order_id_pool = _RNG.randint(1000, 99999)
+   869→    statuses = ["pending", "paid", "ready_for_pickup", "completed", "completed", "completed", "cancelled"]
+   870→
+   871→    max_w = max(weights) if weights else 1
+   872→    # Per-product rolling stock state.
+   873→    product_state: dict[int, dict[str, Any]] = {}
+   874→    for idx, p in enumerate(product_rows):
+   875→        meta = _derive_product_meta(p["category"], weights[idx], max_w)
+   876→        # Inject the meta into the product row so the caller can persist it.
+   877→        p["base_popularity"] = meta["base_popularity"]
+   878→        p["is_perishable"] = meta["is_perishable"]
+   879→        p["seasonality_peak_month"] = meta["seasonality_peak_month"]
+   880→        # Demand scale 2.0 (Phase 5 bump from 1.5) so even off-season producers
+   881→        # see enough demand to rupture during the 91-day window.
+   882→        avg_daily_demand = max(0.5, meta["base_popularity"] * 2.0)
+   883→        buffer_days = 3 if meta["is_perishable"] else 4
+   884→        # Restock 5 days of demand every 7 days → 2-day deficit per cycle.
+   885→        # Both perishables and non-perishables use the same restock quantity
+   886→        # so all producers rupture occasionally (was 5/7 split, which left
+   887→        # dairy/wine/honey producers with 0 ruptures in training data).
+   888→        reorder_qty = avg_daily_demand * 5
+   889→        product_state[p["id"]] = {
+   890→            "stock_level": avg_daily_demand * buffer_days + _RNG.uniform(0, 5),
+   891→            "reorder_qty": reorder_qty,
+   892→            "reorder_point": avg_daily_demand * buffer_days,
+   893→            "avg_daily_demand": avg_daily_demand,
+   894→            "last_stockout_day": -10,
+   895→            "restock_day_offset": _RNG.randint(0, 6),
+   896→        }
+   897→
+   898→    # Generate per-day demand for the full history window.
+   899→    daily_demand: dict[tuple[int, int], float] = {}
+   900→    for day_idx in range(_HISTORY_DAYS):
+   901→        date = _HISTORY_START + timedelta(days=day_idx)
+   902→        dow = date.weekday()
+   903→        is_weekend = dow in (4, 5)
+   904→        weekend_boost = 1.4 if is_weekend else 1.0
+   905→        month = date.month
+   906→        for p in product_rows:
+   907→            # Demand scale 2.0 (Phase 5 bump from 1.5).
+   908→            base = p["base_popularity"] * 2.0
+   909→            seasonality = _seasonality_factor(month, p["seasonality_peak_month"])
+   910→            noise = _RNG.gauss(1, 0.2)
+   911→            demand = base * weekend_boost * seasonality * noise
+   912→            demand = max(0, round(demand))
+   913→            daily_demand[(p["id"], day_idx)] = float(demand)
+   914→
+   915→    # ── Generate orders per day ──
+   916→    for day_idx in range(_HISTORY_DAYS):
+   917→        date = _HISTORY_START + timedelta(days=day_idx)
+   918→        n_orders_today = max(0, int(round(base_orders_per_day * _RNG.gauss(1, 0.15))))
+   919→        for _ in range(n_orders_today):
+   920→            order_id_pool += 1
+   921→            ts = date + timedelta(
+   922→                hours=_RNG.uniform(8, 19),
+   923→                minutes=_RNG.uniform(0, 59),
+   924→                seconds=_RNG.uniform(0, 59),
+   925→            )
+   926→            n_items = _RNG.choices([1, 2, 3, 4, 5], weights=[40, 30, 15, 10, 5])[0]
+   927→            chosen_products = _RNG.choices(product_rows, weights=weights, k=n_items)
+   928→            line_total = 0.0
+   929→            items: list[dict[str, Any]] = []
+   930→            for prod in chosen_products:
+   931→                qty = float(_RNG.randint(1, 6))
+   932→                price = round(prod["price_eur"] * _RNG.uniform(0.95, 1.05), 2)
+   933→                lt = round(qty * price, 2)
+   934→                line_total += lt
+   935→                items.append(
+   936→                    {
+   937→                        "order_id": order_id_pool,
+   938→                        "producer_id": producer_id,
+   939→                        "product_id": prod["id"],
+   940→                        "quantity": qty,
+   941→                        "unit_price_eur": price,
+   942→                        "line_total_eur": lt,
+   943→                    }
+   944→                )
+   945→            status = _RNG.choice(statuses)
+   946→            total = round(line_total, 2)
+   947→            orders_out.append(
+   948→                {
+   949→                    "id": order_id_pool,
+   950→                    "producer_id": producer_id,
+   951→                    "customer_id": _RNG.randint(1, 5000),
+   952→                    "shop_id": shop_id,
+   953→                    "pickup_slot": ts + timedelta(hours=_RNG.randint(1, 72)),
+   954→                    "total_amount": total,
+   955→                    "status": status,
+   956→                    "created_at": ts,
+   957→                    "updated_at": ts + timedelta(hours=1),
+   958→                    "items": items,
+   959→                }
+   960→            )
+   961→
+   962→        # ── Stock simulation for this day ──
+   963→        dow = date.weekday()
+   964→        is_weekend = dow in (4, 5)
+   965→        for p in product_rows:
+   966→            pid = p["id"]
+   967→            state = product_state[pid]
+   968→            demand_today = daily_demand[(pid, day_idx)]
+   969→            stock_start = state["stock_level"]
+   970→            # Restock at the start of the day if it's the restock day.
+   971→            restocked = 0.0
+   972→            if day_idx % 7 == state["restock_day_offset"]:
+   973→                restocked = state["reorder_qty"]
+   974→                stock_start += restocked
+   975→            # Apply demand; rupture if demand exceeds available stock.
+   976→            stockout = False
+   977→            available_after = stock_start - demand_today
+   978→            if available_after < 0:
+   979→                stockout = True
+   980→                available_after = 0.0
+   981→            stock_history_out.append(
+   982→                {
+   983→                    "producer_id": producer_id,
+   984→                    "product_id": pid,
+   985→                    "date": date,
+   986→                    "stock_level": round(stock_start, 2),
+   987→                    "reserved": 0.0,
+   988→                    "available": round(max(stock_start, 0.0), 2),
+   989→                    "daily_sales": round(demand_today, 2),
+   990→                    "restocked_qty": round(restocked, 2),
+   991→                    "stockout_flag": stockout,
+   992→                    "day_of_week": dow,
+   993→                    "is_weekend": is_weekend,
+   994→                    "month": date.month,
+   995→                    "created_at": _REFERENCE_NOW,
+   996→                }
+   997→            )
+   998→            state["stock_level"] = available_after
+   999→            if stockout:
+  1000→                state["last_stockout_day"] = day_idx
+  1001→
+  1002→    return orders_out, stock_history_out
+  1003→
+  1004→
+  1005→async def init_db() -> None:
+  1006→    """Create all tables and seed fictitious Drive Producteur data.
+  1007→
+  1008→    Idempotent: drops every table first, then recreates and reseeds. Safe
+  1009→    to call on every startup.
+  1010→    """
+  1011→    engine = get_engine()
+  1012→    # Drop + recreate (idempotent). The FTS5 virtual table is NOT part of
+  1013→    # ``metadata`` (SQLAlchemy Core does not model virtual tables), so we
+  1014→    # drop + recreate it explicitly with raw SQL below.
+  1015→    async with engine.begin() as conn:
+  1016→        # Drop the FTS5 virtual table first (if it exists) — it references
+  1017→        # ``document_chunks`` so it must go before ``metadata.drop_all``
+  1018→        # cascades the parent table.
+  1019→        await conn.execute(text("DROP TABLE IF EXISTS document_chunks_fts"))
+  1020→        await conn.run_sync(metadata.drop_all)
+  1021→        await conn.run_sync(metadata.create_all)
+  1022→        # Create the FTS5 virtual table. ``tokenize = 'porter unicode61'``
+  1023→        # gives us case-insensitive search + English-stemmer-for-French
+  1024→        # (good enough for the demo; a French stemmer would be a Phase 6
+  1025→        # improvement). The ``UNINDEXED`` columns (``document_id``,
+  1026→        # ``tenant_id``, ``producer_id``) are stored but not tokenised —
+  1027→        # we filter on them at query time.
+  1028→        await conn.execute(
+  1029→            text(
+  1030→                "CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks_fts USING fts5("
+  1031→                "content, document_id UNINDEXED, tenant_id UNINDEXED, "
+  1032→                "producer_id UNINDEXED, tokenize = 'porter unicode61')"
+  1033→            )
+  1034→        )
+  1035→    logger.info("SQLite tables created at %s", engine.url)
+  1036→
+  1037→    # Seed
+  1038→    async with engine.begin() as conn:
+  1039→        # ── producers + shops + products + stocks ──
+  1040→        all_product_rows: dict[int, list[dict[str, Any]]] = {}
+  1041→        for prod in _PRODUCERS:
+  1042→            created_at = _REFERENCE_NOW - timedelta(days=_RNG.randint(400, 900))
+  1043→            await conn.execute(
+  1044→                producers.insert().values(
+  1045→                    id=prod["id"],
+  1046→                    legal_name=prod["legal_name"],
+  1047→                    display_name=prod["display_name"],
+  1048→                    email=prod["email"],
+  1049→                    phone=prod["phone"],
+  1050→                    siret=prod["siret"],
+  1051→                    created_at=created_at,
+  1052→                    is_active=True,
+  1053→                )
+  1054→            )
+  1055→            shop = prod["shop"]
+  1056→            shop_id = prod["id"] * 10 + 1
+  1057→            await conn.execute(
+  1058→                shops.insert().values(
+  1059→                    id=shop_id,
+  1060→                    producer_id=prod["id"],
+  1061→                    name=shop["name"],
+  1062→                    address=shop["address"],
+  1063→                    city=shop["city"],
+  1064→                    postal_code=shop["postal_code"],
+  1065→                    latitude=shop["lat"],
+  1066→                    longitude=shop["lng"],
+  1067→                    opening_hours="Mar-Sam 09:00-19:00",
+  1068→                    is_active=True,
+  1069→                )
+  1070→            )
+  1071→
+  1072→            product_rows: list[dict[str, Any]] = []
+  1073→            max_w = max(prod["weights"]) if prod["weights"] else 1
+  1074→            for idx, (pname, cat, unit, price, bio) in enumerate(prod["products"]):
+  1075→                pid = prod["id"] * 100 + idx + 1
+  1076→                # Phase 5 ML meta — derived from category + weight so we
+  1077→                # don't have to extend the _PRODUCERS tuple schema.
+  1078→                meta = _derive_product_meta(cat, prod["weights"][idx], max_w)
+  1079→                row = {
+  1080→                    "id": pid,
+  1081→                    "producer_id": prod["id"],
+  1082→                    "shop_id": shop_id,
+  1083→                    "sku": f"{prod['id']}-{idx + 1:03d}",
+  1084→                    "name": pname,
+  1085→                    "category": cat,
+  1086→                    "unit": unit,
+  1087→                    "price_eur": price,
+  1088→                    "vat_rate": 0.055 if cat in ("légumes", "fruits", "épicerie") else 0.20,
+  1089→                    "is_organic": bio,
+  1090→                    "is_available": True,
+  1091→                    "created_at": created_at + timedelta(days=30 + idx),
+  1092→                    "base_popularity": meta["base_popularity"],
+  1093→                    "is_perishable": meta["is_perishable"],
+  1094→                    "seasonality_peak_month": meta["seasonality_peak_month"],
+  1095→                }
+  1096→                product_rows.append(row)
+  1097→                await conn.execute(products.insert().values(**row))
+  1098→
+  1099→                # Stock — placeholder; the real current snapshot is written
+  1100→                # AFTER the order+history simulation below (we set it to the
+  1101→                # end-of-day stock_level on the last simulated day). For now
+  1102→                # we insert a conservative placeholder so the stocks table
+  1103→                # exists with the right producer scoping; the post-simulation
+  1104→                # UPDATE overwrites quantity/reserved/available.
+  1105→                await conn.execute(
+  1106→                    stocks.insert().values(
+  1107→                        id=pid,  # one stock row per product
+  1108→                        producer_id=prod["id"],
+  1109→                        product_id=pid,
+  1110→                        shop_id=shop_id,
+  1111→                        quantity=20.0,
+  1112→                        reserved=0.0,
+  1113→                        available=20.0,
+  1114→                        updated_at=_REFERENCE_NOW,
+  1115→                    )
+  1116→                )
+  1117→            all_product_rows[prod["id"]] = product_rows
+  1118→
+  1119→        # ── Phase 5 — generate orders + stock_history per producer ──
+  1120→        # Replaces the old _generate_orders(n_june, n_current) call. Each
+  1121→        # producer gets a 91-day history window with daily demand modelled
+  1122→        # as base_popularity × weekend_boost × seasonality × gaussian noise.
+  1123→        # The stock_history rows drive the ML training; the orders drive
+  1124→        # the existing top_products / net_revenue / weekly_sales SQL paths.
+  1125→        all_orders: list[dict[str, Any]] = []
+  1126→        all_stock_history: list[dict[str, Any]] = []
+  1127→        # Per-product final stock_level (end of simulation) so we can UPDATE
+  1128→        # the stocks table after the loop.
+  1129→        final_stock_by_product: dict[int, dict[str, float]] = {}
+  1130→        for prod in _PRODUCERS:
+  1131→            shop_id = prod["id"] * 10 + 1
+  1132→            product_rows = all_product_rows[prod["id"]]
+  1133→            weights = prod["weights"]
+  1134→            base_daily = _PRODUCER_DAILY_ORDERS.get(prod["id"], 5.0)
+  1135→            orders_for_prod, history_for_prod = _generate_orders_and_history(
+  1136→                producer_id=prod["id"],
+  1137→                shop_id=shop_id,
+  1138→                product_rows=product_rows,
+  1139→                weights=weights,
+  1140→                base_orders_per_day=base_daily,
+  1141→            )
+  1142→            all_orders.extend(orders_for_prod)
+  1143→            all_stock_history.extend(history_for_prod)
+  1144→            # Capture the last snapshot per product to UPDATE the stocks
+  1145→            # table after this loop (last-write-wins: history_for_prod is
+  1146→            # ordered by day, so the last row per product is the latest).
+  1147→            # NOTE: snap["stock_level"] is the START-of-day level. The
+  1148→            # end-of-day level is start - daily_sales (restock was already
+  1149→            # added to start). Cap at 0 — rupture zeroes the stock.
+  1150→            for snap in history_for_prod:
+  1151→                end_of_day = snap["stock_level"] - snap["daily_sales"]
+  1152→                final_stock_by_product[snap["product_id"]] = {
+  1153→                    "stock_level": max(end_of_day, 0.0),
+  1154→                }
+  1155→
+  1156→        # Force one or two products per producer into a low-stock situation
+  1157→        # so the "stock manquant samedi" demo returns something interesting.
+  1158→        # We do this AFTER the simulation by zeroing the restock on the last
+  1159→        # simulated day for the 4th product (idx=3) of each producer — same
+  1160→        # pattern as the pre-Phase-5 seed, so existing eval cases (eval-007
+  1161→        # … eval-011) keep their expected low-stock references.
+  1162→        for prod in _PRODUCERS:
+  1163→            product_rows = all_product_rows[prod["id"]]
+  1164→            for idx in (3, 5):
+  1165→                if idx < len(product_rows):
+  1166→                    pid = product_rows[idx]["id"]
+  1167→                    if pid in final_stock_by_product:
+  1168→                        final_stock_by_product[pid]["stock_level"] = _RNG.uniform(2.0, 7.0)
+  1169→
+  1170→        # UPDATE the stocks table with the final per-product stock_level.
+  1171→        for pid, info in final_stock_by_product.items():
+  1172→            level = round(float(info["stock_level"]), 2)
+  1173→            await conn.execute(
+  1174→                stocks.update()
+  1175→                .where(stocks.c.product_id == pid)
+  1176→                .values(
+  1177→                    quantity=level,
+  1178→                    reserved=0.0,
+  1179→                    available=level,
+  1180→                    updated_at=_REFERENCE_NOW,
+  1181→                )
+  1182→            )
+  1183→
+  1184→        # Insert the stock_history rows (one INSERT per row — fine for
+  1185→        # ~7000 rows; SQLite handles it in well under a second).
+  1186→        sh_counter = 0
+  1187→        for snap in all_stock_history:
+  1188→            sh_counter += 1
+  1189→            await conn.execute(
+  1190→                stock_history.insert().values(
+  1191→                    id=sh_counter,
+  1192→                    producer_id=snap["producer_id"],
+  1193→                    product_id=snap["product_id"],
+  1194→                    date=snap["date"],
+  1195→                    stock_level=snap["stock_level"],
+  1196→                    reserved=snap["reserved"],
+  1197→                    available=snap["available"],
+  1198→                    daily_sales=snap["daily_sales"],
+  1199→                    restocked_qty=snap["restocked_qty"],
+  1200→                    stockout_flag=snap["stockout_flag"],
+  1201→                    day_of_week=snap["day_of_week"],
+  1202→                    is_weekend=snap["is_weekend"],
+  1203→                    month=snap["month"],
+  1204→                    created_at=snap["created_at"],
+  1205→                )
+  1206→            )
+  1207→
+  1208→        # Insert orders + items + payments
+  1209→        order_counter = 0
+  1210→        for ord in all_orders:
+  1211→            await conn.execute(
+  1212→                orders.insert().values(
+  1213→                    id=ord["id"],
+  1214→                    producer_id=ord["producer_id"],
+  1215→                    customer_id=ord["customer_id"],
+  1216→                    shop_id=ord["shop_id"],
+  1217→                    pickup_slot=ord["pickup_slot"],
+  1218→                    total_amount=ord["total_amount"],
+  1219→                    status=ord["status"],
+  1220→                    created_at=ord["created_at"],
+  1221→                    updated_at=ord["updated_at"],
+  1222→                )
+  1223→            )
+  1224→            for item in ord["items"]:
+  1225→                await conn.execute(
+  1226→                    order_items.insert().values(
+  1227→                        id=order_counter + 1,
+  1228→                        order_id=item["order_id"],
+  1229→                        producer_id=item["producer_id"],
+  1230→                        product_id=item["product_id"],
+  1231→                        quantity=item["quantity"],
+  1232→                        unit_price_eur=item["unit_price_eur"],
+  1233→                        line_total_eur=item["line_total_eur"],
+  1234→                    )
+  1235→                )
+  1236→                order_counter += 1
+  1237→
+  1238→            # Payment — only if not cancelled/pending
+  1239→            if ord["status"] not in ("cancelled", "pending"):
+  1240→                captured_at = ord["created_at"] + timedelta(hours=_RNG.randint(1, 12))
+  1241→                pay_status = "captured"
+  1242→                if ord["status"] == "cancelled":
+  1243→                    pay_status = "refunded"
+  1244→                await conn.execute(
+  1245→                    payments.insert().values(
+  1246→                        id=order_counter + 1,
+  1247→                        order_id=ord["id"],
+  1248→                        producer_id=ord["producer_id"],
+  1249→                        provider=_RNG.choice(["stripe", "paygreen", "mollie"]),
+  1250→                        provider_ref=f"pi_{ord['id']}_{_RNG.randint(1000, 9999)}",
+  1251→                        amount_eur=ord["total_amount"],
+  1252→                        status=pay_status,
+  1253→                        captured_at=captured_at,
+  1254→                        created_at=ord["created_at"],
+  1255→                    )
+  1256→                )
+  1257→                order_counter += 1
+  1258→
+  1259→            # Pickup booking for some orders
+  1260→            if _RNG.random() < 0.5:
+  1261→                slot_start = ord["pickup_slot"]
+  1262→                await conn.execute(
+  1263→                    pickup_bookings.insert().values(
+  1264→                        id=order_counter + 1,
+  1265→                        producer_id=ord["producer_id"],
+  1266→                        shop_id=ord["shop_id"],
+  1267→                        customer_id=ord["customer_id"],
+  1268→                        slot_start=slot_start,
+  1269→                        slot_end=slot_start + timedelta(minutes=30),
+  1270→                        status=(
+  1271→                            "fulfilled" if ord["status"] == "completed"
+  1272→                            else "confirmed" if ord["status"] in ("paid", "ready_for_pickup")
+  1273→                            else "cancelled" if ord["status"] == "cancelled"
+  1274→                            else "pending"
+  1275→                        ),
+  1276→                        created_at=ord["created_at"] - timedelta(hours=2),
+  1277→                    )
+  1278→                )
+  1279→                order_counter += 1
+  1280→
+  1281→    # Sanity-check log: how many rows per producer
+  1282→    async with engine.connect() as conn:
+  1283→        result = await conn.execute(
+  1284→            select(producers.c.id, producers.c.display_name)
+  1285→        )
+  1286→        producer_rows = result.fetchall()
+  1287→        for pid, name in producer_rows:
+  1288→            r = await conn.execute(
+  1289→                select(func.count()).select_from(orders).where(orders.c.producer_id == pid)
+  1290→            )
+  1291→            n = r.scalar_one()
+  1292→            r2 = await conn.execute(
+  1293→                select(func.count()).select_from(stock_history).where(
+  1294→                    stock_history.c.producer_id == pid
+  1295→                )
+  1296→            )
+  1297→            n_sh = r2.scalar_one()
+  1298→            r3 = await conn.execute(
+  1299→                select(func.count()).select_from(stock_history).where(
+  1300→                    (stock_history.c.producer_id == pid)
+  1301→                    & (stock_history.c.stockout_flag.is_(True))
+  1302→                )
+  1303→            )
+  1304→            n_rupt = r3.scalar_one()
+  1305→            logger.info(
+  1306→                "Producer %s (%s): %d orders, %d stock_history rows (%d ruptures)",
+  1307→                pid, name, n, n_sh, n_rupt,
+  1308→            )
+  1309→        r_total_sh = await conn.execute(select(func.count()).select_from(stock_history))
+  1310→        n_total_sh = r_total_sh.scalar_one()
+  1311→        r_total_rupt = await conn.execute(
+  1312→            select(func.count()).select_from(stock_history).where(
+  1313→                stock_history.c.stockout_flag.is_(True)
+  1314→            )
+  1315→        )
+  1316→        n_total_rupt = r_total_rupt.scalar_one()
+  1317→    logger.info(
+  1318→        "Database seeded — %d producers, %d orders, %d stock_history rows "
+  1319→        "(%d ruptures — %.1f%% prevalence)",
+  1320→        len(_PRODUCERS), len(all_orders), n_total_sh, n_total_rupt,
+  1321→        (100.0 * n_total_rupt / n_total_sh) if n_total_sh else 0.0,
+  1322→    )
+  1323→
+  1324→    # ── Documentary RAG seed — 4 fictitious DP documents ──
+  1325→    # These power the documentary intent (CGV, FAQ, onboarding procedure,
+  1326→    # pickup policy). All four are tenant-wide (producer_id=NULL) so every
+  1327→    # producer sees them. They are FICTITIOUS, written for the demo.
+  1328→    for doc in _DP_DOCUMENTS:
+  1329→        await ingest_document(
+  1330→            tenant_id="dp",
+  1331→            title=doc["title"],
+  1332→            source_type="manual",
+  1333→            content=doc["content"],
+  1334→            producer_id=None,
+  1335→        )
+  1336→    async with engine.connect() as conn:
+  1337→        r = await conn.execute(select(func.count()).select_from(documents))
+  1338→        n_docs = r.scalar_one()
+  1339→        r = await conn.execute(select(func.count()).select_from(document_chunks))
+  1340→        n_chunks = r.scalar_one()
+  1341→    logger.info(
+  1342→        "RAG seed — %d documents, %d chunks (CGV, FAQ, Onboarding, Retrait)",
+  1343→        n_docs, n_chunks,
+  1344→    )
+  1345→
+  1346→    # ── Phase 4 — Ops Copilot HITL seed ──
+  1347→    # 4 fictitious onboarding dossiers + their pre-analyzed approval_requests.
+  1348→    # The ``agent_analysis`` / ``proposed_decision`` / ``proposed_reason``
+  1349→    # fields are PRE-FILLED by calling OpsCopilotAgent.analyze_onboarding()
+  1350→    # during seeding so the admin UI shows the agent's proposal immediately
+  1351→    # (no lazy-compute on first open). The approval_requests.status stays
+  1352→    # "pending" — the admin will close the loop via POST /api/approvals/{id}/decide.
+  1353→    await _seed_onboardings(engine)
+  1354→
+  1355→    # ── Phase 6a — Auth + multi-tenant platform seed ──
+  1356→    # Create the demo "dp" tenant + 3 demo users (marie/pierre/admin,
+  1357→    # password "tevet7demo") + their memberships. Idempotent — safe to
+  1358→    # call on every startup. The frontend logs in with these credentials
+  1359→    # to obtain a JWT carrying the tenant context (tenant_id="dp",
+  1360→    # role="producer", producer_id=42).
+  1361→    try:
+  1362→        from app.tenants.service import seed_demo_tenant
+  1363→        await seed_demo_tenant()
+  1364→        logger.info("Phase 6a demo tenant + users seeded (dp, marie, pierre, admin)")
+  1365→    except Exception:  # noqa: BLE001 — never block app startup on auth seed
+  1366→        logger.exception("seed_demo_tenant() failed — auth endpoints may not work")
+  1367→
+  1368→    # ── Phase 6b — Onboarding backend: seed the demo tenant's config ──
+  1369→    # The demo tenant "dp" gets a tenant_configs row with
+  1370→    # connector_type="sqlite_demo" so the connector factory returns a
+  1371→    # SqliteConnector for it (same as before — backward compat). The
+  1372→    # schema_config is the full app/schema.yaml content (the demo's
+  1373→    # business contract). The roles_config captures the producer/admin
+  1374→    # scope columns used by the rewriter.
+  1375→    try:
+  1376→        await seed_demo_tenant_config()
+  1377→        logger.info("Phase 6b demo tenant_configs row seeded (dp, sqlite_demo)")
+  1378→    except Exception:  # noqa: BLE001 — never block app startup
+  1379→        logger.exception("seed_demo_tenant_config() failed — onboarding endpoints may not work")
+  1380→
+  1381→
+  1382→async def _seed_onboardings(engine: AsyncEngine) -> None:
+  1383→    """Insert 4 fictitious onboarding dossiers + their pre-analyzed approval_requests.
+  1384→
+  1385→    See the comment block on ``producer_onboardings`` for the schema and the
+  1386→    Phase 4 HITL contract. The agent's pre-analysis is run inline (with the
+  1387→    real tracer) so each seed-time analysis gets a trace_id persisted on the
+  1388→    approval_requests row — that ties the human decision back to the agent
+  1389→    run that proposed it.
+  1390→    """
+  1391→    # Local import to avoid a circular dependency at module load time
+  1392→    # (app.agents.ops_copilot imports app.tracing.base only, but keeping
+  1393→    # the import local makes the dependency direction explicit).
+  1394→    import json as _json
+  1395→
+  1396→    from app.agents.ops_copilot import OpsCopilotAgent
+  1397→    from app.tracing import get_tracer
+  1398→
+  1399→    now = datetime.utcnow()
+  1400→    # Build the 4 dossier dicts. The order here is also the order of the
+  1401→    # auto-increment ids (1, 2, 3, 4) — relied on by the eval cases and
+  1402→    # the curl verifications in the worklog.
+  1403→    dossiers: list[dict[str, Any]] = [
+  1404→        {
+  1405→            "tenant_id": "dp",
+  1406→            "legal_name": "Ferme des Collines",
+  1407→            "siret": "12345678900012",
+  1408→            "siret_valid": True,
+  1409→            "email": "contact@ferme-des-collines.fr",
+  1410→            "phone": "+33 4 73 11 22 33",
+  1411→            "declared_address": "15 route des Collines, 63000 Clermont-Ferrand",
+  1412→            "rib_document_present": True,
+  1413→            "id_document_present": True,
+  1414→            "professional_certificate_present": True,
+  1415→            "professional_certificate_expiry": "2027-12-31",  # future → valid
+  1416→            "document_address": "15 route des Collines, 63000 Clermont-Ferrand",
+  1417→            "submitted_at": now,
+  1418→            "status": "pending",
+  1419→            "rejection_reason": None,
+  1420→        },
+  1421→        {
+  1422→            "tenant_id": "dp",
+  1423→            "legal_name": "Maraîchage Bio Soleil",
+  1424→            "siret": "98765432100025",
+  1425→            "siret_valid": True,
+  1426→            "email": "contact@bio-soleil.fr",
+  1427→            "phone": "+33 4 75 44 55 66",
+  1428→            "declared_address": "8 chemin du Soleil, 26000 Valence",
+  1429→            "rib_document_present": True,
+  1430→            "id_document_present": True,
+  1431→            "professional_certificate_present": False,  # ← missing
+  1432→            "professional_certificate_expiry": None,
+  1433→            "document_address": "8 chemin du Soleil, 26000 Valence",
+  1434→            "submitted_at": now,
+  1435→            "status": "pending",
+  1436→            "rejection_reason": None,
+  1437→        },
+  1438→        {
+  1439→            "tenant_id": "dp",
+  1440→            "legal_name": "Élevage du Vernet",
+  1441→            "siret": "11111111111111",
+  1442→            "siret_valid": False,  # ← SIRENE check failed (legal blocker)
+  1443→            "email": "contact@elevage-vernet.fr",
+  1444→            "phone": "+33 5 61 77 88 99",
+  1445→            "declared_address": "3 lieu-dit le Vernet, 31000 Toulouse",
+  1446→            "rib_document_present": True,
+  1447→            "id_document_present": True,
+  1448→            "professional_certificate_present": True,
+  1449→            "professional_certificate_expiry": "2027-03-15",  # future → cert OK
+  1450→            "document_address": "3 lieu-dit le Vernet, 31000 Toulouse",
+  1451→            "submitted_at": now,
+  1452→            "status": "pending",
+  1453→            "rejection_reason": None,
+  1454→        },
+  1455→        {
+  1456→            "tenant_id": "dp",
+  1457→            "legal_name": "Vignoble des Coteaux",
+  1458→            "siret": "22222222222222",
+  1459→            "siret_valid": True,
+  1460→            "email": "contact@vignoble-coteaux.fr",
+  1461→            "phone": "+33 3 80 22 33 44",
+  1462→            "declared_address": "21 rue des Vignes, 21200 Beaune",
+  1463→            "rib_document_present": True,
+  1464→            "id_document_present": True,
+  1465→            "professional_certificate_present": True,
+  1466→            "professional_certificate_expiry": "2023-05-01",  # ← expired (past)
+  1467→            "document_address": "4 route des Coteaux, 71100 Chalon-sur-Saône",  # ← mismatch
+  1468→            "submitted_at": now,
+  1469→            "status": "pending",
+  1470→            "rejection_reason": None,
+  1471→        },
+  1472→    ]
+  1473→
+  1474→    # 1) Insert the 4 onboarding rows and capture their auto-incremented ids.
+  1475→    onboarding_ids: list[int] = []
+  1476→    async with engine.begin() as conn:
+  1477→        for ob in dossiers:
+  1478→            result = await conn.execute(
+  1479→                producer_onboardings.insert()
+  1480→                .values(**ob)
+  1481→                .returning(producer_onboardings.c.id)
+  1482→            )
+  1483→            ob_id = int(result.scalar_one())
+  1484→            onboarding_ids.append(ob_id)
+  1485→
+  1486→    # 2) Run the agent pre-analysis OUTSIDE the seeding transaction so each
+  1487→    #    analyze_onboarding() call can write its own trace row without
+  1488→    #    nested-transaction contention on SQLite.
+  1489→    agent = OpsCopilotAgent(tracer=get_tracer())
+  1490→    approval_rows: list[dict[str, Any]] = []
+  1491→    for ob, ob_id in zip(dossiers, onboarding_ids):
+  1492→        analysis = await agent.analyze_onboarding({**ob, "id": ob_id})
+  1493→        approval_rows.append({
+  1494→            "tenant_id": "dp",
+  1495→            "onboarding_id": ob_id,
+  1496→            "request_type": "onboarding_analysis",
+  1497→            "agent_analysis": _json.dumps(analysis.to_dict(), ensure_ascii=False),
+  1498→            "proposed_decision": analysis.proposed_decision,
+  1499→            "proposed_reason": analysis.proposed_reason,
+  1500→            "status": "pending",  # ← admin has not decided yet
+  1501→            "decided_by": None,
+  1502→            "decided_at": None,
+  1503→            "human_reason": None,
+  1504→            "created_at": now,
+  1505→            "trace_id": analysis.trace_id,
+  1506→        })
+  1507→        logger.info(
+  1508→            "Onboarding seed — id=%d legal_name=%r proposed=%s confidence=%d trace_id=%s",
+  1509→            ob_id, ob["legal_name"], analysis.proposed_decision,
+  1510→            analysis.confidence, analysis.trace_id,
+  1511→        )
+  1512→
+  1513→    # 3) Insert the 4 approval_requests rows.
+  1514→    async with engine.begin() as conn:
+  1515→        for row in approval_rows:
+  1516→            await conn.execute(approval_requests.insert().values(**row))
+  1517→
+  1518→    logger.info(
+  1519→        "Ops Copilot seed — %d onboarding dossiers + %d pre-analyzed approval_requests",
+  1520→        len(dossiers), len(approval_rows),
+  1521→    )
+  1522→
+  1523→
+  1524→async def seed_demo_tenant_config() -> None:
+  1525→    """Seed the demo tenant ``dp`` config row in ``tenant_configs``.
+  1526→
+  1527→    Idempotent — safe to call on every startup. The row has:
+  1528→      - connector_type = "sqlite_demo"  (→ SqliteConnector in the factory)
+  1529→      - connection_url = None
+  1530→      - csv_path       = None
+  1531→      - schema_config  = the full app/schema.yaml content (JSON-encoded)
+  1532→      - roles_config   = {"producer": {"scope_column": "producer_id"},
+  1533→                          "admin": {"scope_column": null},
+  1534→                          "customer": {"scope_column": "producer_id"}}
+  1535→      - onboarded      = True
+  1536→
+  1537→    The schema_config is loaded from disk so we don't duplicate the YAML
+  1538→    content in this module. The roles_config mirrors the scoping convention
+  1539→    defined in app/schema.yaml (row-level scope by producer_id).
+  1540→    """
+  1541→    import json as _json
+  1542→    from pathlib import Path as _Path
+  1543→
+  1544→    import yaml as _yaml
+  1545→
+  1546→    engine = get_engine()
+  1547→    now = datetime.utcnow()
+  1548→    schema_path = _Path(__file__).resolve().parent / "schema.yaml"
+  1549→    schema_yaml_text = schema_path.read_text(encoding="utf-8")
+  1550→    schema_dict = _yaml.safe_load(schema_yaml_text) or {}
+  1551→    roles_config = {
+  1552→        "producer": {"scope_column": "producer_id"},
+  1553→        "admin": {"scope_column": None},
+  1554→        "customer": {"scope_column": "producer_id"},
+  1555→    }
+  1556→
+  1557→    async with engine.connect() as conn:
+  1558→        r = await conn.execute(
+  1559→            select(tenant_configs.c.id).where(tenant_configs.c.tenant_id == "dp")
+  1560→        )
+  1561→        existing = r.fetchone()
+  1562→    if existing is not None:
+  1563→        # Update the schema_config + roles_config + onboarded flag in case
+  1564→        # the YAML file changed since the last startup (idempotent reseed).
+  1565→        async with engine.begin() as txn:
+  1566→            await txn.execute(
+  1567→                tenant_configs.update().where(tenant_configs.c.tenant_id == "dp").values(
+  1568→                    connector_type="sqlite_demo",
+  1569→                    connection_url=None,
+  1570→                    csv_path=None,
+  1571→                    schema_config=_json.dumps(schema_dict, ensure_ascii=False),
+  1572→                    roles_config=_json.dumps(roles_config, ensure_ascii=False),
+  1573→                    onboarded=True,
+  1574→                    updated_at=now,
+  1575→                )
+  1576→            )
+  1577→        logger.info("seed_demo_tenant_config — refreshed dp tenant_configs row")
+  1578→        return
+  1579→    async with engine.begin() as txn:
+  1580→        await txn.execute(
+  1581→            tenant_configs.insert().values(
+  1582→                tenant_id="dp",
+  1583→                connector_type="sqlite_demo",
+  1584→                connection_url=None,
+  1585→                csv_path=None,
+  1586→                schema_config=_json.dumps(schema_dict, ensure_ascii=False),
+  1587→                roles_config=_json.dumps(roles_config, ensure_ascii=False),
+  1588→                onboarded=True,
+  1589→                created_at=now,
+  1590→                updated_at=now,
+  1591→            )
+  1592→        )
+  1593→    logger.info("seed_demo_tenant_config — created dp tenant_configs row")
+  1594→
+  1595→
+  1596→async def dispose_engine() -> None:
+  1597→    """Dispose the engine pool (called on app shutdown)."""
+  1598→    global _engine
+  1599→    if _engine is not None:
+  1600→        await _engine.dispose()
+  1601→    _engine = None
+  1602→
+  1603→
+  1604→# ─────────────────────────────────────────────────────────────────────────────
+  1605→# Documentary RAG — chunking + ingest
+  1606→# ─────────────────────────────────────────────────────────────────────────────
+  1607→
+  1608→
+  1609→def _chunk_text(content: str, target_size: int = 320, max_size: int = 480) -> list[str]:
+  1610→    """Split ``content`` into paragraph-sized chunks for FTS5 indexing.
+  1611→
+  1612→    Strategy:
+  1613→      1. Split on double newlines (paragraph boundaries).
+  1614→      2. Each paragraph becomes a candidate chunk.
+  1615→      3. If a paragraph is longer than ``max_size``, hard-split it at the
+  1616→         last whitespace before ``target_size`` (preserves word boundaries).
+  1617→      4. Discard empty chunks.
+  1618→
+  1619→    The 320-char target keeps chunks small enough to cite cleanly in an
+  1620→    LLM answer (Phase 6) yet big enough to carry a full clause of the CGV.
+  1621→    """
+  1622→    chunks: list[str] = []
+  1623→    for para in content.split("\n\n"):
+  1624→        para = para.strip()
+  1625→        if not para:
+  1626→            continue
+  1627→        if len(para) <= max_size:
+  1628→            chunks.append(para)
+  1629→            continue
+  1630→        # Hard-split long paragraphs at word boundaries.
+  1631→        cursor = 0
+  1632→        while cursor < len(para):
+  1633→            end = cursor + target_size
+  1634→            if end >= len(para):
+  1635→                chunks.append(para[cursor:].strip())
+  1636→                break
+  1637→            # Walk back to the previous whitespace.
+  1638→            while end > cursor and para[end] not in (" ", "\n"):
+  1639→                end -= 1
+  1640→            if end == cursor:  # single word longer than target_size
+  1641→                end = cursor + target_size
+  1642→            chunks.append(para[cursor:end].strip())
+  1643→            cursor = end
+  1644→    return [c for c in chunks if c]
+  1645→
+  1646→
+  1647→async def ingest_document(
+  1648→    tenant_id: str,
+  1649→    title: str,
+  1650→    source_type: str,
+  1651→    content: str,
+  1652→    producer_id: int | None = None,
+  1653→    source_filename: str | None = None,
+  1654→) -> int:
+  1655→    """Insert a document + its chunks, sync the FTS5 table, return doc id.
+  1656→
+  1657→    Called by:
+  1658→      - ``init_db()`` to seed the 4 fictitious DP documents.
+  1659→      - ``POST /api/documents`` to ingest an uploaded PDF or text file.
+  1660→
+  1661→    The FTS5 table is synced manually (not via triggers) — see the comment
+  1662→    on ``document_chunks_fts`` above for the rationale.
+  1663→    """
+  1664→    engine = get_engine()
+  1665→    now = datetime.utcnow()
+  1666→    chunks = _chunk_text(content)
+  1667→    async with engine.begin() as conn:
+  1668→        result = await conn.execute(
+  1669→            documents.insert().values(
+  1670→                tenant_id=tenant_id,
+  1671→                title=title,
+  1672→                source_type=source_type,
+  1673→                source_filename=source_filename,
+  1674→                content_raw=content,
+  1675→                producer_id=producer_id,
+  1676→                created_at=now,
+  1677→            ).returning(documents.c.id)
+  1678→        )
+  1679→        doc_id = result.scalar_one()
+  1680→        for idx, chunk in enumerate(chunks):
+  1681→            await conn.execute(
+  1682→                document_chunks.insert().values(
+  1683→                    document_id=doc_id,
+  1684→                    chunk_index=idx,
+  1685→                    content=chunk,
+  1686→                    tenant_id=tenant_id,
+  1687→                    producer_id=producer_id,
+  1688→                    created_at=now,
+  1689→                )
+  1690→            )
+  1691→            # Manual FTS5 sync.
+  1692→            await conn.execute(
+  1693→                text(
+  1694→                    "INSERT INTO document_chunks_fts "
+  1695→                    "(content, document_id, tenant_id, producer_id) "
+  1696→                    "VALUES (:content, :doc_id, :tenant_id, :producer_id)"
+  1697→                ),
+  1698→                {
+  1699→                    "content": chunk,
+  1700→                    "doc_id": doc_id,
+  1701→                    "tenant_id": tenant_id,
+  1702→                    "producer_id": producer_id,
+  1703→                },
+  1704→            )
+  1705→    logger.info(
+  1706→        "ingest_document — doc_id=%d title=%r chunks=%d tenant=%s producer=%s",
+  1707→        doc_id, title, len(chunks), tenant_id, producer_id,
+  1708→    )
+  1709→    return doc_id
+  1710→
+  1711→
+  1712→async def delete_document(doc_id: int) -> bool:
+  1713→    """Delete a document, its chunks, and its FTS5 rows. Returns True if deleted.
+  1714→
+  1715→    Order matters for FTS5: delete from the virtual table first (it has no
+  1716→    FK constraints), then ``document_chunks``, then ``documents``.
+  1717→    """
+  1718→    engine = get_engine()
+  1719→    async with engine.begin() as conn:
+  1720→        # Verify existence first (so we can return False cleanly).
+  1721→        existing = await conn.execute(
+  1722→            select(documents.c.id).where(documents.c.id == doc_id)
+  1723→        )
+  1724→        if existing.fetchone() is None:
+  1725→            return False
+  1726→        # 1. FTS5 virtual table (manual sync — no cascade).
+  1727→        await conn.execute(
+  1728→            text("DELETE FROM document_chunks_fts WHERE document_id = :doc_id"),
+  1729→            {"doc_id": doc_id},
+  1730→        )
+  1731→        # 2. document_chunks.
+  1732→        await conn.execute(
+  1733→            document_chunks.delete().where(document_chunks.c.document_id == doc_id)
+  1734→        )
+  1735→        # 3. documents.
+  1736→        await conn.execute(
+  1737→            documents.delete().where(documents.c.id == doc_id)
+  1738→        )
+  1739→    logger.info("delete_document — doc_id=%d deleted", doc_id)
+  1740→    return True
+  1741→
+  1742→
+  1743→# ─────────────────────────────────────────────────────────────────────────────
+  1744→# Seed documents (fictitious, French) — Drive Producteur
+  1745→# ─────────────────────────────────────────────────────────────────────────────
+  1746→
+  1747→_DP_DOCUMENTS: list[dict[str, str]] = [
+  1748→    {
+  1749→        "title": "CGV Drive Producteur",
+  1750→        "content": """Conditions Générales de Vente — Drive Producteur (marketplace click & collect)
+  1751→
+  1752→Article 1 — Objet
+  1753→Les présentes Conditions Générales de Vente régissent les relations entre les producteurs partenaires de la marketplace Drive Producteur (ci-après « le Producteur ») et la société éditrice de la plateforme (ci-après « DP »). La marketplace met en relation directe les producteurs locaux et les clients finals via un système de commande en ligne et de retrait en point de vente.
+  1754→
+  1755→Article 2 — Inscription du producteur
+  1756→L'inscription d'un nouveau producteur est conditionnée à la validation de son dossier d'onboarding : SIRET en cours de validité, extrait Kbis ou équivalent, RIB au nom de la raison sociale, pièce d'identité du représentant légal et justificatif professionnel (numéro d'agrément, certification bio, etc.). DP se réserve un délai de 5 jours ouvrés pour valider ou refuser le dossier.
+  1757→
+  1758→Article 3 — Commission marketplace
+  1759→DP perçoit une commission de 12 % sur le montant HT de chaque commande validée. Cette commission couvre l'hébergement de la boutique en ligne, le paiement en ligne sécurisé, le support client de premier niveau et les outils de gestion des créneaux de retrait. La commission est prélevée à la source : le producteur perçoit directement le montant net (HT moins 12 %) sur son RIB.
+  1760→
+  1761→Article 4 — Paiement au producteur
+  1762→Le paiement des commandes validées est effectué sous 7 jours ouvrés après la confirmation de retrait par le client. Les paiements sont regroupés en un virement hebdomadaire chaque mardi. Un relevé détaillé des commandes et de la commission prélevée est disponible dans l'espace producteur. En cas de litige sur une commande, le paiement de la commande concernée est suspendu jusqu'à résolution.
+  1763→
+  1764→Article 5 — Créneaux de retrait (click & collect)
+  1765→Chaque producteur définit librement ses créneaux de retrait dans son espace producteur (onglet « Créneaux »). Les créneaux doivent être configurés au moins 48 heures à l'avance. Un créneau a une durée minimale de 30 minutes. Le producteur s'engage à être présent au point de vente pendant la totalité de la plage horaire ouverte au retrait.
+  1766→
+  1767→Article 6 — Annulation par le client
+  1768→Le client peut annuler sa commande gratuitement jusqu'à 24 heures avant le créneau de retrait. Au-delà, l'annulation est soumise à l'accord du producteur. Un client qui ne se présente pas au créneau de retrait (no-show) déclenche automatiquement la procédure décrite à l'article 7.
+  1769→
+  1770→Article 7 — No-show client
+  1771→En cas de non-présentation du client au créneau de retrait convenu, le producteur conserve la marchandise. La commande est marquée « no_show » dans l'espace producteur après 1 heure de retard. Le paiement est néanmoins versé au producteur (la commande a été préparée et le créneau bloqué). Le producteur peut proposer un nouveau créneau de retrait dans les 24 heures au client, sans obligation.
+  1772→
+  1773→Article 8 — Annulation par le producteur
+  1774→Le producteur peut annuler une commande en cas de rupture de stock, de problème qualité ou de force majeure. L'annulation doit être notifiée via l'espace producteur avant le créneau de retrait. Le client est intégralement remboursé. En cas d'annulations répétées (plus de 5 % des commandes sur un mois), DP peut suspendre temporairement le catalogue du producteur.
+  1775→
+  1776→Article 9 — Litiges
+  1777→Tout litige relatif à une commande (qualité, quantité, retard) doit être signalé via l'espace producteur dans un délai de 48 heures après le retrait. DP joue un rôle de médiateur entre le producteur et le client. À défaut de résolution amiable sous 15 jours, les parties peuvent saisir la juridiction compétente du siège social de DP.
+  1778→
+  1779→Article 10 — Modification des CGV
+  1780→DP se réserve le droit de modifier les présentes CGV. Les modifications entrent en vigueur 30 jours après leur notification aux producteurs par email. Les producteurs peuvent résilier leur partenariat sans frais dans ce délai de 30 jours s'ils n'acceptent pas les nouvelles conditions.""",
+  1781→    },
+  1782→    {
+  1783→        "title": "FAQ Producteurs",
+  1784→        "content": """FAQ Producteurs — Drive Producteur
+  1785→
+  1786→Q : Comment ajouter un produit à mon catalogue ?
+  1787→R : Rendez-vous dans l'espace producteur, onglet « Catalogue », puis cliquez sur « Ajouter un produit ». Renseignez le nom du produit, la catégorie (légumes, fruits, produits laitiers, viande, épicerie, boissons), l'unité de vente (kg, pièce, botte, litre, barquette), le prix TTC et la disponibilité. Pensez à ajouter une photo — les produits avec photo se vendent en moyenne 2,5 fois mieux. Le produit apparaît sur la marketplace dans les 5 minutes.
+  1788→
+  1789→Q : Comment fonctionnent les commissions ?
+  1790→R : DP perçoit une commission de 12 % sur le montant HT de chaque commande. La commission est prélevée à la source : vous percevez directement le montant net (HT moins 12 %) sur votre RIB. Aucune facturation séparée. Le détail des commissions est disponible dans l'espace producteur, onglet « Paiements ».
+  1791→
+  1792→Q : Que faire si un client ne vient pas récupérer sa commande ?
+  1793→R : Si un client ne se présente pas au créneau de retrait, la commande est automatiquement marquée « no_show » après 1 heure de retard. Vous conservez la marchandise et le paiement est néanmoins versé (la commande a été préparée et le créneau bloqué). Vous pouvez, sans obligation, proposer un nouveau créneau de retrait au client dans les 24 heures via l'espace producteur. Au-delà de 24 heures, la commande est définitivement clôturée.
+  1794→
+  1795→Q : Comment modifier mes créneaux de retrait ?
+  1796→R : Allez dans l'espace producteur, onglet « Créneaux ». Vous pouvez ajouter, modifier ou supprimer des créneaux. Les modifications doivent être faites au moins 48 heures à l'avance. Un créneau a une durée minimale de 30 minutes. Pensez à anticiper les périodes de forte affluence (week-ends, veilles de fêtes) en ouvrant plus de créneaux.
+  1797→
+  1798→Q : Quand suis-je payé ?
+  1799→R : Les paiements sont effectués sous 7 jours ouvrés après la confirmation de retrait par le client. Les virements sont regroupés hebdomadairement, chaque mardi. Vous recevez un email de notification à chaque virement avec le relevé détaillé des commandes.
+  1800→
+  1801→Q : Comment suspendre temporairement ma boutique ?
+  1802→R : Dans l'espace producteur, onglet « Paramètres », activez le mode « Pause boutique ». Tous vos produits deviennent indisponibles sur la marketplace mais restent visibles dans votre catalogue. Vous pouvez réactiver la boutique à tout moment.
+  1803→
+  1804→Q : Comment être mis en avant sur la marketplace ?
+  1805→R : DP met en avant les producteurs qui : (1) ont une photo de profil et une description de leur exploitation, (2) proposent au moins 8 produits avec photos, (3) respectent leurs créneaux de retrait (taux de no-show < 5 %), (4) ont un délai de réponse aux messages clients inférieur à 24 heures.""",
+  1806→    },
+  1807→    {
+  1808→        "title": "Procédure d'onboarding producteur",
+  1809→        "content": """Procédure d'onboarding producteur — Drive Producteur
+  1810→
+  1811→Cette procédure décrit les étapes de validation d'un nouveau producteur sur la marketplace Drive Producteur. Elle s'adresse à l'équipe Ops DP ainsi qu'aux producteurs candidats.
+  1812→
+  1813→Étape 1 — Création du compte
+  1814→Le producteur candidat crée son compte sur drive-producteur.fr/onboarding. Il renseigne : raison sociale, nom commercial (display_name), email de contact, téléphone, adresse du siège social. Un email de vérification est envoyé. Le producteur clique sur le lien de vérification pour activer son compte. Le compte est alors en statut « pending ».
+  1815→
+  1816→Étape 2 — Documents légaux obligatoires
+  1817→Le producteur téléverse les documents légaux suivants via son espace producteur, onglet « Documents » :
+  1818→  - SIRET en cours de validité (extrait SIRENE de moins de 3 mois).
+  1819→  - RIB au nom de la raison sociale (obligatoire pour les virements).
+  1820→  - Pièce d'identité du représentant légal (recto-verso).
+  1821→  - Justificatif professionnel : numéro d'agrément, certificat de qualification professionnelle, attestation de certification bio, ou Kbis de moins de 3 mois pour les SARL/EURL.
+  1822→Champs obligatoires : tous les champs du formulaire sont obligatoires. Aucune soumission partielle n'est acceptée.
+  1823→
+  1824→Étape 3 — Validation SIRENE
+  1825→L'équipe Ops DP vérifie le SIRET via l'API SIRENE de l'INSEE. Les points vérifiés : (a) le SIRET existe bien, (b) l'activité déclarée correspond à une production agricole ou artisanale compatible avec la marketplace, (c) l'établissement n'est pas en liquidation judiciaire, (d) l'adresse du siège correspond à l'adresse déclarée par le producteur. Cette étape prend en moyenne 2 jours ouvrés.
+  1826→
+  1827→Motifs de rejet courants à l'étape 3 :
+  1828→  - SIRET inexistant ou invalide.
+  1829→  - Activité non agricole (ex. restauration, commerce de gros).
+  1830→  - Établissement en liquidation ou redressement judiciaire.
+  1831→  - Adresse du siège incohérente avec le point de vente déclaré.
+  1832→
+  1833→Étape 4 — Configuration du catalogue
+  1834→Une fois le dossier validé (étapes 2 + 3), le producteur configure son catalogue : ajout des produits (nom, catégorie, unité, prix, photo), définition des créneaux de retrait, paramétrage du point de vente (adresse, horaires, coordonnées GPS). L'équipe Ops DP accompagne le producteur sur cette étape si nécessaire.
+  1835→
+  1836→Étape 5 — Activation
+  1837→Lorsque le catalogue contient au moins 5 produits et qu'au moins 3 créneaux de retrait sont configurés, l'équipe Ops DP active la boutique. Le producteur reçoit un email de confirmation. La boutique est visible sur la marketplace dans les 24 heures. Un suivi qualité est réalisé à J+7, J+30 et J+90 pour vérifier le bon démarrage.
+  1838→
+  1839→Délai total moyen : 5 jours ouvrés (dont 2 jours pour la validation SIRENE, 1 jour pour la vérification des documents, 2 jours pour la configuration du catalogue par le producteur).""",
+  1840→    },
+  1841→    {
+  1842→        "title": "Politique de retrait (click & collect)",
+  1843→        "content": """Politique de retrait — Drive Producteur (click & collect)
+  1844→
+  1845→Cette politique détaille les règles applicables aux retraits de commandes en point de vente.
+  1846→
+  1847→Créneaux de retrait
+  1848→Chaque producteur définit ses propres créneaux de retrait dans son espace producteur. Les créneaux sont configurés au moins 48 heures à l'avance. Un créneau a une durée minimale de 30 minutes. Le producteur s'engage à être présent au point de vente pendant toute la plage horaire ouverte. Les créneaux sont visibles par les clients lors de la commande.
+  1849→
+  1850→Retard client
+  1851→Le client est considéré en retard s'il se présente après l'heure de fin de son créneau. Une tolérance de 15 minutes est accordée. Au-delà, le producteur peut refuser la remise de la commande et la marquer comme « no_show ».
+  1852→
+  1853→No-show (non-présentation client)
+  1854→Si le client ne se présente pas dans l'heure qui suit la fin de son créneau, la commande est automatiquement marquée « no_show » dans l'espace producteur. La marchandise reste la propriété du producteur. Le paiement est néanmoins versé au producteur (la commande a été préparée et le créneau bloqué). Le producteur peut, sans obligation, proposer un nouveau créneau de retrait dans les 24 heures. Au-delà, la commande est définitivement clôturée.
+  1855→
+  1856→Modification de créneau par le client
+  1857→Le client peut modifier son créneau de retrait gratuitement jusqu'à 24 heures avant le créneau initialement choisi. La modification se fait via l'espace client. Au-delà de 24 heures, la modification n'est plus possible — le client doit annuler et recommander.
+  1858→
+  1859→Annulation par le client
+  1860→Annulation gratuite jusqu'à 24 heures avant le créneau. Au-delà, l'annulation est soumise à l'accord du producteur (notification via l'espace client). Si le producteur refuse l'annulation tardive, le client est facturé et la commande est conservée à disposition pendant 24 heures.
+  1861→
+  1862→Annulation par le producteur
+  1863→Le producteur peut annuler une commande en cas de rupture de stock, de problème qualité ou de force majeure. L'annulation doit être notifiée avant le créneau de retrait via l'espace producteur. Le client est intégralement remboursé. Des annulations répétées (> 5 % des commandes sur un mois) peuvent entraîner la suspension temporaire du catalogue producteur par DP.""",
+  1864→    },
+  1865→]
+  1866→

@@ -163,6 +163,7 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
         <UserDropdown
           isAdmin={isAdmin}
           canLogout={authMode === "authenticated" || authMode === "demo"}
+          activeTenant={activeTenant}
         />
       </div>
     </header>
@@ -177,9 +178,11 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
 function UserDropdown({
   isAdmin,
   canLogout,
+  activeTenant,
 }: {
   isAdmin: boolean;
   canLogout: boolean;
+  activeTenant: { name: string } | null;
 }) {
   const identity = useCopilotStore((s) => s.identity);
   const setAdminView = useCopilotStore((s) => s.setAdminView);
@@ -199,7 +202,7 @@ function UserDropdown({
               "flex size-6 shrink-0 items-center justify-center rounded-full border",
               identity.kind === "admin"
                 ? "border-border bg-secondary text-foreground"
-                : "border-border bg-primary text-primary-foreground",
+                : "border-border bg-primary text-foreground",
             )}
           >
             <span className="font-heading text-[10px] font-medium">
@@ -235,7 +238,9 @@ function UserDropdown({
           <div className="mt-0.5 text-[11px] text-muted-foreground">
             {identity.kind === "admin"
               ? "Accès admin (full tenant)"
-              : `${identity.farmName ?? "—"} · ${identity.producerNumber ?? ""}`}
+              : identity.farmName
+                ? `${identity.farmName} · ${identity.producerNumber ?? (identity.producerId != null ? `#${identity.producerId}` : "")}`
+                : `${activeTenant?.name ?? "Drive Producteur"}${identity.producerId != null ? ` · #${identity.producerId}` : ""}`}
           </div>
         </div>
         {isAdmin && (

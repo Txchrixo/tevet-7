@@ -50,6 +50,19 @@ logger = logging.getLogger("tevet7.tenants.onboarding")
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+async def get_tenant_config_row(tenant_id: str) -> dict[str, Any] | None:
+    """Public wrapper around :func:`_get_config_row`.
+
+    Returns the tenant_configs row for ``tenant_id`` (with JSON fields
+    parsed into dicts), or ``None`` if the tenant has no config row.
+
+    Used by ``GET /api/tenants/{tenant_id}/example-questions`` to load
+    the schema_config + onboarded flag without going through the admin
+    surface (which requires the admin role).
+    """
+    return await _get_config_row(tenant_id)
+
+
 async def _get_config_row(tenant_id: str) -> dict[str, Any] | None:
     """Return the tenant_configs row for ``tenant_id``, or None."""
     engine = get_engine()

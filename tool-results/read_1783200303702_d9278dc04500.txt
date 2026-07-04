@@ -1,0 +1,952 @@
+     1→import { create } from "zustand";
+     2→import { toast } from "sonner";
+     3→
+     4→import {
+     5→  DEFAULT_IDENTITY_ID,
+     6→  IDENTITIES,
+     7→  getResponseForExample,
+     8→  getResponseForMessage,
+     9→} from "./mock-data";
+    10→import {
+    11→  DEMO_EMAIL,
+    12→  DEMO_PASSWORD,
+    13→  AuthApiError,
+    14→  activateTenant,
+    15→  createTenant as authCreateTenant,
+    16→  getAuthToken,
+    17→  getMe,
+    18→  listMyTenants,
+    19→  login as authLogin,
+    20→  signup as authSignup,
+    21→  setAuthToken,
+    22→  setActiveTenantId,
+    23→  getActiveTenantId,
+    24→} from "./auth-api";
+    25→import {
+    26→  DEFAULT_TENANT_ID,
+    27→  AdminApiError,
+    28→  getPlatformStats,
+    29→  getTenantConfig,
+    30→  getTenantConversations,
+    31→  getTenantStats,
+    32→  getTenantUsers,
+    33→  listAllTenants,
+    34→  resetDemoTenant,
+    35→} from "./admin-api";
+    36→import type {
+    37→  AssistantResponse,
+    38→  AuthUser,
+    39→  ChatMessage,
+    40→  Conversation,
+    41→  Identity,
+    42→  PlatformStats,
+    43→  PlatformTenant,
+    44→  TenantConfig,
+    45→  TenantMembership,
+    46→  TenantStats,
+    47→  TenantUser,
+    48→  TraceStep,
+    49→} from "./types";
+    50→
+    51→let idCounter = 0;
+    52→function makeId(prefix: string): string {
+    53→  idCounter += 1;
+    54→  return `${prefix}-${Date.now().toString(36)}-${idCounter}`;
+    55→}
+    56→
+    57→export type AdminView = "none" | "tenant" | "platform";
+    58→
+    59→/** Auth mode — controls which surface is rendered (AuthScreen vs chat). */
+    60→export type AuthMode = "loading" | "anonymous" | "authenticated" | "demo";
+    61→
+    62→interface AdminData {
+    63→  /** The tenant currently displayed in the tenant admin view. */
+    64→  tenantId: string;
+    65→  users: TenantUser[];
+    66→  config: TenantConfig | null;
+    67→  conversations: Conversation[];
+    68→  stats: TenantStats | null;
+    69→  tenants: PlatformTenant[];
+    70→  platformStats: PlatformStats | null;
+    71→  /** Set when an admin API call fails — surfaces in the admin UI banner. */
+    72→  error: string | null;
+    73→}
+    74→
+    75→const emptyAdminData: AdminData = {
+    76→  tenantId: DEFAULT_TENANT_ID,
+    77→  users: [],
+    78→  config: null,
+    79→  conversations: [],
+    80→  stats: null,
+    81→  tenants: [],
+    82→  platformStats: null,
+    83→  error: null,
+    84→};
+    85→
+    86→interface CopilotState {
+    87→  // --- Auth ---
+    88→  authMode: AuthMode;
+    89→  user: AuthUser | null;
+    90→  tenants: TenantMembership[];
+    91→  activeTenant: TenantMembership | null;
+    92→  authLoading: boolean;
+    93→  /** True when the session is a public demo. Shows the
+    94→   * "DÉMO PUBLIQUE" badge + blocks destructive actions. */
+    95→  isDemoSession: boolean;
+    96→
+    97→  // --- Chat identity + messages ---
+    98→  identityId: string;
+    99→  identity: Identity;
+   100→  /** Demo identity override (Marie/Pierre/Admin) — when set, chat calls send
+   101→   * body identity instead of JWT so the user can switch without re-login. */
+   102→  demoIdentityOverride: Identity | null;
+   103→  messages: ChatMessage[];
+   104→  /** Id of the assistant message currently being inspected in the right panel. */
+   105→  selectedMessageId: string | null;
+   106→  /** True while the assistant is "thinking" (typing indicator). */
+   107→  isStreaming: boolean;
+   108→  /** Whether the inspector panel is open on desktop. */
+   109→  inspectorOpen: boolean;
+   110→  /** When true, the AuthScreen shows the IdentityPicker instead of the login form. */
+   111→  showIdentityPicker: boolean;
+   112→  setShowIdentityPicker: (show: boolean) => void;
+   113→
+   114→  // --- Admin console ---
+   115→  adminView: AdminView;
+   116→  adminLoading: boolean;
+   117→  adminData: AdminData;
+   118→
+   119→  // --- Identity / chat actions ---
+   120→  setIdentity: (identityId: string) => void;
+   121→  setDemoIdentityOverride: (identityId: string | null) => void;
+   122→  sendExample: (questionId: string, label: string) => void;
+   123→  sendMessage: (text: string) => void;
+   124→  selectMessage: (messageId: string | null) => void;
+   125→  toggleInspector: () => void;
+   126→  setInspectorOpen: (open: boolean) => void;
+   127→  resetConversation: () => void;
+   128→
+   129→  // --- Auth actions ---
+   130→  bootstrap: () => Promise<void>;
+   131→  login: (
+   132→    email: string,
+   133→    password: string,
+   134→  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+   135→  signup: (
+   136→    email: string,
+   137→    password: string,
+   138→    name: string,
+   139→  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+   140→  tryDemoLogin: (email?: string) => Promise<void>;
+   141→  enterDemoMode: () => void;
+   142→  logout: () => void;
+   143→  switchTenant: (tenantId: string) => Promise<void>;
+   144→  createTenant: (name: string, slug: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+   145→
+   146→  // --- Admin actions ---
+   147→  setAdminView: (view: AdminView) => void;
+   148→  loadTenantAdmin: (tenantId?: string) => Promise<void>;
+   149→  loadPlatformAdmin: () => Promise<void>;
+   150→  resetDemo: () => Promise<void>;
+   151→}
+   152→
+   153→function identityById(id: string): Identity {
+   154→  return IDENTITIES.find((i) => i.id === id) ?? IDENTITIES[0];
+   155→}
+   156→
+   157→/**
+   158→ * Heuristic — the platform owner is the DP Admin identity. The real backend
+   159→ * `/api/auth/me` response carries `is_platform_owner: true` for that account,
+   160→ * but the local mock identities do not have a backend yet so we use the
+   161→ * identity `kind` as the source of truth.
+   162→ */
+   163→export function isPlatformOwner(identity: Identity): boolean {
+   164→  return identity.kind === "admin";
+   165→}
+   166→
+   167→/** Tenant admins — also the DP Admin identity in the demo mock model. */
+   168→export function isTenantAdmin(identity: Identity): boolean {
+   169→  return identity.kind === "admin";
+   170→}
+   171→
+   172→function describeAdminError(err: unknown): string {
+   173→  if (err instanceof AdminApiError) {
+   174→    if (err.status === 401 || err.status === 403) {
+   175→      return "Accès refusé — permissions insuffisantes pour la console admin.";
+   176→    }
+   177→    return err.message;
+   178→  }
+   179→  if (err instanceof Error) return err.message;
+   180→  return "Erreur inconnue";
+   181→}
+   182→
+   183→/** Returns "MD" for "Marie Dubois" etc. — used to derive initials from a real user name. */
+   184→function initialsFromName(name: string): string {
+   185→  const parts = name.trim().split(/\s+/).filter(Boolean);
+   186→  if (parts.length === 0) return "?";
+   187→  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+   188→  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+   189→}
+   190→
+   191→/**
+   192→ * Derives a chat-side `Identity` from the authenticated user + their active
+   193→ * tenant membership. Used so the existing chat UI (which reads `identity.kind`
+   194→ * and `identity.producerId`) keeps working when the user is logged in via the
+   195→ * real backend.
+   196→ */
+   197→function identityFromAuthUser(
+   198→  user: AuthUser,
+   199→  tenant: TenantMembership | null,
+   200→): Identity {
+   201→  const isAdmin = tenant?.role === "admin";
+   202→  const producerId = tenant?.producer_id ?? null;
+   203→  return {
+   204→    id: `user-${user.id}`,
+   205→    kind: isAdmin ? "admin" : "producer",
+   206→    name: user.name,
+   207→    producerNumber: producerId != null ? `#${producerId}` : null,
+   208→    producerId,
+   209→    farmName: null,
+   210→    role: isAdmin ? "Équipe Ops" : "Producteur",
+   211→    initials: initialsFromName(user.name),
+   212→    accent: "accent",
+   213→  };
+   214→}
+   215→
+   216→/**
+   217→ * Adapts the backend `/api/chat` envelope (snake_case) to the frontend's
+   218→ * `AssistantResponse` (camelCase). Unknown / missing fields fall back to safe
+   219→ * defaults so the inspector never crashes.
+   220→ *
+   221→ * Field conversions:
+   222→ *   - `scope_clause`  → `scopeClause`
+   223→ *   - `tokens_in`     → `tokensIn`
+   224→ *   - `tokens_out`    → `tokensOut`
+   225→ *   - `latency_ms`    → `latencyMs`
+   226→ *   - `tool_calls`    → `toolCalls`
+   227→ *   - `security_checks` → `securityChecks` (fields are already camelCase)
+   228→ *   - `steps[].duration_ms` → `steps[].durationMs`
+   229→ */
+   230→function adaptBackendResponse(raw: unknown): AssistantResponse {
+   231→  const r =
+   232→    (typeof raw === "object" && raw !== null ? raw : {}) as Record<
+   233→      string,
+   234→      unknown
+   235→    >;
+   236→  const rawSteps = Array.isArray(r.steps) ? (r.steps as Record<string, unknown>[]) : [];
+   237→  const steps: TraceStep[] = rawSteps.map((s) => ({
+   238→    index: typeof s.index === "number" ? s.index : 0,
+   239→    title: typeof s.title === "string" ? s.title : "",
+   240→    detail: typeof s.detail === "string" ? s.detail : "",
+   241→    status: (s.status === "ok" || s.status === "warning" || s.status === "blocked"
+   242→      ? s.status
+   243→      : "ok") as TraceStep["status"],
+   244→    durationMs: typeof s.duration_ms === "number" ? s.duration_ms : 0,
+   245→  }));
+   246→  const rawChecks = Array.isArray(r.security_checks)
+   247→    ? (r.security_checks as Record<string, unknown>[])
+   248→    : [];
+   249→  const securityChecks: AssistantResponse["securityChecks"] = rawChecks.map((c) => ({
+   250→    label: typeof c.label === "string" ? c.label : "",
+   251→    status: (c.status === "ok" || c.status === "warning" || c.status === "blocked"
+   252→      ? c.status
+   253→      : "ok") as AssistantResponse["securityChecks"][number]["status"],
+   254→    detail: typeof c.detail === "string" ? c.detail : undefined,
+   255→  }));
+   256→  const toolCalls = Array.isArray(r.tool_calls)
+   257→    ? (r.tool_calls as string[])
+   258→    : [];
+   259→  return {
+   260→    answer: typeof r.answer === "string" ? r.answer : "Réponse vide.",
+   261→    sql: typeof r.sql === "string" ? r.sql : null,
+   262→    scopeClause:
+   263→      typeof r.scope_clause === "string" ? r.scope_clause : null,
+   264→    chart:
+   265→      (r.chart as AssistantResponse["chart"] | null | undefined) ?? undefined,
+   266→    tokensIn: typeof r.tokens_in === "number" ? r.tokens_in : 0,
+   267→    tokensOut: typeof r.tokens_out === "number" ? r.tokens_out : 0,
+   268→    latencyMs: typeof r.latency_ms === "number" ? r.latency_ms : 0,
+   269→    toolCalls,
+   270→    steps,
+   271→    securityChecks,
+   272→    refused: Boolean(r.refused),
+   273→  };
+   274→}
+   275→
+   276→/** Calls `POST /api/chat` with the message + JWT, returns an `AssistantResponse`.
+   277→ *
+   278→ * Demo override: when `demoIdentityOverride` is set (Marie/Pierre/Admin switcher
+   279→ * on the demo tenant), sends body identity instead of JWT so the user can switch
+   280→ * without re-login. The backend's dual-mode fallback handles the scoping.
+   281→ */
+   282→async function callBackendChat(message: string): Promise<AssistantResponse> {
+   283→  const token = getAuthToken();
+   284→  const override = useCopilotStore.getState().demoIdentityOverride;
+   285→  const headers: Record<string, string> = {
+   286→    "content-type": "application/json",
+   287→  };
+   288→  // When a demo identity override is active, send body identity (no JWT) so
+   289→  // the backend uses the override's producer_id/role instead of the JWT's.
+   290→  const useJwt = token && !override;
+   291→  if (useJwt) headers["authorization"] = `Bearer ${token}`;
+   292→
+   293→  const body: Record<string, unknown> = { message };
+   294→  if (override) {
+   295→    body.identity_id = override.id;
+   296→    body.producer_id = override.producerId;
+   297→    body.role = override.kind;
+   298→  }
+   299→
+   300→  const res = await fetch("/api/chat", {
+   301→    method: "POST",
+   302→    headers,
+   303→    body: JSON.stringify(body),
+   304→  });
+   305→  const text = await res.text();
+   306→  let parsed: unknown = null;
+   307→  if (text.length > 0) {
+   308→    try {
+   309→      parsed = JSON.parse(text);
+   310→    } catch {
+   311→      parsed = text;
+   312→    }
+   313→  }
+   314→  if (!res.ok) {
+   315→    const message =
+   316→      typeof parsed === "object" && parsed && "detail" in parsed
+   317→        ? String((parsed as { detail: unknown }).detail)
+   318→        : typeof parsed === "object" && parsed && "message" in parsed
+   319→          ? String((parsed as { message: unknown }).message)
+   320→          : `Chat backend ${res.status} ${res.statusText}`;
+   321→    throw new Error(message);
+   322→  }
+   323→  return adaptBackendResponse(parsed);
+   324→}
+   325→
+   326→export const useCopilotStore = create<CopilotState>((set, get) => ({
+   327→  authMode: "loading",
+   328→  user: null,
+   329→  tenants: [],
+   330→  activeTenant: null,
+   331→  authLoading: false,
+   332→  isDemoSession: false,
+   333→
+   334→  identityId: DEFAULT_IDENTITY_ID,
+   335→  identity: identityById(DEFAULT_IDENTITY_ID),
+   336→  demoIdentityOverride: null,
+   337→  messages: [],
+   338→  selectedMessageId: null,
+   339→  isStreaming: false,
+   340→  inspectorOpen: false,
+   341→  showIdentityPicker: false,
+   342→
+   343→  adminView: "none",
+   344→  adminLoading: false,
+   345→  adminData: emptyAdminData,
+   346→
+   347→  // -------------------------------------------------------------------------
+   348→  // Auth actions
+   349→  // -------------------------------------------------------------------------
+   350→
+   351→  /**
+   352→   * Called on app start. If we have a stored JWT, validate it via `/api/auth/me`
+   353→   * and load the user's tenants. If the JWT is invalid or absent, switch to
+   354→   * `anonymous` so the AuthScreen renders. Network failures fall back to
+   355→   * `anonymous` (the user can still click "Essayer la démo").
+   356→   */
+   357→  bootstrap: async () => {
+   358→    const token = getAuthToken();
+   359→    if (!token) {
+   360→      set({ authMode: "anonymous" });
+   361→      return;
+   362→    }
+   363→    try {
+   364→      const me = await getMe();
+   365→      const tenants = me.memberships ?? [];
+   366→      const activeTenant = pickActiveTenant(tenants);
+   367→      set({
+   368→        authMode: "authenticated",
+   369→        isDemoSession: false,
+   370→        user: me.user,
+   371→        tenants,
+   372→        activeTenant,
+   373→        identity: identityFromAuthUser(me.user, activeTenant),
+   374→      });
+   375→    } catch (err) {
+   376→      // Stale or invalid JWT — clear it and show the auth screen.
+   377→      setAuthToken(null);
+   378→      setActiveTenantId(null);
+   379→      set({ authMode: "anonymous", user: null, tenants: [], activeTenant: null });
+   380→      if (err instanceof AuthApiError && !err.unreachable) {
+   381→        // 401 / 403 etc. — silently clear. Other errors (502) are also silent
+   382→        // so the user just sees the auth screen.
+   383→      }
+   384→    }
+   385→  },
+   386→
+   387→  /**
+   388→   * Real backend login. Stores the JWT, loads `/api/auth/me` + `/api/tenants/mine`,
+   389→   * activates the first tenant if none is active, then switches to `authenticated`.
+   390→   *
+   391→   * Returns `{ ok: false, error }` on failure so the AuthScreen can show an
+   392→   * inline error message. Network failures (backend unreachable) are surfaced
+   393→   * as `error` so the caller can decide whether to fall back to demo mode.
+   394→   */
+   395→  login: async (email, password) => {
+   396→    set({ authLoading: true });
+   397→    try {
+   398→      const { user, token } = await authLogin(email, password);
+   399→      setAuthToken(token);
+   400→      // Fetch memberships + tenants.
+   401→      const me = await getMe();
+   402→      const tenants = me.memberships ?? [];
+   403→      const activeTenant = pickActiveTenant(tenants);
+   404→      if (activeTenant) setActiveTenantId(activeTenant.tenant_id);
+   405→      set({
+   406→        authMode: "authenticated",
+   407→        isDemoSession: false,
+   408→        authLoading: false,
+   409→        user,
+   410→        tenants,
+   411→        activeTenant,
+   412→        identity: identityFromAuthUser(user, activeTenant),
+   413→        messages: [],
+   414→        selectedMessageId: null,
+   415→        isStreaming: false,
+   416→        inspectorOpen: false,
+   417→        adminView: "none",
+   418→      });
+   419→      return { ok: true as const };
+   420→    } catch (err) {
+   421→      set({ authLoading: false });
+   422→      const message =
+   423→        err instanceof AuthApiError
+   424→          ? err.unreachable
+   425→            ? "Backend Tevet-7 injoignable."
+   426→            : err.status === 401
+   427→              ? "Email ou mot de passe invalide."
+   428→              : err.message
+   429→          : err instanceof Error
+   430→            ? err.message
+   431→            : "Erreur inconnue";
+   432→      return { ok: false as const, error: message };
+   433→    }
+   434→  },
+   435→
+   436→  signup: async (email, password, name) => {
+   437→    set({ authLoading: true });
+   438→    try {
+   439→      const { user, token } = await authSignup(email, password, name);
+   440→      setAuthToken(token);
+   441→      // New user has no memberships yet — they'll create a tenant next.
+   442→      set({
+   443→        authMode: "authenticated",
+   444→        isDemoSession: false,
+   445→        authLoading: false,
+   446→        user,
+   447→        tenants: [],
+   448→        activeTenant: null,
+   449→        identity: identityFromAuthUser(user, null),
+   450→        messages: [],
+   451→        selectedMessageId: null,
+   452→        isStreaming: false,
+   453→        inspectorOpen: false,
+   454→        adminView: "none",
+   455→      });
+   456→      return { ok: true as const };
+   457→    } catch (err) {
+   458→      set({ authLoading: false });
+   459→      const message =
+   460→        err instanceof AuthApiError
+   461→          ? err.unreachable
+   462→            ? "Backend Tevet-7 injoignable."
+   463→            : err.message
+   464→          : err instanceof Error
+   465→            ? err.message
+   466→            : "Erreur inconnue";
+   467→      return { ok: false as const, error: message };
+   468→    }
+   469→  },
+   470→
+   471→  /**
+   472→   * Used by the "Essayer la démo" button. Tries the real backend login with
+   473→   * `marie@tevet7.dev` / `tevet7demo`; if the backend is unreachable, falls
+   474→   * back to `enterDemoMode()` with a muted toast.
+   475→   */
+   476→  tryDemoLogin: async (email?: string) => {
+   477→    set({ authLoading: true });
+   478→    try {
+   479→      const demoEmail = email ?? DEMO_EMAIL;
+   480→      const result = await get().login(demoEmail, DEMO_PASSWORD);
+   481→      if (result.ok) {
+   482→        set({ isDemoSession: true });
+   483→        toast.success(`Connecté en tant que ${demoEmail}`, {
+   484→          description: "Données réelles du tenant Drive Producteur.",
+   485→        });
+   486→        return;
+   487→      }
+   488→      // Login failed for a non-network reason (401, etc.) — surface the error
+   489→      // and fall back to demo mode so the user still sees the prototype.
+   490→      set({ authLoading: false, isDemoSession: true });
+   491→      get().enterDemoMode();
+   492→      toast("Mode démo (backend hors ligne)", {
+   493→        description: result.error,
+   494→      });
+   495→    } catch (err) {
+   496→      set({ authLoading: false });
+   497→      get().enterDemoMode();
+   498→      const reason =
+   499→        err instanceof AuthApiError && err.unreachable
+   500→          ? "Backend injoignable"
+   501→          : err instanceof Error
+   502→            ? err.message
+   503→            : "Erreur inconnue";
+   504→      toast("Mode démo (backend hors ligne)", {
+   505→        description: reason,
+   506→      });
+   507→    }
+   508→  },
+   509→
+   510→  /**
+   511→   * Skips the backend entirely — runs the prototype against the mock data
+   512→   * layer. Used when the user explicitly chooses the demo path or when the
+   513→   * backend is unreachable.
+   514→   */
+   515→  enterDemoMode: () => {
+   516→    setAuthToken(null);
+   517→    setActiveTenantId(null);
+   518→    set({
+   519→      authMode: "demo",
+   520→      authLoading: false,
+   521→      user: null,
+   522→      tenants: [],
+   523→      activeTenant: null,
+   524→      identityId: DEFAULT_IDENTITY_ID,
+   525→      identity: identityById(DEFAULT_IDENTITY_ID),
+   526→      messages: [],
+   527→      selectedMessageId: null,
+   528→      isStreaming: false,
+   529→      inspectorOpen: false,
+   530→      adminView: "none",
+   531→    });
+   532→  },
+   533→
+   534→  logout: () => {
+   535→    setAuthToken(null);
+   536→    setActiveTenantId(null);
+   537→    set({
+   538→      authMode: "anonymous",
+   539→      authLoading: false,
+   540→      isDemoSession: false,
+   541→      user: null,
+   542→      tenants: [],
+   543→      activeTenant: null,
+   544→      identityId: DEFAULT_IDENTITY_ID,
+   545→      identity: identityById(DEFAULT_IDENTITY_ID),
+   546→      messages: [],
+   547→      selectedMessageId: null,
+   548→      isStreaming: false,
+   549→      inspectorOpen: false,
+   550→      adminView: "none",
+   551→    });
+   552→  },
+   553→
+   554→  /**
+   555→   * Switches the active tenant. Calls `POST /api/tenants/{id}/activate` to get
+   556→   * a fresh JWT scoped to the new tenant, then re-derives the chat identity.
+   557→   */
+   558→  switchTenant: async (tenantId) => {
+   559→    const token = getAuthToken();
+   560→    if (!token) return;
+   561→    try {
+   562→      const { membership, token: newToken } = await activateTenant(tenantId);
+   563→      setAuthToken(newToken);
+   564→      setActiveTenantId(membership.tenant_id);
+   565→      const tenants = get().tenants.map((t) =>
+   566→        t.tenant_id === membership.tenant_id
+   567→          ? { ...t, is_active: true }
+   568→          : { ...t, is_active: false },
+   569→      );
+   570→      const activeTenant = tenants.find((t) => t.tenant_id === membership.tenant_id) ?? null;
+   571→      const user = get().user;
+   572→      set({
+   573→        tenants,
+   574→        activeTenant,
+   575→        identity: user ? identityFromAuthUser(user, activeTenant) : get().identity,
+   576→        messages: [],
+   577→        selectedMessageId: null,
+   578→        isStreaming: false,
+   579→        inspectorOpen: false,
+   580→        adminView: "none",
+   581→      });
+   582→      toast.success(`Tenant activé : ${activeTenant?.name ?? tenantId}`);
+   583→    } catch (err) {
+   584→      const message =
+   585→        err instanceof AuthApiError
+   586→          ? err.unreachable
+   587→            ? "Backend injoignable"
+   588→            : err.message
+   589→          : err instanceof Error
+   590→            ? err.message
+   591→            : "Erreur inconnue";
+   592→      toast.error("Impossible de changer de tenant", { description: message });
+   593→    }
+   594→  },
+   595→
+   596→  createTenant: async (name, slug) => {
+   597→    try {
+   598→      const { tenant, token: newToken } = await authCreateTenant(name, slug);
+   599→      setAuthToken(newToken);
+   600→      setActiveTenantId(tenant.tenant_id);
+   601→      const tenants = [...get().tenants, { ...tenant, is_active: true }];
+   602→      const activeTenant = tenants.find((t) => t.tenant_id === tenant.tenant_id) ?? null;
+   603→      const user = get().user;
+   604→      set({
+   605→        tenants,
+   606→        activeTenant,
+   607→        identity: user ? identityFromAuthUser(user, activeTenant) : get().identity,
+   608→        messages: [],
+   609→        selectedMessageId: null,
+   610→        isStreaming: false,
+   611→        inspectorOpen: false,
+   612→        adminView: "none",
+   613→      });
+   614→      toast.success(`Workspace créé : ${name}`);
+   615→      return { ok: true as const };
+   616→    } catch (err) {
+   617→      const message =
+   618→        err instanceof AuthApiError
+   619→          ? err.unreachable
+   620→            ? "Backend injoignable"
+   621→            : err.message
+   622→          : err instanceof Error
+   623→            ? err.message
+   624→            : "Erreur inconnue";
+   625→      return { ok: false as const, error: message };
+   626→    }
+   627→  },
+   628→
+   629→  // -------------------------------------------------------------------------
+   630→  // Identity / chat actions
+   631→  // -------------------------------------------------------------------------
+   632→
+   633→  setIdentity: (identityId) => {
+   634→    const identity = identityById(identityId);
+   635→    set({
+   636→      identityId,
+   637→      identity,
+   638→      messages: [],
+   639→      selectedMessageId: null,
+   640→      isStreaming: false,
+   641→      inspectorOpen: false,
+   642→      // Non-admins cannot stay in an admin view — bounce back to the agent.
+   643→      adminView: identity.kind === "admin" ? get().adminView : "none",
+   644→    });
+   645→    const scope = identity.producerNumber
+   646→      ? `Producer ${identity.producerNumber}`
+   647→      : "Admin (full access)";
+   648→    toast.success(`Scope modifié : interrogation en tant que ${scope}`, {
+   649→      description: identity.farmName ?? identity.role,
+   650→    });
+   651→  },
+   652→
+   653→  setDemoIdentityOverride: (identityId) => {
+   654→    if (identityId === null) {
+   655→      set({ demoIdentityOverride: null });
+   656→      return;
+   657→    }
+   658→    const identity = identityById(identityId);
+   659→    set({
+   660→      demoIdentityOverride: identity,
+   661→      identity,
+   662→      identityId,
+   663→      messages: [],
+   664→      selectedMessageId: null,
+   665→      isStreaming: false,
+   666→      inspectorOpen: false,
+   667→      adminView: identity.kind === "admin" ? get().adminView : "none",
+   668→    });
+   669→    const scope = identity.producerNumber
+   670→      ? `Producer ${identity.producerNumber}`
+   671→      : "Admin (full access)";
+   672→    toast.success(`Identité démo : ${scope}`, {
+   673→      description: identity.farmName ?? identity.role,
+   674→    });
+   675→  },
+   676→
+   677→  sendExample: (questionId, label) => {
+   678→    // Backend path — when authenticated, the example question is sent as a
+   679→    // plain message and the agent answers from the real DB.
+   680→    if (get().authMode === "authenticated") {
+   681→      void runBackendAssistant(get, set, label);
+   682→      return;
+   683→    }
+   684→    runAssistant(get, set, label, () =>
+   685→      getResponseForExample(get().identity, questionId),
+   686→    );
+   687→  },
+   688→
+   689→  sendMessage: (text) => {
+   690→    const trimmed = text.trim();
+   691→    if (!trimmed || get().isStreaming) return;
+   692→    if (get().authMode === "authenticated") {
+   693→      void runBackendAssistant(get, set, trimmed);
+   694→      return;
+   695→    }
+   696→    runAssistant(get, set, trimmed, () =>
+   697→      getResponseForMessage(get().identity, trimmed),
+   698→    );
+   699→  },
+   700→
+   701→  selectMessage: (messageId) => {
+   702→    set({ selectedMessageId: messageId, inspectorOpen: messageId !== null });
+   703→  },
+   704→
+   705→  toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
+   706→  setShowIdentityPicker: (show) => set({ showIdentityPicker: show }),
+   707→  setInspectorOpen: (open) => set({ inspectorOpen: open }),
+   708→  resetConversation: () =>
+   709→    set({ messages: [], selectedMessageId: null, isStreaming: false }),
+   710→
+   711→  // -------------------------------------------------------------------------
+   712→  // Admin actions
+   713→  // -------------------------------------------------------------------------
+   714→
+   715→  setAdminView: (view) => {
+   716→    if (view !== "none") {
+   717→      const identity = get().identity;
+   718→      if (identity.kind !== "admin") {
+   719→        toast.error("Console admin réservée aux administrateurs.");
+   720→        return;
+   721→      }
+   722→    }
+   723→    set({ adminView: view });
+   724→    if (view === "tenant") {
+   725→      void get().loadTenantAdmin();
+   726→    } else if (view === "platform") {
+   727→      void get().loadPlatformAdmin();
+   728→    }
+   729→  },
+   730→
+   731→  loadTenantAdmin: async (tenantId) => {
+   732→    const tid = tenantId ?? get().adminData.tenantId ?? DEFAULT_TENANT_ID;
+   733→    set({
+   734→      adminLoading: true,
+   735→      adminData: { ...get().adminData, tenantId: tid, error: null },
+   736→    });
+   737→    try {
+   738→      const [users, config, conversations, stats] = await Promise.all([
+   739→        getTenantUsers(tid),
+   740→        getTenantConfig(tid).catch(() => null),
+   741→        getTenantConversations(tid),
+   742→        getTenantStats(tid).catch(() => null),
+   743→      ]);
+   744→      set({
+   745→        adminLoading: false,
+   746→        adminData: {
+   747→          ...get().adminData,
+   748→          tenantId: tid,
+   749→          users,
+   750→          config,
+   751→          conversations,
+   752→          stats,
+   753→          error: null,
+   754→        },
+   755→      });
+   756→    } catch (err) {
+   757→      set({
+   758→        adminLoading: false,
+   759→        adminData: { ...get().adminData, error: describeAdminError(err) },
+   760→      });
+   761→    }
+   762→  },
+   763→
+   764→  loadPlatformAdmin: async () => {
+   765→    set({ adminLoading: true, adminData: { ...get().adminData, error: null } });
+   766→    try {
+   767→      const [tenants, platformStats] = await Promise.all([
+   768→        listAllTenants(),
+   769→        getPlatformStats().catch(() => null),
+   770→      ]);
+   771→      set({
+   772→        adminLoading: false,
+   773→        adminData: {
+   774→          ...get().adminData,
+   775→          tenants,
+   776→          platformStats,
+   777→          error: null,
+   778→        },
+   779→      });
+   780→    } catch (err) {
+   781→      set({
+   782→        adminLoading: false,
+   783→        adminData: { ...get().adminData, error: describeAdminError(err) },
+   784→      });
+   785→    }
+   786→  },
+   787→
+   788→  resetDemo: async () => {
+   789→    set({ adminLoading: true });
+   790→    try {
+   791→      const result = await resetDemoTenant();
+   792→      toast.success("Démo réinitialisée", {
+   793→        description: `${result.orders_reseeded} commandes · ${result.docs_reseeded} documents reseedés.`,
+   794→      });
+   795→      await get().loadPlatformAdmin();
+   796→    } catch (err) {
+   797→      set({ adminLoading: false });
+   798→      toast.error("Réinitialisation impossible", {
+   799→        description: describeAdminError(err),
+   800→      });
+   801→    }
+   802→  },
+   803→}));
+   804→
+   805→// ---------------------------------------------------------------------------
+   806→// Helpers
+   807→// ---------------------------------------------------------------------------
+   808→
+   809→/**
+   810→ * Picks the tenant to activate after login: the cached `activeTenantId` if the
+   811→ * user is still a member, else the first `is_active` membership, else the
+   812→ * first membership. Returns null if the user has no memberships.
+   813→ */
+   814→function pickActiveTenant(tenants: TenantMembership[]): TenantMembership | null {
+   815→  if (tenants.length === 0) return null;
+   816→  const cachedId = getActiveTenantId();
+   817→  if (cachedId) {
+   818→    const cached = tenants.find((t) => t.tenant_id === cachedId);
+   819→    if (cached) return cached;
+   820→  }
+   821→  const active = tenants.find((t) => t.is_active);
+   822→  if (active) return active;
+   823→  return tenants[0];
+   824→}
+   825→
+   826→/**
+   827→ * Shared helper that pushes the user message, simulates the "thinking" delay,
+   828→ * then reveals the assistant response. Responses are computed up-front from
+   829→ * the mock layer so they stay deterministic per identity + question.
+   830→ */
+   831→function runAssistant(
+   832→  get: () => CopilotState,
+   833→  set: (partial: Partial<CopilotState>) => void,
+   834→  userText: string,
+   835→  computeResponse: () => AssistantResponse,
+   836→) {
+   837→  if (get().isStreaming) return;
+   838→
+   839→  const userMessage: ChatMessage = {
+   840→    id: makeId("u"),
+   841→    role: "user",
+   842→    content: userText,
+   843→    createdAt: Date.now(),
+   844→  };
+   845→
+   846→  set({
+   847→    messages: [...get().messages, userMessage],
+   848→    isStreaming: true,
+   849→    selectedMessageId: null,
+   850→  });
+   851→
+   852→  // Simulate model latency before revealing the answer.
+   853→  const delay = 800 + Math.random() * 350;
+   854→  window.setTimeout(() => {
+   855→    const response = computeResponse();
+   856→    const assistantMessage: ChatMessage = {
+   857→      id: makeId("a"),
+   858→      role: "assistant",
+   859→      content: response.answer,
+   860→      response,
+   861→      createdAt: Date.now(),
+   862→      streaming: false,
+   863→    };
+   864→    // If the inspector is already open, live-update it with the new trace.
+   865→    // Otherwise leave it closed — the user can click the answer to inspect.
+   866→    const inspectorWasOpen = get().inspectorOpen;
+   867→    set({
+   868→      messages: [...get().messages, assistantMessage],
+   869→      isStreaming: false,
+   870→      selectedMessageId: inspectorWasOpen ? assistantMessage.id : null,
+   871→    });
+   872→  }, delay);
+   873→}
+   874→
+   875→/**
+   876→ * Backend-backed assistant run. Pushes the user message immediately, shows the
+   877→ * typing indicator, calls `/api/chat` with the JWT, then pushes the assistant
+   878→ * message with the real envelope (SQL, chart, steps, security_checks).
+   879→ *
+   880→ * Network / HTTP errors are surfaced as a synthetic assistant message so the
+   881→ * chat thread doesn't break.
+   882→ */
+   883→async function runBackendAssistant(
+   884→  get: () => CopilotState,
+   885→  set: (partial: Partial<CopilotState>) => void,
+   886→  userText: string,
+   887→) {
+   888→  if (get().isStreaming) return;
+   889→
+   890→  const userMessage: ChatMessage = {
+   891→    id: makeId("u"),
+   892→    role: "user",
+   893→    content: userText,
+   894→    createdAt: Date.now(),
+   895→  };
+   896→
+   897→  set({
+   898→    messages: [...get().messages, userMessage],
+   899→    isStreaming: true,
+   900→    selectedMessageId: null,
+   901→  });
+   902→
+   903→  try {
+   904→    const response = await callBackendChat(userText);
+   905→    const assistantMessage: ChatMessage = {
+   906→      id: makeId("a"),
+   907→      role: "assistant",
+   908→      content: response.answer,
+   909→      response,
+   910→      createdAt: Date.now(),
+   911→      streaming: false,
+   912→    };
+   913→    const inspectorWasOpen = get().inspectorOpen;
+   914→    set({
+   915→      messages: [...get().messages, assistantMessage],
+   916→      isStreaming: false,
+   917→      selectedMessageId: inspectorWasOpen ? assistantMessage.id : null,
+   918→    });
+   919→  } catch (err) {
+   920→    const message =
+   921→      err instanceof Error ? err.message : "Erreur inconnue";
+   922→    const failureResponse: AssistantResponse = {
+   923→      answer:
+   924→        "⚠️ Le service agent n'a pas pu répondre.\n\n" +
+   925→        `Détail : ${message}\n\n` +
+   926→        "Réessayez dans un instant. Si le problème persiste, basculez en mode démo via le menu utilisateur.",
+   927→      sql: null,
+   928→      scopeClause: null,
+   929→      tokensIn: 0,
+   930→      tokensOut: 0,
+   931→      latencyMs: 0,
+   932→      toolCalls: [],
+   933→      steps: [],
+   934→      securityChecks: [],
+   935→      refused: true,
+   936→    };
+   937→    const assistantMessage: ChatMessage = {
+   938→      id: makeId("a"),
+   939→      role: "assistant",
+   940→      content: failureResponse.answer,
+   941→      response: failureResponse,
+   942→      createdAt: Date.now(),
+   943→      streaming: false,
+   944→    };
+   945→    set({
+   946→      messages: [...get().messages, assistantMessage],
+   947→      isStreaming: false,
+   948→    });
+   949→    toast.error("Échec de l'agent", { description: message });
+   950→  }
+   951→}
+   952→

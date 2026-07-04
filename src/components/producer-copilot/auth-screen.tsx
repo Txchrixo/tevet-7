@@ -8,6 +8,7 @@ import { useCopilotStore } from "@/lib/store";
 import { ArrowRight, Lock, Mail, User, Zap } from "@/components/ui/feather-icons";
 
 import { BrandMark } from "./brand-mark";
+import { IdentityPicker } from "./identity-picker";
 import { APP_PHASE } from "@/lib/constants";
 
 /**
@@ -25,11 +26,24 @@ import { APP_PHASE } from "@/lib/constants";
  * Manrope body, Feather icons, no indigo/blue, no lucide-react.
  */
 export function AuthScreen() {
+  const showIdentityPicker = useCopilotStore((s) => s.showIdentityPicker);
+  const setShowIdentityPicker = useCopilotStore((s) => s.setShowIdentityPicker);
+
+  // Phase 6d: identity picker — the user chooses their demo role BEFORE
+  // entering the product, not after. Better UX, sets expectations.
+  if (showIdentityPicker) {
+    return <IdentityPicker onBack={() => setShowIdentityPicker(false)} />;
+  }
+
+  return <AuthForm />;
+}
+
+function AuthForm() {
   const login = useCopilotStore((s) => s.login);
   const signup = useCopilotStore((s) => s.signup);
-  const tryDemoLogin = useCopilotStore((s) => s.tryDemoLogin);
   const enterDemoMode = useCopilotStore((s) => s.enterDemoMode);
   const authLoading = useCopilotStore((s) => s.authLoading);
+  const setShowIdentityPicker = useCopilotStore((s) => s.setShowIdentityPicker);
 
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
@@ -55,10 +69,10 @@ export function AuthScreen() {
     if (!result.ok) setError(result.error);
   };
 
-  const handleDemo = async () => {
+  const handleDemo = () => {
     if (authLoading) return;
     setError(null);
-    await tryDemoLogin();
+    setShowIdentityPicker(true);
   };
 
   const handleMockDemo = () => {
@@ -150,7 +164,7 @@ export function AuthScreen() {
               type="submit"
               disabled={authLoading}
               className={cn(
-                "flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 font-body text-sm font-medium text-primary-foreground transition-colors",
+                "flex w-full items-center justify-center gap-2 rounded-md bg-primary px-4 py-2.5 font-body text-sm font-medium text-foreground transition-colors",
                 "hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50",
               )}
             >

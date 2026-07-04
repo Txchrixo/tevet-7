@@ -32,7 +32,7 @@ export function IdentitySwitcher() {
                 "flex size-8 shrink-0 items-center justify-center rounded-full border",
                 identity.kind === "admin"
                   ? "border-border bg-secondary text-foreground"
-                  : "border-border bg-primary text-primary-foreground",
+                  : "border-border bg-primary text-foreground",
               )}
             >
               <span className="font-heading text-[11px] font-medium">
@@ -84,7 +84,7 @@ export function IdentitySwitcher() {
                   "flex size-7 shrink-0 items-center justify-center rounded-full border",
                   id.kind === "admin"
                     ? "border-border bg-secondary text-foreground"
-                    : "border-border bg-primary text-primary-foreground",
+                    : "border-border bg-primary text-foreground",
                 )}
               >
                 <span className="font-heading text-[10px] font-medium">

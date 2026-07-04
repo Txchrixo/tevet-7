@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import {
   DEFAULT_IDENTITY_ID,
+  FALLBACK_QUESTIONS,
   IDENTITIES,
   getResponseForExample,
   getResponseForMessage,
@@ -33,12 +34,21 @@ import {
   listAllTenants,
   resetDemoTenant,
 } from "./admin-api";
+import { fetchExampleQuestions } from "./api";
+import {
+  OnboardingApiError,
+  completeOnboarding as apiCompleteOnboarding,
+  getOnboardingStatus,
+} from "./onboarding-api";
 import type {
   AssistantResponse,
   AuthUser,
   ChatMessage,
   Conversation,
+  ExampleQuestion,
   Identity,
+  OnboardingRole,
+  OnboardingSchemaTable,
   PlatformStats,
   PlatformTenant,
   TenantConfig,
@@ -52,6 +62,32 @@ let idCounter = 0;
 function makeId(prefix: string): string {
   idCounter += 1;
   return `${prefix}-${Date.now().toString(36)}-${idCounter}`;
+}
+
+/**
+ * Ensures a TenantMembership coming from the backend carries an `onboarded`
+ * boolean. Older API responses (pre-Phase 6b) don't include this field; we
+ * default to `true` so existing tenants aren't blocked by the wizard.
+ */
+function normalizeMembership(m: Partial<TenantMembership> & { id?: string }): TenantMembership {
+  return {
+    tenant_id: m.tenant_id ?? m.id ?? "",
+    name: m.name ?? "",
+    slug: m.slug ?? "",
+    role: m.role ?? "producer",
+    producer_id: m.producer_id ?? null,
+    is_demo: m.is_demo ?? false,
+    is_active: m.is_active ?? false,
+    onboarded: m.onboarded ?? true,
+  };
+}
+
+/** Applies `normalizeMembership` to an array of memberships. */
+function normalizeMemberships(
+  list: Partial<TenantMembership>[] | undefined | null,
+): TenantMembership[] {
+  if (!Array.isArray(list)) return [];
+  return list.map(normalizeMembership);
 }
 
 export type AdminView = "none" | "tenant" | "platform";
@@ -107,6 +143,32 @@ interface CopilotState {
   isStreaming: boolean;
   /** Whether the inspector panel is open on desktop. */
   inspectorOpen: boolean;
+  /** When true, the AuthScreen shows the IdentityPicker instead of the login form. */
+  showIdentityPicker: boolean;
+  setShowIdentityPicker: (show: boolean) => void;
+
+  // --- Example questions (Phase 6d — dynamic, schema-driven) ---
+  /** Questions shown in the sidebar's "Exemples" section. Initialised to
+   * `FALLBACK_QUESTIONS` so the sidebar always has something to show
+   * before the first `/api/tenants/{id}/example-questions` call resolves.
+   * Refreshed by `loadExampleQuestions()` whenever the active tenant
+   * changes (login / switchTenant / createTenant / completeOnboarding). */
+  exampleQuestions: ExampleQuestion[];
+
+  // --- Onboarding wizard ---
+  /** Current onboarding step. 0 = not started, 1-4 = wizard steps. */
+  onboardingStep: number;
+  /** Wizard draft state — committed between steps so navigation away + back
+   * preserves the user's progress. */
+  onboardingData: OnboardingData;
+  /** Tenant id the wizard is currently active for. Null when no wizard is
+   * active (used to detect tenant switches mid-wizard). */
+  onboardingTenantId: string | null;
+  /** True while the wizard is calling a backend endpoint (connect, detect,
+   * save, complete). Drives button disabled state + spinner. */
+  onboardingLoading: boolean;
+  /** Error message from the last onboarding call. Cleared on retry. */
+  onboardingError: string | null;
 
   // --- Admin console ---
   adminView: AdminView;
@@ -134,11 +196,28 @@ interface CopilotState {
     password: string,
     name: string,
   ) => Promise<{ ok: true } | { ok: false; error: string }>;
-  tryDemoLogin: () => Promise<void>;
+  tryDemoLogin: (email?: string) => Promise<void>;
   enterDemoMode: () => void;
   logout: () => void;
   switchTenant: (tenantId: string) => Promise<void>;
   createTenant: (name: string, slug: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+
+  // --- Example questions actions ---
+  /** Fetches the active tenant's example questions from
+   * `/api/tenants/{id}/example-questions` and stores them. Falls back to
+   * `FALLBACK_QUESTIONS` when the fetch fails or returns an empty list
+   * (e.g. backend unreachable, tenant not onboarded). No-op when no
+   * active tenant is set (demo mode keeps the fallback list). */
+  loadExampleQuestions: () => Promise<void>;
+
+  // --- Onboarding actions ---
+  startOnboarding: (tenantId: string) => void;
+  setOnboardingStep: (step: number) => void;
+  setOnboardingData: (data: Partial<OnboardingData>) => void;
+  setOnboardingLoading: (loading: boolean) => void;
+  setOnboardingError: (error: string | null) => void;
+  completeOnboarding: () => Promise<void>;
+  resetOnboarding: () => void;
 
   // --- Admin actions ---
   setAdminView: (view: AdminView) => void;
@@ -146,6 +225,33 @@ interface CopilotState {
   loadPlatformAdmin: () => Promise<void>;
   resetDemo: () => Promise<void>;
 }
+
+/** Wizard draft state — kept in the store so navigation away + back preserves
+ * the user's progress (connection URL, schema selection, roles config). */
+interface OnboardingData {
+  /** "postgres" | "csv" | null — picked in step 1. */
+  connectorType: "postgres" | "csv" | null;
+  /** Postgres connection URL (only when connectorType === "postgres"). */
+  connectionUrl: string;
+  /** CSV file name (only when connectorType === "csv"). The File object itself
+   * is kept in the wizard component state since it can't be serialized. */
+  csvFileName: string | null;
+  /** Number of tables detected at connect time (returned by the backend). */
+  tablesCount: number;
+  /** Schema draft (selected tables + columns + scope columns). */
+  schemaDraft: OnboardingSchemaTable[];
+  /** Roles draft (admin + user defaults + user-added). */
+  rolesConfig: OnboardingRole[];
+}
+
+const initialOnboardingData: OnboardingData = {
+  connectorType: null,
+  connectionUrl: "",
+  csvFileName: null,
+  tablesCount: 0,
+  schemaDraft: [],
+  rolesConfig: [],
+};
 
 function identityById(id: string): Identity {
   return IDENTITIES.find((i) => i.id === id) ?? IDENTITIES[0];
@@ -335,6 +441,19 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   selectedMessageId: null,
   isStreaming: false,
   inspectorOpen: false,
+  showIdentityPicker: false,
+
+  // --- Example questions ---
+  // Initialised to the hardcoded Drive Producteur fallback so the sidebar
+  // always has something to render before the first backend fetch resolves.
+  exampleQuestions: FALLBACK_QUESTIONS,
+
+  // --- Onboarding wizard ---
+  onboardingStep: 0,
+  onboardingData: initialOnboardingData,
+  onboardingTenantId: null,
+  onboardingLoading: false,
+  onboardingError: null,
 
   adminView: "none",
   adminLoading: false,
@@ -358,8 +477,18 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     }
     try {
       const me = await getMe();
-      const tenants = me.memberships ?? [];
+      const tenants = normalizeMemberships(me.memberships);
       const activeTenant = pickActiveTenant(tenants);
+      // Check onboarding status for the active tenant (the /me endpoint
+      // doesn't include `onboarded` — we fetch it separately).
+      if (activeTenant && !activeTenant.is_demo) {
+        try {
+          const status = await getOnboardingStatus(activeTenant.tenant_id);
+          activeTenant.onboarded = status.onboarded;
+        } catch {
+          // If the status check fails, assume onboarded (don't block the user).
+        }
+      }
       set({
         authMode: "authenticated",
         isDemoSession: false,
@@ -368,6 +497,10 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         activeTenant,
         identity: identityFromAuthUser(me.user, activeTenant),
       });
+      // Phase 6d — load schema-driven example questions for the active
+      // tenant. Fire-and-forget; loadExampleQuestions falls back to
+      // FALLBACK_QUESTIONS on any error so the sidebar never breaks.
+      void get().loadExampleQuestions();
     } catch (err) {
       // Stale or invalid JWT — clear it and show the auth screen.
       setAuthToken(null);
@@ -395,7 +528,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       setAuthToken(token);
       // Fetch memberships + tenants.
       const me = await getMe();
-      const tenants = me.memberships ?? [];
+      const tenants = normalizeMemberships(me.memberships);
       const activeTenant = pickActiveTenant(tenants);
       if (activeTenant) setActiveTenantId(activeTenant.tenant_id);
       set({
@@ -412,6 +545,8 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         inspectorOpen: false,
         adminView: "none",
       });
+      // Phase 6d — load schema-driven example questions for the active tenant.
+      void get().loadExampleQuestions();
       return { ok: true as const };
     } catch (err) {
       set({ authLoading: false });
@@ -469,13 +604,14 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
    * `marie@tevet7.dev` / `tevet7demo`; if the backend is unreachable, falls
    * back to `enterDemoMode()` with a muted toast.
    */
-  tryDemoLogin: async () => {
+  tryDemoLogin: async (email?: string) => {
     set({ authLoading: true });
     try {
-      const result = await get().login(DEMO_EMAIL, DEMO_PASSWORD);
+      const demoEmail = email ?? DEMO_EMAIL;
+      const result = await get().login(demoEmail, DEMO_PASSWORD);
       if (result.ok) {
         set({ isDemoSession: true });
-        toast.success("Connecté en tant que marie@tevet7.dev", {
+        toast.success(`Connecté en tant que ${demoEmail}`, {
           description: "Données réelles du tenant Drive Producteur.",
         });
         return;
@@ -523,6 +659,9 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       isStreaming: false,
       inspectorOpen: false,
       adminView: "none",
+      // No active tenant → no API call to make. Restore the hardcoded
+      // fallback list so the sidebar still has examples to show.
+      exampleQuestions: FALLBACK_QUESTIONS,
     });
   },
 
@@ -543,6 +682,14 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       isStreaming: false,
       inspectorOpen: false,
       adminView: "none",
+      // Restore the hardcoded fallback (no active tenant after logout).
+      exampleQuestions: FALLBACK_QUESTIONS,
+      // Clear wizard state on logout so it doesn't leak across sessions.
+      onboardingStep: 0,
+      onboardingData: initialOnboardingData,
+      onboardingTenantId: null,
+      onboardingLoading: false,
+      onboardingError: null,
     });
   },
 
@@ -556,13 +703,14 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     try {
       const { membership, token: newToken } = await activateTenant(tenantId);
       setAuthToken(newToken);
-      setActiveTenantId(membership.tenant_id);
+      const fresh = normalizeMembership(membership);
+      setActiveTenantId(fresh.tenant_id);
       const tenants = get().tenants.map((t) =>
-        t.tenant_id === membership.tenant_id
-          ? { ...t, is_active: true }
+        t.tenant_id === fresh.tenant_id
+          ? { ...t, is_active: true, onboarded: fresh.onboarded }
           : { ...t, is_active: false },
       );
-      const activeTenant = tenants.find((t) => t.tenant_id === membership.tenant_id) ?? null;
+      const activeTenant = tenants.find((t) => t.tenant_id === fresh.tenant_id) ?? null;
       const user = get().user;
       set({
         tenants,
@@ -573,8 +721,19 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         isStreaming: false,
         inspectorOpen: false,
         adminView: "none",
+        // Reset the wizard whenever the user switches tenants — the wizard
+        // is per-tenant state, switching mid-wizard would be incoherent.
+        onboardingStep: 0,
+        onboardingData: initialOnboardingData,
+        onboardingTenantId: null,
+        onboardingLoading: false,
+        onboardingError: null,
       });
       toast.success(`Tenant activé : ${activeTenant?.name ?? tenantId}`);
+      // Phase 6d — refresh the example questions for the new tenant so the
+      // sidebar immediately reflects the new schema (not the previous
+      // tenant's questions).
+      void get().loadExampleQuestions();
     } catch (err) {
       const message =
         err instanceof AuthApiError
@@ -592,9 +751,12 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     try {
       const { tenant, token: newToken } = await authCreateTenant(name, slug);
       setAuthToken(newToken);
-      setActiveTenantId(tenant.tenant_id);
-      const tenants = [...get().tenants, { ...tenant, is_active: true }];
-      const activeTenant = tenants.find((t) => t.tenant_id === tenant.tenant_id) ?? null;
+      const fresh = normalizeMembership(tenant);
+      // New tenants are NOT onboarded by default — the wizard will appear.
+      fresh.onboarded = false;
+      setActiveTenantId(fresh.tenant_id);
+      const tenants = [...get().tenants, { ...fresh, is_active: true }];
+      const activeTenant = tenants.find((t) => t.tenant_id === fresh.tenant_id) ?? null;
       const user = get().user;
       set({
         tenants,
@@ -607,6 +769,10 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         adminView: "none",
       });
       toast.success(`Workspace créé : ${name}`);
+      // Phase 6d — a freshly-created tenant is not onboarded yet, so the
+      // example-questions endpoint will return the 3 generic questions.
+      // Load them anyway so the sidebar matches the new tenant's state.
+      void get().loadExampleQuestions();
       return { ok: true as const };
     } catch (err) {
       const message =
@@ -618,6 +784,144 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
             ? err.message
             : "Erreur inconnue";
       return { ok: false as const, error: message };
+    }
+  },
+
+  // -------------------------------------------------------------------------
+  // Example questions actions (Phase 6d)
+  // -------------------------------------------------------------------------
+
+  /**
+   * Fetches the active tenant's example questions from
+   * `/api/tenants/{id}/example-questions` and stores them in
+   * `exampleQuestions`. Falls back to `FALLBACK_QUESTIONS` when the fetch
+   * fails or returns an empty list (backend unreachable, tenant not
+   * onboarded, etc.) so the sidebar always has something to render.
+   *
+   * No-op when there is no active tenant (demo mode / pre-login) — the
+   * fallback list stays in place.
+   */
+  loadExampleQuestions: async () => {
+    const tid = get().activeTenant?.tenant_id;
+    if (!tid) {
+      set({ exampleQuestions: FALLBACK_QUESTIONS });
+      return;
+    }
+    const questions = await fetchExampleQuestions(tid);
+    set({
+      exampleQuestions: questions.length > 0 ? questions : FALLBACK_QUESTIONS,
+    });
+  },
+
+  // -------------------------------------------------------------------------
+  // Onboarding actions
+  // -------------------------------------------------------------------------
+
+  /**
+   * Opens the onboarding wizard for a given tenant. Resets any prior wizard
+   * draft state so the wizard starts fresh.
+   */
+  startOnboarding: (tenantId) => {
+    set({
+      onboardingStep: 1,
+      onboardingTenantId: tenantId,
+      onboardingData: initialOnboardingData,
+      onboardingLoading: false,
+      onboardingError: null,
+    });
+  },
+
+  setOnboardingStep: (step) => set({ onboardingStep: step }),
+
+  setOnboardingData: (data) =>
+    set((s) => ({
+      onboardingData: { ...s.onboardingData, ...data },
+    })),
+
+  setOnboardingLoading: (loading) => set({ onboardingLoading: loading }),
+
+  setOnboardingError: (error) => set({ onboardingError: error }),
+
+  /**
+   * Resets the wizard to its initial state. Called after a successful
+   * completion OR when the user switches tenants / logs out.
+   */
+  resetOnboarding: () =>
+    set({
+      onboardingStep: 0,
+      onboardingTenantId: null,
+      onboardingData: initialOnboardingData,
+      onboardingLoading: false,
+      onboardingError: null,
+    }),
+
+  /**
+   * Final wizard action — calls `POST /api/tenants/{id}/onboarding/complete`,
+   * then refreshes `/api/auth/me` so the active tenant's `onboarded` flag is
+   * flipped to `true` in the local state. After this the page gate lets the
+   * user through to the chat surface.
+   */
+  completeOnboarding: async () => {
+    const tenantId = get().onboardingTenantId ?? get().activeTenant?.tenant_id;
+    if (!tenantId) {
+      toast.error("Impossible de finaliser l'onboarding", {
+        description: "Aucun tenant actif.",
+      });
+      return;
+    }
+    set({ onboardingLoading: true, onboardingError: null });
+    try {
+      await apiCompleteOnboarding(tenantId);
+      // Refresh `/api/auth/me` so memberships carry the new `onboarded: true`.
+      try {
+        const me = await getMe();
+        const tenants = normalizeMemberships(me.memberships);
+        const activeTenant =
+          tenants.find((t) => t.tenant_id === tenantId) ?? null;
+        set({
+          user: me.user,
+          tenants,
+          activeTenant,
+          identity: identityFromAuthUser(me.user, activeTenant),
+        });
+      } catch {
+        // The refresh is best-effort. The wizard is already complete on the
+        // backend; if /me fails, we still mark the active tenant onboarded
+        // optimistically so the user proceeds to the chat.
+        const activeTenant = get().activeTenant;
+        if (activeTenant && activeTenant.tenant_id === tenantId) {
+          const updated = { ...activeTenant, onboarded: true };
+          const tenants = get().tenants.map((t) =>
+            t.tenant_id === tenantId ? updated : t,
+          );
+          set({ tenants, activeTenant: updated });
+        }
+      }
+      set({
+        onboardingLoading: false,
+        onboardingStep: 0,
+        onboardingTenantId: null,
+        onboardingData: initialOnboardingData,
+        onboardingError: null,
+      });
+      // Phase 6d — now that the tenant is onboarded with a real schema,
+      // refresh the example questions so the sidebar shows schema-driven
+      // ones instead of the 3 generic questions.
+      void get().loadExampleQuestions();
+      toast.success("Workspace configuré", {
+        description: "Votre agent Tevet-7 est prêt.",
+      });
+    } catch (err) {
+      const message =
+        err instanceof OnboardingApiError
+          ? err.unreachable
+            ? "Backend Tevet-7 injoignable"
+            : err.message
+          : err instanceof Error
+            ? err.message
+            : "Erreur inconnue";
+      set({ onboardingLoading: false, onboardingError: message });
+      toast.error("Onboarding incomplet", { description: message });
     }
   },
 
@@ -698,6 +1002,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   },
 
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
+  setShowIdentityPicker: (show) => set({ showIdentityPicker: show }),
   setInspectorOpen: (open) => set({ inspectorOpen: open }),
   resetConversation: () =>
     set({ messages: [], selectedMessageId: null, isStreaming: false }),

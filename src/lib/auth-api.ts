@@ -123,10 +123,15 @@ async function apiFetch<T>(
 
   let res: Response;
   try {
-    res = await fetch(url, init);
+    // 3-second timeout — prevents the loading screen from hanging when the
+    // backend is slow or unreachable.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    res = await fetch(url, { ...init, signal: controller.signal });
+    clearTimeout(timeout);
   } catch (err) {
-    // Network-level failure (backend offline, DNS error, CORS, …). Treat as
-    // unreachable so the caller can fall back to demo mode.
+    // Network-level failure (backend offline, DNS error, CORS, timeout, …).
+    // Treat as unreachable so the caller can fall back to demo mode.
     const message = err instanceof Error ? err.message : "Network error";
     throw new AuthApiError(message, 0, undefined, true);
   }

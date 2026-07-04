@@ -140,20 +140,176 @@ REFUSE_MARKER = "__REFUSE__"
 
 
 class RuleBasedSQLGenerator:
-    """Deterministic keyword-driven SQL generator for the 5 demo questions.
+    """Deterministic keyword-driven SQL generator.
 
-    Matches French keywords in the question to pick one of five SQL
-    templates. The generated SQL omits the scope clause on purpose — the
-    rewriter always injects it. (A second code path — included for
-    robustness — also works when the SQL contains a correct scope clause;
-    the rewriter simply preserves it.)
+    Phase 1: 5 hardcoded patterns for the DP demo tenant (backward compat).
+    Phase 6+: generic schema-aware patterns that read the tenant's
+    schema_config and generate SQL for ANY table/column names.
+
+    The generator tries DP-specific patterns first, then falls back to
+    generic patterns based on the schema.
     """
+
+    def __init__(self, schema: dict | None = None) -> None:
+        """Optional schema dict for generic generation.
+
+        When provided, the generator can match table names mentioned in the
+        question and generate SQL for non-DP tenants.
+        """
+        self._schema = schema or {}
 
     # ── helpers ────────────────────────────────────────────────────────────
     @staticmethod
     def _has_any(text: str, needles: list[str]) -> bool:
         t = text.lower()
         return any(n in t for n in needles)
+
+    # ── generic schema-aware generation ────────────────────────────────────
+    def _find_table_in_question(self, q: str) -> tuple[str, dict] | None:
+        """Find which table the question refers to.
+
+        Matches the table name (or a singular/plural variant) in the
+        question text. Returns (table_name, table_config) or None.
+        If the schema has only one table, use it as default.
+        """
+        tables = self._schema.get("tables", [])
+        if not tables:
+            return None
+        # If only one table, use it as default (most CSV tenants).
+        if len(tables) == 1:
+            return tables[0]["name"], tables[0]
+        q_lower = q.lower()
+        # Sort by name length desc so longer names match first.
+        for t in sorted(tables, key=lambda x: len(x.get("name", "")), reverse=True):
+            name = t.get("name", "").lower()
+            if not name:
+                continue
+            # Match exact, plural (s), or singular (strip trailing s).
+            variants = {name, name + "s", name.rstrip("s"), name.replace("_", " "), name.replace("-", " ")}
+            if any(v in q_lower for v in variants if len(v) >= 3):
+                return t["name"], t
+        return None
+
+    def _find_numeric_column(self, table_config: dict) -> str | None:
+        """Find the first numeric column in a table (for SUM/AVG)."""
+        for c in table_config.get("columns", []):
+            ctype = c.get("type", "").lower()
+            if any(k in ctype for k in ("decimal", "float", "double", "integer", "int", "numeric", "real")):
+                # Skip ID columns.
+                cname = c.get("name", "").lower()
+                if cname not in ("id", "producer_id", "tenant_id", "user_id", "customer_id", "shop_id", "order_id", "product_id"):
+                    return c["name"]
+        return None
+
+    def _find_group_column(self, table_config: dict) -> str | None:
+        """Find a good GROUP BY column (text/categorical, not ID).
+
+        Priority: categor/type/status > name/label > first text column.
+        """
+        # Priority 1: categorical columns (category, type, status, genre).
+        for c in table_config.get("columns", []):
+            ctype = c.get("type", "").lower()
+            cname = c.get("name", "").lower()
+            if any(k in ctype for k in ("varchar", "text", "char", "string")):
+                if cname not in ("id", "email", "password", "siret", "phone"):
+                    if any(k in cname for k in ("categor", "type", "status", "genre", "city", "country")):
+                        return c["name"]
+        # Priority 2: name/label/title columns.
+        for c in table_config.get("columns", []):
+            ctype = c.get("type", "").lower()
+            cname = c.get("name", "").lower()
+            if any(k in ctype for k in ("varchar", "text", "char", "string")):
+                if cname not in ("id", "email", "password", "siret", "phone"):
+                    if any(k in cname for k in ("name", "label", "title")):
+                        return c["name"]
+        # Fallback: first text column that's not an ID/email.
+        for c in table_config.get("columns", []):
+            ctype = c.get("type", "").lower()
+            cname = c.get("name", "").lower()
+            if any(k in ctype for k in ("varchar", "text", "char", "string")):
+                if cname not in ("id", "email", "password", "siret", "phone"):
+                    return c["name"]
+        return None
+
+    def _find_date_column(self, table_config: dict) -> str | None:
+        """Find a date/timestamp column for time-based queries."""
+        for c in table_config.get("columns", []):
+            ctype = c.get("type", "").lower()
+            if any(k in ctype for k in ("date", "timestamp", "time", "datetime")):
+                return c["name"]
+        return None
+
+    def _generic_generate(self, question: str, role: str) -> str | None:
+        """Generic schema-aware SQL generation for non-DP tenants."""
+        q = question.lower()
+        match = self._find_table_in_question(q)
+        if match is None:
+            return None
+        table_name, table_config = match
+        columns = table_config.get("columns", [])
+        if not columns:
+            return None
+        # Collect column names for reference.
+        col_names = [c["name"] for c in columns]
+        numeric_col = self._find_numeric_column(table_config)
+        group_col = self._find_group_column(table_config)
+        date_col = self._find_date_column(table_config)
+
+        # Try to find a column name mentioned in the question (for GROUP BY).
+        mentioned_col = None
+        for c in columns:
+            if c["name"].lower() in q and c["name"].lower() not in ("id",):
+                mentioned_col = c["name"]
+                break
+        # Use mentioned column as group_col if it's a text column.
+        if mentioned_col:
+            for c in columns:
+                if c["name"] == mentioned_col and any(k in c.get("type", "").lower() for k in ("text", "varchar", "char", "string")):
+                    group_col = mentioned_col
+                    break
+
+        # Pattern 1: min/max (check before total/somme to avoid conflicts)
+        if numeric_col and self._has_any(q, ["minimum", "plus bas", "plus petit", "min "]):
+            return f"SELECT MIN({numeric_col}) AS min_{numeric_col} FROM {table_name}"
+        if numeric_col and self._has_any(q, ["maximum", "plus haut", "plus grand", "plus élevé", "max "]):
+            return f"SELECT MAX({numeric_col}) AS max_{numeric_col} FROM {table_name}"
+
+        # Pattern 2: moyenne / average (check before total to avoid conflicts)
+        if numeric_col and self._has_any(q, ["moyenne", "average", "avg", "mean"]):
+            if group_col and self._has_any(q, ["par", "by"]):
+                return f"SELECT {group_col}, ROUND(AVG({numeric_col}), 2) AS avg_{numeric_col} FROM {table_name} GROUP BY {group_col} ORDER BY avg_{numeric_col} DESC LIMIT 20"
+            return f"SELECT ROUND(AVG({numeric_col}), 2) AS avg_{numeric_col} FROM {table_name}"
+
+        # Pattern 3: total / somme / sum + numeric column → SUM
+        if numeric_col and self._has_any(q, ["total", "somme", "sum", "chiffre"]):
+            if group_col and self._has_any(q, ["par", "by"]):
+                return f"SELECT {group_col}, ROUND(SUM({numeric_col}), 2) AS total_{numeric_col} FROM {table_name} GROUP BY {group_col} ORDER BY total_{numeric_col} DESC LIMIT 20"
+            return f"SELECT ROUND(SUM({numeric_col}), 2) AS total_{numeric_col} FROM {table_name}"
+
+        # Pattern 4: combien / count / nombre → COUNT(*)
+        if self._has_any(q, ["combien", "count", "nombre", "how many"]):
+            if group_col and self._has_any(q, ["par", "by"]):
+                return f"SELECT {group_col}, COUNT(*) AS count FROM {table_name} GROUP BY {group_col} ORDER BY count DESC LIMIT 20"
+            return f"SELECT COUNT(*) AS total FROM {table_name}"
+
+        # Pattern 5: top / meilleur / plus → top 5
+        if self._has_any(q, ["top", "meilleur", "plus", "best", "fréquent", "frequent", "populaire"]):
+            name_col = next((c["name"] for c in columns if "name" in c["name"].lower() or "label" in c["name"].lower() or "title" in c["name"].lower()), col_names[0])
+            if numeric_col:
+                return f"SELECT {name_col}, ROUND(SUM({numeric_col}), 2) AS total FROM {table_name} GROUP BY {name_col} ORDER BY total DESC LIMIT 5"
+            return f"SELECT {name_col}, COUNT(*) AS count FROM {table_name} GROUP BY {name_col} ORDER BY count DESC LIMIT 5"
+
+        # Pattern 6: liste / affiche / montre / voir → SELECT * LIMIT 20
+        if self._has_any(q, ["liste", "list", "affiche", "montre", "voir", "show", "display", "tous", "all", "dernier", "recent"]):
+            return f"SELECT * FROM {table_name} LIMIT 20"
+
+        # Pattern 7: 7 derniers jours + date column → date filter
+        if date_col and self._has_any(q, ["7 jours", "7 derniers", "semaine", "recent", "récent", "last 7"]):
+            return f"SELECT * FROM {table_name} WHERE {date_col} >= DATE('now', '-7 days') ORDER BY {date_col} DESC LIMIT 20"
+
+        # Pattern 8: default — select all columns, limit 20
+        select_cols = ", ".join(col_names[:10]) if len(col_names) > 10 else "*"
+        return f"SELECT {select_cols} FROM {table_name} LIMIT 20"
 
     # ── entry point ────────────────────────────────────────────────────────
     def generate(
@@ -249,8 +405,8 @@ class RuleBasedSQLGenerator:
                 "ORDER BY day ASC"
             )
 
-        # No rule matched.
-        return None
+        # No DP rule matched — try generic schema-aware generation.
+        return self._generic_generate(question, role)
 
     @staticmethod
     def _resolve_month(q: str) -> tuple[str, str, str]:
@@ -356,7 +512,7 @@ class SqlReadTool:
         self.enforce_scope = role != "admin" and scope_column is not None and scope_value is not None
         self.default_limit = schema.get("metadata", {}).get("default_limit", self.DEFAULT_LIMIT)
         self.llm_client = llm_client
-        self.generator: SQLGenerator = generator or RuleBasedSQLGenerator()
+        self.generator: SQLGenerator = generator or RuleBasedSQLGenerator(schema=schema)
         # Build a quick lookup: table_name -> scope_column (or None)
         self._table_scope_columns: dict[str, str | None] = {}
         for t in schema.get("tables", []):

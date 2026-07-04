@@ -1,0 +1,68 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "name": "tevet-7",
+  "description": "Tevet-7 — Configurable AI Agent Platform. Backend (FastAPI) + Frontend (Next.js). First tenant: Drive Producteur.",
+  "services": [
+    {
+      "name": "tevet7-backend",
+      "source": "agentic-service",
+      "dockerfile": "Dockerfile",
+      "build": {
+        "dockerfilePath": "Dockerfile"
+      },
+      "deploy": {
+        "startCommand": "uvicorn app.main:app --host 0.0.0.0 --port $PORT",
+        "healthcheckPath": "/health",
+        "healthcheckTimeout": 30,
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 3
+      },
+      "variables": {
+        "DATABASE_URL": "${{Postgres.DATABASE_URL}}",
+        "JWT_SECRET": "${{JWT_SECRET}}",
+        "OPENAI_API_KEY": "${{OPENAI_API_KEY}}",
+        "LLM_MODEL": "gpt-4o-mini",
+        "LANGFUSE_PUBLIC_KEY": "${{LANGFUSE_PUBLIC_KEY}}",
+        "LANGFUSE_SECRET_KEY": "${{LANGFUSE_SECRET_KEY}}",
+        "LANGFUSE_HOST": "https://cloud.langfuse.com",
+        "CORS_ORIGINS": "${{tevet7-frontend.RAILWAY_PUBLIC_DOMAIN}}",
+        "ENV": "production",
+        "LOG_LEVEL": "INFO"
+      }
+    },
+    {
+      "name": "tevet7-frontend",
+      "source": ".",
+      "dockerfile": "Dockerfile",
+      "build": {
+        "dockerfilePath": "Dockerfile"
+      },
+      "deploy": {
+        "startCommand": "npm run start",
+        "healthcheckPath": "/",
+        "healthcheckTimeout": 30,
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 3
+      },
+      "variables": {
+        "AGENTIC_SERVICE_URL": "https://${{tevet7-backend.RAILWAY_PUBLIC_DOMAIN}}",
+        "NEXT_PUBLIC_AGENTIC_SERVICE_URL": "https://${{tevet7-backend.RAILWAY_PUBLIC_DOMAIN}}",
+        "NODE_ENV": "production",
+        "PORT": "3000"
+      }
+    },
+    {
+      "name": "postgres",
+      "plugin": "postgresql",
+      "config": {
+        "version": "16",
+        "database": "tevet7",
+        "extensions": ["pgvector"]
+      }
+    }
+  ],
+  "metadata": {
+    "repo": "Txchrixo/tevet-7",
+    "tags": ["fastapi", "nextjs", "ai", "agents", "rag", "multi-tenant"]
+  }
+}

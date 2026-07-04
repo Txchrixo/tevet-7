@@ -97,6 +97,10 @@ export interface TenantMembership {
   producer_id: number | null;
   is_demo: boolean;
   is_active: boolean;
+  /** True when the tenant has completed the onboarding wizard (data connected +
+   * schema saved + roles saved + complete endpoint called). When false, the
+   * frontend gates the chat surface and shows the OnboardingWizard instead. */
+  onboarded: boolean;
 }
 
 /** Authenticated user as returned by `POST /api/auth/login` or `GET /api/auth/me`. */
@@ -177,4 +181,81 @@ export interface ResetResult {
   reset: boolean;
   orders_reseeded: number;
   docs_reseeded: number;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6d — Dynamic example questions
+// ---------------------------------------------------------------------------
+
+/**
+ * A natural-language example question shown in the sidebar's "Exemples"
+ * section. Generated server-side from the tenant's `schema_config` (see
+ * `GET /api/tenants/{id}/example-questions`). The `hint` field is
+ * optional — only set on the hardcoded Drive Producteur fallback
+ * questions (e.g. the "Accès admin requis" hint on the top-producers
+ * question).
+ */
+export interface ExampleQuestion {
+  id: string;
+  /** The question text shown to the user and sent as a user message. */
+  label: string;
+  /** Optional hint about access scope (e.g. "Accès admin requis"). */
+  hint?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Tevet-7 onboarding wizard
+// ---------------------------------------------------------------------------
+
+/** A column detected in a tenant's source data (Postgres schema or CSV header). */
+export interface OnboardingSchemaColumn {
+  name: string;
+  type: string;
+  description?: string;
+  /** Wizard-only flag — true when the user keeps this column in the agent's
+   * scope. Deselected columns are dropped from the saved schema_config. */
+  selected: boolean;
+}
+
+/** A table detected in a tenant's source data. */
+export interface OnboardingSchemaTable {
+  name: string;
+  description?: string;
+  columns: OnboardingSchemaColumn[];
+  /** Wizard-only flag — true when the table is kept in the agent's scope. */
+  selected: boolean;
+  /** The RLS scope column for this table (e.g. "producer_id"). Null when the
+   * table is global (no per-row scoping) or when the user hasn't picked one. */
+  scope_column: string | null;
+}
+
+/** A role defined during onboarding step 3. Persisted as roles_config. */
+export interface OnboardingRole {
+  name: string;
+  /** The column used for row-level scoping for this role. Null for admins
+   * (full-tenant access). For producers, typically "producer_id". */
+  scope_column: string | null;
+  /** The tables this role can query. Empty array means no tables. */
+  allowed_tables: string[];
+}
+
+/** Status returned by `GET /api/tenants/{id}/onboarding/status`. */
+export interface OnboardingStatus {
+  onboarded: boolean;
+  connector_type: string | null;
+  schema_tables_count: number;
+  roles_count: number;
+}
+
+/** Result of `POST /api/tenants/{id}/onboarding/connect` (Postgres + CSV). */
+export interface OnboardingConnectResult {
+  ok: boolean;
+  error: string | null;
+  tables_count: number;
+}
+
+/** Result of `POST /api/tenants/{id}/onboarding/save-schema` and
+ * `save-roles`, and `POST /api/tenants/{id}/onboarding/complete`. */
+export interface OnboardingSaveResult {
+  ok: boolean;
 }

@@ -1,0 +1,1159 @@
+     1→{
+     2→  "total_cases": 40,
+     3→  "evaluable_cases": 39,
+     4→  "passed": 39,
+     5→  "overall_pass_rate": 1.0,
+     6→  "sql_valid": {
+     7→    "pass": 18,
+     8→    "total": 18,
+     9→    "pct": 1.0
+    10→  },
+    11→  "scopes_respected": {
+    12→    "pass": 39,
+    13→    "total": 39,
+    14→    "pct": 1.0
+    15→  },
+    16→  "intents_correct": {
+    17→    "pass": 39,
+    18→    "total": 39,
+    19→    "pct": 1.0
+    20→  },
+    21→  "responses_well_formed": {
+    22→    "pass": 32,
+    23→    "total": 32,
+    24→    "pct": 1.0
+    25→  },
+    26→  "expected_to_fail": {
+    27→    "total": 1,
+    28→    "passed": 0,
+    29→    "cases": [
+    30→      {
+    31→        "id": "eval-005",
+    32→        "passed": false,
+    33→        "failure_reasons": [
+    34→          "intent expected 'top_products', got 'unknown'",
+    35→          "Expected refused=False, got refused=True",
+    36→          "Expected SQL present, got null/empty",
+    37→          "scope_clause missing 'producer_id = 42' (got: '')",
+    38→          "Answer missing all of ['Tomates', 'Courgettes', 'Carottes'] (got: \"Je n'ai pas pu générer de requête SQL pour cette question. Pouvez-vous la reformuler en utilisant le\"...)",
+    39→          "Expected chart present, got null"
+    40→        ]
+    41→      }
+    42→    ]
+    43→  },
+    44→  "by_category": {
+    45→    "top_products": {
+    46→      "pass": 5,
+    47→      "total": 5
+    48→    },
+    49→    "stock_shortfall": {
+    50→      "pass": 5,
+    51→      "total": 5
+    52→    },
+    53→    "net_revenue": {
+    54→      "pass": 5,
+    55→      "total": 5
+    56→    },
+    57→    "weekly_sales": {
+    58→      "pass": 4,
+    59→      "total": 4
+    60→    },
+    61→    "cross_producer": {
+    62→      "pass": 5,
+    63→      "total": 5
+    64→    },
+    65→    "security_edge_cases": {
+    66→      "pass": 5,
+    67→      "total": 5
+    68→    },
+    69→    "documentary": {
+    70→      "pass": 5,
+    71→      "total": 5
+    72→    },
+    73→    "ops_copilot": {
+    74→      "pass": 3,
+    75→      "total": 3
+    76→    },
+    77→    "ml_forecast": {
+    78→      "pass": 2,
+    79→      "total": 2
+    80→    }
+    81→  },
+    82→  "cases": [
+    83→    {
+    84→      "id": "eval-001",
+    85→      "category": "top_products",
+    86→      "question": "Quels sont mes 5 produits les plus vendus ce mois-ci ?",
+    87→      "description": "Standard top-products question for producer 42 (Marie / Ferme du Vallon). Should match top_products intent, generate SQL over order_items+products+orders, have 'oi.producer_id = 42' injected by the rewriter, return 5 rows with Tomates cœur de bœuf as #1, and ship a bar chart.",
+    88→      "expected_to_fail": false,
+    89→      "passed": true,
+    90→      "failure_reasons": [],
+    91→      "actual": {
+    92→        "intent": "top_products",
+    93→        "refused": false,
+    94→        "sql": "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01') AND oi.producer_id = 42 GROUP BY p.id, p.name ORDER BY units_sold DESC LIMIT 5",
+    95→        "sql_present": true,
+    96→        "scope_clause": "WHERE oi.producer_id = 42",
+    97→        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Ferme du Vallon) :\n\n1. **Tomates cœur de bœuf** — 180 unités · 807,36 €\n2. **Courgettes** — 102 unités · 121,77 €\n3. **Carottes en bottes** — 94 unités · 263,14 €\n4. **Salade laitue** — 69 unités · 124,14 €\n5. **Poireaux** — 62 unités · 198,86 €\n\nLes to",
+    98→        "chart_present": true,
+    99→        "tables_touched": [
+   100→          "order_items",
+   101→          "products",
+   102→          "orders"
+   103→        ],
+   104→        "tables_in_sql": [
+   105→          "order_items",
+   106→          "products",
+   107→          "orders"
+   108→        ],
+   109→        "http_error": null,
+   110→        "ops_proposed_decision": null
+   111→      },
+   112→      "retried": false
+   113→    },
+   114→    {
+   115→      "id": "eval-002",
+   116→      "category": "top_products",
+   117→      "question": "Quels sont mes 5 produits les plus vendus ce mois-ci ?",
+   118→      "description": "Same question as eval-001 but for producer 99 (Pierre / Verger de la Côte). Proves the scoping is per-identity: scope_clause must contain 'producer_id = 99' and the top products must be Pierre's orchard products (Pommes Gala, Poires Conference, Cidre brut), not Marie's vegetables.",
+   119→      "expected_to_fail": false,
+   120→      "passed": true,
+   121→      "failure_reasons": [],
+   122→      "actual": {
+   123→        "intent": "top_products",
+   124→        "refused": false,
+   125→        "sql": "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01') AND oi.producer_id = 99 GROUP BY p.id, p.name ORDER BY units_sold DESC LIMIT 5",
+   126→        "sql_present": true,
+   127→        "scope_clause": "WHERE oi.producer_id = 99",
+   128→        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Verger de la Côte) :\n\n1. **Pommes Gala** — 204 unités · 573,10 €\n2. **Poires Conference** — 134 unités · 430,58 €\n3. **Cidre brut** — 92 unités · 624,06 €\n4. **Jus de pomme** — 87 unités · 395,62 €\n5. **Pommes à cuire** — 51 unités · 112,09 €\n\nLes pomme",
+   129→        "chart_present": true,
+   130→        "tables_touched": [
+   131→          "order_items",
+   132→          "products",
+   133→          "orders"
+   134→        ],
+   135→        "tables_in_sql": [
+   136→          "order_items",
+   137→          "products",
+   138→          "orders"
+   139→        ],
+   140→        "http_error": null,
+   141→        "ops_proposed_decision": null
+   142→      },
+   143→      "retried": false
+   144→    },
+   145→    {
+   146→      "id": "eval-003",
+   147→      "category": "top_products",
+   148→      "question": "Quels sont les 5 produits les plus vendus ce mois-ci ?",
+   149→      "description": "Admin asking the top-products question. No row-level scope should be injected (scope_clause null), SQL should aggregate across all 7 producers, and the answer should mix products from different producers (Tomates from #42, Pommes from #99). Confirms admin = full access.",
+   150→      "expected_to_fail": false,
+   151→      "passed": true,
+   152→      "failure_reasons": [],
+   153→      "actual": {
+   154→        "intent": "top_products",
+   155→        "refused": false,
+   156→        "sql": "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE o.status <> 'cancelled' AND o.created_at >= '2024-07-01' GROUP BY p.id, p.name ORDER BY units_sold DESC LIMIT 5",
+   157→        "sql_present": true,
+   158→        "scope_clause": null,
+   159→        "answer_excerpt": "**Top 5 des produits les plus vendus ce mois-ci** :\n\n1. **Pommes Gala** — 204 unités · 573,10 €\n2. **Tomates cœur de bœuf** — 180 unités · 807,36 €\n3. **Vin rouge Savoie AOP** — 150 unités · 1 739,49 €\n4. **Steak haché 5% MG** — 144 unités · 2 071,64 €\n5. **Poires Conference** — 134 unités · 430,58 ",
+   160→        "chart_present": true,
+   161→        "tables_touched": [
+   162→          "order_items",
+   163→          "products",
+   164→          "orders"
+   165→        ],
+   166→        "tables_in_sql": [
+   167→          "order_items",
+   168→          "products",
+   169→          "orders"
+   170→        ],
+   171→        "http_error": null,
+   172→        "ops_proposed_decision": null
+   173→      },
+   174→      "retried": false
+   175→    },
+   176→    {
+   177→      "id": "eval-004",
+   178→      "category": "top_products",
+   179→      "question": "Mes meilleurs produits en termes de ventes ?",
+   180→      "description": "Alternate French phrasing using 'meilleurs' + 'ventes' instead of 'plus vendus'. The classifier keyword list ('meilleur' / 'vente') must still recognise this as top_products. Same expected outcome as eval-001.",
+   181→      "expected_to_fail": false,
+   182→      "passed": true,
+   183→      "failure_reasons": [],
+   184→      "actual": {
+   185→        "intent": "top_products",
+   186→        "refused": false,
+   187→        "sql": "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01') AND oi.producer_id = 42 GROUP BY p.id, p.name ORDER BY units_sold DESC LIMIT 5",
+   188→        "sql_present": true,
+   189→        "scope_clause": "WHERE oi.producer_id = 42",
+   190→        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Ferme du Vallon) :\n\n1. **Tomates cœur de bœuf** — 180 unités · 807,36 €\n2. **Courgettes** — 102 unités · 121,77 €\n3. **Carottes en bottes** — 94 unités · 263,14 €\n4. **Salade laitue** — 69 unités · 124,14 €\n5. **Poireaux** — 62 unités · 198,86 €\n\nLes to",
+   191→        "chart_present": true,
+   192→        "tables_touched": [
+   193→          "order_items",
+   194→          "products",
+   195→          "orders"
+   196→        ],
+   197→        "tables_in_sql": [
+   198→          "order_items",
+   199→          "products",
+   200→          "orders"
+   201→        ],
+   202→        "http_error": null,
+   203→        "ops_proposed_decision": null
+   204→      },
+   205→      "retried": false
+   206→    },
+   207→    {
+   208→      "id": "eval-005",
+   209→      "category": "top_products",
+   210→      "question": "Qu'est-ce qui se vend le plus chez moi ?",
+   211→      "description": "Awkward conversational phrasing ('qu'est-ce qui se vend le plus'). EXPECTED TO FAIL in Phase 1: the rule-based classifier only matches the past participle 'vendu' (and 'vente' / 'produit'), not the present tense 'vend'. classify_question returns 'unknown' → SqlGenerationError → refused=true. This is a real Phase 1 gap that a Phase 2 LLM would close. Counted separately by the scorer (not in the pass-rate denominator).",
+   212→      "expected_to_fail": true,
+   213→      "passed": false,
+   214→      "failure_reasons": [
+   215→        "intent expected 'top_products', got 'unknown'",
+   216→        "Expected refused=False, got refused=True",
+   217→        "Expected SQL present, got null/empty",
+   218→        "scope_clause missing 'producer_id = 42' (got: '')",
+   219→        "Answer missing all of ['Tomates', 'Courgettes', 'Carottes'] (got: \"Je n'ai pas pu générer de requête SQL pour cette question. Pouvez-vous la reformuler en utilisant le\"...)",
+   220→        "Expected chart present, got null"
+   221→      ],
+   222→      "actual": {
+   223→        "intent": "unknown",
+   224→        "refused": true,
+   225→        "sql": null,
+   226→        "sql_present": false,
+   227→        "scope_clause": null,
+   228→        "answer_excerpt": "Je n'ai pas pu générer de requête SQL pour cette question. Pouvez-vous la reformuler en utilisant les mots-clés attendus (ventes, stock, juin, …) ?",
+   229→        "chart_present": false,
+   230→        "tables_touched": [],
+   231→        "tables_in_sql": [],
+   232→        "http_error": null,
+   233→        "ops_proposed_decision": null
+   234→      },
+   235→      "retried": false
+   236→    },
+   237→    {
+   238→      "id": "eval-006",
+   239→      "category": "top_products",
+   240→      "question": "Show me my top produits ce mois-ci",
+   241→      "description": "Mixed French/English phrasing ('Show me my top produits'). The classifier matches on 'top' + 'produit' which both survive the language mix. Same expected outcome as eval-001.",
+   242→      "expected_to_fail": false,
+   243→      "passed": true,
+   244→      "failure_reasons": [],
+   245→      "actual": {
+   246→        "intent": "top_products",
+   247→        "refused": false,
+   248→        "sql": "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01') AND oi.producer_id = 42 GROUP BY p.id, p.name ORDER BY units_sold DESC LIMIT 5",
+   249→        "sql_present": true,
+   250→        "scope_clause": "WHERE oi.producer_id = 42",
+   251→        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Ferme du Vallon) :\n\n1. **Tomates cœur de bœuf** — 180 unités · 807,36 €\n2. **Courgettes** — 102 unités · 121,77 €\n3. **Carottes en bottes** — 94 unités · 263,14 €\n4. **Salade laitue** — 69 unités · 124,14 €\n5. **Poireaux** — 62 unités · 198,86 €\n\nLes to",
+   252→        "chart_present": true,
+   253→        "tables_touched": [
+   254→          "order_items",
+   255→          "products",
+   256→          "orders"
+   257→        ],
+   258→        "tables_in_sql": [
+   259→          "order_items",
+   260→          "products",
+   261→          "orders"
+   262→        ],
+   263→        "http_error": null,
+   264→        "ops_proposed_decision": null
+   265→      },
+   266→      "retried": false
+   267→    },
+   268→    {
+   269→      "id": "eval-007",
+   270→      "category": "stock_shortfall",
+   271→      "question": "Quels produits risquent de me manquer samedi ?",
+   272→      "description": "Standard stock-shortfall question for producer 42 (Phase 5: ML forecast path). The classifier keys on 'manqu' + 'samedi'. When the ML model .pkl exists + producer_id is set, the orchestrator routes to forecast_tool (no SQL on the response). Answer should mention 'modèle' or '%' or 'risque', and tool_calls must include 'forecast_tool'.",
+   273→      "expected_to_fail": false,
+   274→      "passed": true,
+   275→      "failure_reasons": [],
+   276→      "actual": {
+   277→        "intent": "stock_shortfall",
+   278→        "refused": false,
+   279→        "sql": null,
+   280→        "sql_present": false,
+   281→        "scope_clause": null,
+   282→        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
+   283→        "chart_present": true,
+   284→        "tables_touched": [
+   285→          "stock_history",
+   286→          "stocks",
+   287→          "products"
+   288→        ],
+   289→        "tables_in_sql": [],
+   290→        "http_error": null,
+   291→        "ops_proposed_decision": null
+   292→      },
+   293→      "retried": false
+   294→    },
+   295→    {
+   296→      "id": "eval-008",
+   297→      "category": "stock_shortfall",
+   298→      "question": "État de mon stock en rupture ?",
+   299→      "description": "Alternate phrasing using 'rupture' (Phase 5: ML forecast path). The classifier keys on 'stock' + 'rupture'. Same ML forecast outcome as eval-007.",
+   300→      "expected_to_fail": false,
+   301→      "passed": true,
+   302→      "failure_reasons": [],
+   303→      "actual": {
+   304→        "intent": "stock_shortfall",
+   305→        "refused": false,
+   306→        "sql": null,
+   307→        "sql_present": false,
+   308→        "scope_clause": null,
+   309→        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
+   310→        "chart_present": true,
+   311→        "tables_touched": [
+   312→          "stock_history",
+   313→          "stocks",
+   314→          "products"
+   315→        ],
+   316→        "tables_in_sql": [],
+   317→        "http_error": null,
+   318→        "ops_proposed_decision": null
+   319→      },
+   320→      "retried": false
+   321→    },
+   322→    {
+   323→      "id": "eval-009",
+   324→      "category": "stock_shortfall",
+   325→      "question": "Quels produits sont en épuisement ?",
+   326→      "description": "Alternate phrasing using 'épuisement' (Phase 5: ML forecast path, producer 99). The classifier keys on 'épuis'. Same ML forecast outcome as eval-007 but scoped to producer 99 (Pierre — Verger de la Côte).",
+   327→      "expected_to_fail": false,
+   328→      "passed": true,
+   329→      "failure_reasons": [],
+   330→      "actual": {
+   331→        "intent": "stock_shortfall",
+   332→        "refused": false,
+   333→        "sql": null,
+   334→        "sql_present": false,
+   335→        "scope_clause": null,
+   336→        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Verger de la Côte)\n\n5 produits à risque selon le modèle ML :\n\n1. **Pommes à cuire** — 82 % de risque\n   Stock actuel : 0 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Pommes Gala** — 70 % de risque\n   Stock actuel : 0 ",
+   337→        "chart_present": true,
+   338→        "tables_touched": [
+   339→          "stock_history",
+   340→          "stocks",
+   341→          "products"
+   342→        ],
+   343→        "tables_in_sql": [],
+   344→        "http_error": null,
+   345→        "ops_proposed_decision": null
+   346→      },
+   347→      "retried": false
+   348→    },
+   349→    {
+   350→      "id": "eval-010",
+   351→      "category": "stock_shortfall",
+   352→      "question": "Stock insuffisant pour les retraits de demain ?",
+   353→      "description": "Alternate phrasing using 'stock insuffisant' (Phase 5: ML forecast path). The classifier keys on 'stock'. Same ML forecast outcome as eval-007.",
+   354→      "expected_to_fail": false,
+   355→      "passed": true,
+   356→      "failure_reasons": [],
+   357→      "actual": {
+   358→        "intent": "stock_shortfall",
+   359→        "refused": false,
+   360→        "sql": null,
+   361→        "sql_present": false,
+   362→        "scope_clause": null,
+   363→        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
+   364→        "chart_present": true,
+   365→        "tables_touched": [
+   366→          "stock_history",
+   367→          "stocks",
+   368→          "products"
+   369→        ],
+   370→        "tables_in_sql": [],
+   371→        "http_error": null,
+   372→        "ops_proposed_decision": null
+   373→      },
+   374→      "retried": false
+   375→    },
+   376→    {
+   377→      "id": "eval-011",
+   378→      "category": "stock_shortfall",
+   379→      "question": "Quels produits sont en rupture chez tous les producteurs ?",
+   380→      "description": "Admin asking the stock-shortfall question across all producers. No row-level scope (admin), SQL aggregates every producer's low-stock items. answer_contains_any is null because the product mix across all 7 producers is unpredictable.",
+   381→      "expected_to_fail": false,
+   382→      "passed": true,
+   383→      "failure_reasons": [],
+   384→      "actual": {
+   385→        "intent": "stock_shortfall",
+   386→        "refused": false,
+   387→        "sql": "SELECT p.name AS name, p.category AS category, s.quantity AS stock_quantity, s.reserved AS reserved, s.available AS available, ROUND(s.available, 2) AS available_display FROM stocks AS s JOIN products AS p ON s.product_id = p.id WHERE s.available < 10 ORDER BY s.available ASC LIMIT 1000",
+   388→        "sql_present": true,
+   389→        "scope_clause": null,
+   390→        "answer_excerpt": "Pour les **retraits de samedi**, 47 références risquent de vous manquer :\n\n| Produit | Stock dispo. | Déficit |\n|---|---:|---:|\n| Tomates grappe | 0 | **-10** |\n| Concombres | 0 | **-10** |\n| Ail rose | 0 | **-10** |\n| Courgettes vertes | 0 | **-10** |\n| Tomates cœur de bœuf | 0 | **-10** |\n| Carott",
+   391→        "chart_present": true,
+   392→        "tables_touched": [
+   393→          "stocks",
+   394→          "products"
+   395→        ],
+   396→        "tables_in_sql": [
+   397→          "stocks",
+   398→          "products"
+   399→        ],
+   400→        "http_error": null,
+   401→        "ops_proposed_decision": null
+   402→      },
+   403→      "retried": false
+   404→    },
+   405→    {
+   406→      "id": "eval-012",
+   407→      "category": "net_revenue",
+   408→      "question": "Combien ai-je gagné en juin ?",
+   409→      "description": "Standard net-revenue question for June 2024. Classifier keys on 'gagné'. _resolve_month maps 'juin' → 2024-06-01..2024-06-30. SQL touches only orders, rewriter injects 'o.producer_id = 42'. Answer should report Brut / Commission (12%) / Net for Marie in June (188 orders).",
+   410→      "expected_to_fail": false,
+   411→      "passed": true,
+   412→      "failure_reasons": [],
+   413→      "actual": {
+   414→        "intent": "net_revenue",
+   415→        "refused": false,
+   416→        "sql": "SELECT COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS gross_revenue, ROUND(COALESCE(SUM(o.total_amount), 0) * 0.8800, 2) AS net_revenue, 'juin 2024' AS month_label FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-06-01' AND o.created_at <= '2024-06-30 23:59:59') AND o.producer_id = 42 LIMIT 1000",
+   417→        "sql_present": true,
+   418→        "scope_clause": "WHERE o.producer_id = 42",
+   419→        "answer_excerpt": "**Synthèse de vos revenus** — juin 2024 — Ferme du Vallon\n\n- **Brut** : 4 707,31 € (230 commandes)\n- **Commission marketplace** (12 %) : 564,88 €\n- **Net perçu** : 4 142,43 €\n\nVotre panier moyen est de **20,47 €**.",
+   420→        "chart_present": false,
+   421→        "tables_touched": [
+   422→          "orders"
+   423→        ],
+   424→        "tables_in_sql": [
+   425→          "orders"
+   426→        ],
+   427→        "http_error": null,
+   428→        "ops_proposed_decision": null
+   429→      },
+   430→      "retried": false
+   431→    },
+   432→    {
+   433→      "id": "eval-013",
+   434→      "category": "net_revenue",
+   435→      "question": "Quel est mon chiffre d'affaires ?",
+   436→      "description": "Alternate phrasing using 'chiffre d'affaires' (classifier keys on 'chiffre'). No month mentioned → defaults to current month (July 2024, labeled 'ce mois-ci').",
+   437→      "expected_to_fail": false,
+   438→      "passed": true,
+   439→      "failure_reasons": [],
+   440→      "actual": {
+   441→        "intent": "net_revenue",
+   442→        "refused": false,
+   443→        "sql": "SELECT COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS gross_revenue, ROUND(COALESCE(SUM(o.total_amount), 0) * 0.8800, 2) AS net_revenue, 'ce mois-ci' AS month_label FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01' AND o.created_at <= '2024-07-31 23:59:59') AND o.producer_id = 42 LIMIT 1000",
+   444→        "sql_present": true,
+   445→        "scope_clause": "WHERE o.producer_id = 42",
+   446→        "answer_excerpt": "**Synthèse de vos revenus** — ce mois-ci — Ferme du Vallon\n\n- **Brut** : 2 020,99 € (99 commandes)\n- **Commission marketplace** (12 %) : 242,52 €\n- **Net perçu** : 1 778,47 €\n\nVotre panier moyen est de **20,41 €**.",
+   447→        "chart_present": false,
+   448→        "tables_touched": [
+   449→          "orders"
+   450→        ],
+   451→        "tables_in_sql": [
+   452→          "orders"
+   453→        ],
+   454→        "http_error": null,
+   455→        "ops_proposed_decision": null
+   456→      },
+   457→      "retried": false
+   458→    },
+   459→    {
+   460→      "id": "eval-014",
+   461→      "category": "net_revenue",
+   462→      "question": "Détaille ma commission marketplace ?",
+   463→      "description": "Alternate phrasing using 'commission' (classifier keys on 'commission'). Scoped to producer 99. Answer should show the 12% marketplace commission line.",
+   464→      "expected_to_fail": false,
+   465→      "passed": true,
+   466→      "failure_reasons": [],
+   467→      "actual": {
+   468→        "intent": "net_revenue",
+   469→        "refused": false,
+   470→        "sql": "SELECT COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS gross_revenue, ROUND(COALESCE(SUM(o.total_amount), 0) * 0.8800, 2) AS net_revenue, 'ce mois-ci' AS month_label FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01' AND o.created_at <= '2024-07-31 23:59:59') AND o.producer_id = 99 LIMIT 1000",
+   471→        "sql_present": true,
+   472→        "scope_clause": "WHERE o.producer_id = 99",
+   473→        "answer_excerpt": "**Synthèse de vos revenus** — ce mois-ci — Verger de la Côte\n\n- **Brut** : 2 847,56 € (99 commandes)\n- **Commission marketplace** (12 %) : 341,71 €\n- **Net perçu** : 2 505,85 €\n\nVotre panier moyen est de **28,76 €**.",
+   474→        "chart_present": false,
+   475→        "tables_touched": [
+   476→          "orders"
+   477→        ],
+   478→        "tables_in_sql": [
+   479→          "orders"
+   480→        ],
+   481→        "http_error": null,
+   482→        "ops_proposed_decision": null
+   483→      },
+   484→      "retried": false
+   485→    },
+   486→    {
+   487→      "id": "eval-015",
+   488→      "category": "net_revenue",
+   489→      "question": "Quel est mon revenu net de juillet ?",
+   490→      "description": "Alternate phrasing using 'revenu net' + 'juillet' (classifier keys on 'net' / 'revenu', _resolve_month keys on 'juillet'). July 2024 is the current demo month — 312 orders for Marie.",
+   491→      "expected_to_fail": false,
+   492→      "passed": true,
+   493→      "failure_reasons": [],
+   494→      "actual": {
+   495→        "intent": "net_revenue",
+   496→        "refused": false,
+   497→        "sql": "SELECT COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS gross_revenue, ROUND(COALESCE(SUM(o.total_amount), 0) * 0.8800, 2) AS net_revenue, 'juillet 2024' AS month_label FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01' AND o.created_at <= '2024-07-31 23:59:59') AND o.producer_id = 42 LIMIT 1000",
+   498→        "sql_present": true,
+   499→        "scope_clause": "WHERE o.producer_id = 42",
+   500→        "answer_excerpt": "**Synthèse de vos revenus** — juillet 2024 — Ferme du Vallon\n\n- **Brut** : 2 020,99 € (99 commandes)\n- **Commission marketplace** (12 %) : 242,52 €\n- **Net perçu** : 1 778,47 €\n\nVotre panier moyen est de **20,41 €**.",
+   501→        "chart_present": false,
+   502→        "tables_touched": [
+   503→          "orders"
+   504→        ],
+   505→        "tables_in_sql": [
+   506→          "orders"
+   507→        ],
+   508→        "http_error": null,
+   509→        "ops_proposed_decision": null
+   510→      },
+   511→      "retried": false
+   512→    },
+   513→    {
+   514→      "id": "eval-016",
+   515→      "category": "net_revenue",
+   516→      "question": "Combien ai-je gagné en novembre ?",
+   517→      "description": "Wrong-month reference: 'novembre' is NOT in _resolve_month's keyword list (only Jan–Jul are seeded). The rule-based generator silently falls back to the current month (July) with label 'ce mois-ci'. The response is still well-formed (refused=false, sql present, scope injected, Brut/Net lines present) so the test passes — but the user gets July data labeled 'ce mois-ci' instead of November. Documented Phase 1 limitation: _resolve_month should either support all 12 months or refuse gracefully. A Phase 2 LLM would handle this naturally.",
+   518→      "expected_to_fail": false,
+   519→      "passed": true,
+   520→      "failure_reasons": [],
+   521→      "actual": {
+   522→        "intent": "net_revenue",
+   523→        "refused": false,
+   524→        "sql": "SELECT COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS gross_revenue, ROUND(COALESCE(SUM(o.total_amount), 0) * 0.8800, 2) AS net_revenue, 'ce mois-ci' AS month_label FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01' AND o.created_at <= '2024-07-31 23:59:59') AND o.producer_id = 42 LIMIT 1000",
+   525→        "sql_present": true,
+   526→        "scope_clause": "WHERE o.producer_id = 42",
+   527→        "answer_excerpt": "**Synthèse de vos revenus** — ce mois-ci — Ferme du Vallon\n\n- **Brut** : 2 020,99 € (99 commandes)\n- **Commission marketplace** (12 %) : 242,52 €\n- **Net perçu** : 1 778,47 €\n\nVotre panier moyen est de **20,41 €**.",
+   528→        "chart_present": false,
+   529→        "tables_touched": [
+   530→          "orders"
+   531→        ],
+   532→        "tables_in_sql": [
+   533→          "orders"
+   534→        ],
+   535→        "http_error": null,
+   536→        "ops_proposed_decision": null
+   537→      },
+   538→      "retried": false
+   539→    },
+   540→    {
+   541→      "id": "eval-017",
+   542→      "category": "weekly_sales",
+   543→      "question": "Résumé de mes ventes cette semaine ?",
+   544→      "description": "Standard weekly-sales question (classifier keys on 'résumé' + 'semaine'). SQL aggregates orders by day over the 2024-07-08..2024-07-15 window, rewriter injects 'o.producer_id = 42'. Answer should report total commands + CA + panier moyen, and ship a line chart with revenue + order_count per day.",
+   545→      "expected_to_fail": false,
+   546→      "passed": true,
+   547→      "failure_reasons": [],
+   548→      "actual": {
+   549→        "intent": "weekly_sales",
+   550→        "refused": false,
+   551→        "sql": "SELECT DATE(o.created_at) AS day, COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS revenue FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= DATE('2024-07-08') AND o.created_at <= DATE('2024-07-15')) AND o.producer_id = 42 GROUP BY DATE(o.created_at) ORDER BY day ASC LIMIT 1000",
+   552→        "sql_present": true,
+   553→        "scope_clause": "WHERE o.producer_id = 42",
+   554→        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **45 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 859,26 €\n- **Panier moyen** : 19,09 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
+   555→        "chart_present": true,
+   556→        "tables_touched": [
+   557→          "orders"
+   558→        ],
+   559→        "tables_in_sql": [
+   560→          "orders"
+   561→        ],
+   562→        "http_error": null,
+   563→        "ops_proposed_decision": null
+   564→      },
+   565→      "retried": false
+   566→    },
+   567→    {
+   568→      "id": "eval-018",
+   569→      "category": "weekly_sales",
+   570→      "question": "Synthèse de mes ventes sur 7 jours ?",
+   571→      "description": "Alternate phrasing using 'synthèse' (classifier keys on 'synthèse'). Same expected outcome as eval-017.",
+   572→      "expected_to_fail": false,
+   573→      "passed": true,
+   574→      "failure_reasons": [],
+   575→      "actual": {
+   576→        "intent": "weekly_sales",
+   577→        "refused": false,
+   578→        "sql": "SELECT DATE(o.created_at) AS day, COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS revenue FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= DATE('2024-07-08') AND o.created_at <= DATE('2024-07-15')) AND o.producer_id = 42 GROUP BY DATE(o.created_at) ORDER BY day ASC LIMIT 1000",
+   579→        "sql_present": true,
+   580→        "scope_clause": "WHERE o.producer_id = 42",
+   581→        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **45 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 859,26 €\n- **Panier moyen** : 19,09 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
+   582→        "chart_present": true,
+   583→        "tables_touched": [
+   584→          "orders"
+   585→        ],
+   586→        "tables_in_sql": [
+   587→          "orders"
+   588→        ],
+   589→        "http_error": null,
+   590→        "ops_proposed_decision": null
+   591→      },
+   592→      "retried": false
+   593→    },
+   594→    {
+   595→      "id": "eval-019",
+   596→      "category": "weekly_sales",
+   597→      "question": "Bilan hebdo de la semaine ?",
+   598→      "description": "Alternate phrasing using 'bilan hebdo' + 'semaine' (classifier keys on 'semaine'). Same expected outcome as eval-017.",
+   599→      "expected_to_fail": false,
+   600→      "passed": true,
+   601→      "failure_reasons": [],
+   602→      "actual": {
+   603→        "intent": "weekly_sales",
+   604→        "refused": false,
+   605→        "sql": "SELECT DATE(o.created_at) AS day, COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS revenue FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= DATE('2024-07-08') AND o.created_at <= DATE('2024-07-15')) AND o.producer_id = 42 GROUP BY DATE(o.created_at) ORDER BY day ASC LIMIT 1000",
+   606→        "sql_present": true,
+   607→        "scope_clause": "WHERE o.producer_id = 42",
+   608→        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **45 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 859,26 €\n- **Panier moyen** : 19,09 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
+   609→        "chart_present": true,
+   610→        "tables_touched": [
+   611→          "orders"
+   612→        ],
+   613→        "tables_in_sql": [
+   614→          "orders"
+   615→        ],
+   616→        "http_error": null,
+   617→        "ops_proposed_decision": null
+   618→      },
+   619→      "retried": false
+   620→    },
+   621→    {
+   622→      "id": "eval-020",
+   623→      "category": "weekly_sales",
+   624→      "question": "Ventes de la semaine ?",
+   625→      "description": "Alternate phrasing 'Ventes de la semaine' — classifier picks weekly_sales via 'semaine' (top_products is NOT matched because 'vente' alone lacks 'top'/'plus'/'best'/'meilleur'). Scoped to producer 99.",
+   626→      "expected_to_fail": false,
+   627→      "passed": true,
+   628→      "failure_reasons": [],
+   629→      "actual": {
+   630→        "intent": "weekly_sales",
+   631→        "refused": false,
+   632→        "sql": "SELECT DATE(o.created_at) AS day, COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS revenue FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= DATE('2024-07-08') AND o.created_at <= DATE('2024-07-15')) AND o.producer_id = 99 GROUP BY DATE(o.created_at) ORDER BY day ASC LIMIT 1000",
+   633→        "sql_present": true,
+   634→        "scope_clause": "WHERE o.producer_id = 99",
+   635→        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Verger de la Côte\n\n- **47 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 1 288,91 €\n- **Panier moyen** : 27,42 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
+   636→        "chart_present": true,
+   637→        "tables_touched": [
+   638→          "orders"
+   639→        ],
+   640→        "tables_in_sql": [
+   641→          "orders"
+   642→        ],
+   643→        "http_error": null,
+   644→        "ops_proposed_decision": null
+   645→      },
+   646→      "retried": false
+   647→    },
+   648→    {
+   649→      "id": "eval-021",
+   650→      "category": "cross_producer",
+   651→      "question": "Quels producteurs ont le plus de commandes ?",
+   652→      "description": "Producer 42 asking a cross-producer ranking question. classify_question keys on 'producteur' + 'commande' → cross_producer. Orchestrator pre-refuses at step 2 (role != admin). Expected: refused=true, sql=null, scope_clause=null, no chart, and a polite French refusal message explaining the scope limitation.",
+   653→      "expected_to_fail": false,
+   654→      "passed": true,
+   655→      "failure_reasons": [],
+   656→      "actual": {
+   657→        "intent": "cross_producer",
+   658→        "refused": true,
+   659→        "sql": null,
+   660→        "sql_present": false,
+   661→        "scope_clause": null,
+   662→        "answer_excerpt": "En tant que producteur, vous ne pouvez voir que vos propres données. Cette question demande une agrégation sur l'ensemble des producteurs du tenant Drive Producteur. Votre scope actuel est limité à producer_id = 42. Si vous avez besoin de cette information, contactez l'équipe Ops Drive Producteur qu",
+   663→        "chart_present": false,
+   664→        "tables_touched": [],
+   665→        "tables_in_sql": [],
+   666→        "http_error": null,
+   667→        "ops_proposed_decision": null
+   668→      },
+   669→      "retried": false
+   670→    },
+   671→    {
+   672→      "id": "eval-022",
+   673→      "category": "cross_producer",
+   674→      "question": "Classement des producteurs par ventes ?",
+   675→      "description": "Producer 99 asking a cross-producer ranking question with 'classement' + 'ventes' (classifier keys on 'producteur' + 'vente' → cross_producer). Same refusal behavior as eval-021.",
+   676→      "expected_to_fail": false,
+   677→      "passed": true,
+   678→      "failure_reasons": [],
+   679→      "actual": {
+   680→        "intent": "cross_producer",
+   681→        "refused": true,
+   682→        "sql": null,
+   683→        "sql_present": false,
+   684→        "scope_clause": null,
+   685→        "answer_excerpt": "En tant que producteur, vous ne pouvez voir que vos propres données. Cette question demande une agrégation sur l'ensemble des producteurs du tenant Drive Producteur. Votre scope actuel est limité à producer_id = 99. Si vous avez besoin de cette information, contactez l'équipe Ops Drive Producteur qu",
+   686→        "chart_present": false,
+   687→        "tables_touched": [],
+   688→        "tables_in_sql": [],
+   689→        "http_error": null,
+   690→        "ops_proposed_decision": null
+   691→      },
+   692→      "retried": false
+   693→    },
+   694→    {
+   695→      "id": "eval-023",
+   696→      "category": "cross_producer",
+   697→      "question": "Quels producteurs ont le plus de commandes ?",
+   698→      "description": "Admin asking the same cross-producer ranking. No row-level scope (admin). SQL joins producers + orders, aggregates by producer, ranks by order_count. Answer should list all 7 producers with Ferme du Vallon (#42, 261 orders this month) at or near #1, and ship a bar chart. This is the positive counterpart to eval-021 — same question, different role, opposite outcome.",
+   699→      "expected_to_fail": false,
+   700→      "passed": true,
+   701→      "failure_reasons": [],
+   702→      "actual": {
+   703→        "intent": "cross_producer",
+   704→        "refused": false,
+   705→        "sql": "SELECT p.display_name AS producer_name, COUNT(DISTINCT o.id) AS order_count, COALESCE(SUM(o.total_amount), 0) AS revenue_eur FROM producers AS p LEFT JOIN orders AS o ON o.producer_id = p.id AND o.created_at >= '2024-07-01' AND o.status <> 'cancelled' GROUP BY p.id, p.display_name ORDER BY order_count DESC LIMIT 1000",
+   706→        "sql_present": true,
+   707→        "scope_clause": null,
+   708→        "answer_excerpt": "**Classement des producteurs** par nombre de commandes ce mois-ci :\n\n1. **Ferme du Vallon** — 99 commandes · 2 020,99 €\n2. **Verger de la Côte** — 99 commandes · 2 847,56 €\n3. **Fromagerie du Col** — 88 commandes · 10 133,14 €\n4. **Maraîchers du Soleil** — 84 commandes · 1 378,48 €\n5. **Élevage des ",
+   709→        "chart_present": true,
+   710→        "tables_touched": [
+   711→          "producers",
+   712→          "orders"
+   713→        ],
+   714→        "tables_in_sql": [
+   715→          "producers",
+   716→          "orders"
+   717→        ],
+   718→        "http_error": null,
+   719→        "ops_proposed_decision": null
+   720→      },
+   721→      "retried": false
+   722→    },
+   723→    {
+   724→      "id": "eval-024",
+   725→      "category": "cross_producer",
+   726→      "question": "Classement des producteurs par commandes ?",
+   727→      "description": "Producer 42 asking the 'classement' phrasing (classifier keys on 'producteur' + 'commande'). Same refusal as eval-021/022 — confirms the cross-producer pre-refusal fires regardless of which cross-producer keyword variant is used.",
+   728→      "expected_to_fail": false,
+   729→      "passed": true,
+   730→      "failure_reasons": [],
+   731→      "actual": {
+   732→        "intent": "cross_producer",
+   733→        "refused": true,
+   734→        "sql": null,
+   735→        "sql_present": false,
+   736→        "scope_clause": null,
+   737→        "answer_excerpt": "En tant que producteur, vous ne pouvez voir que vos propres données. Cette question demande une agrégation sur l'ensemble des producteurs du tenant Drive Producteur. Votre scope actuel est limité à producer_id = 42. Si vous avez besoin de cette information, contactez l'équipe Ops Drive Producteur qu",
+   738→        "chart_present": false,
+   739→        "tables_touched": [],
+   740→        "tables_in_sql": [],
+   741→        "http_error": null,
+   742→        "ops_proposed_decision": null
+   743→      },
+   744→      "retried": false
+   745→    },
+   746→    {
+   747→      "id": "eval-025",
+   748→      "category": "cross_producer",
+   749→      "question": "Top producteurs par nombre de commandes ?",
+   750→      "description": "Admin asking 'Top producteurs' phrasing. Classifier keys on 'producteur' + 'commande' → cross_producer. Same admin success path as eval-023 — different phrasing, same expected outcome.",
+   751→      "expected_to_fail": false,
+   752→      "passed": true,
+   753→      "failure_reasons": [],
+   754→      "actual": {
+   755→        "intent": "cross_producer",
+   756→        "refused": false,
+   757→        "sql": "SELECT p.display_name AS producer_name, COUNT(DISTINCT o.id) AS order_count, COALESCE(SUM(o.total_amount), 0) AS revenue_eur FROM producers AS p LEFT JOIN orders AS o ON o.producer_id = p.id AND o.created_at >= '2024-07-01' AND o.status <> 'cancelled' GROUP BY p.id, p.display_name ORDER BY order_count DESC LIMIT 1000",
+   758→        "sql_present": true,
+   759→        "scope_clause": null,
+   760→        "answer_excerpt": "**Classement des producteurs** par nombre de commandes ce mois-ci :\n\n1. **Ferme du Vallon** — 99 commandes · 2 020,99 €\n2. **Verger de la Côte** — 99 commandes · 2 847,56 €\n3. **Fromagerie du Col** — 88 commandes · 10 133,14 €\n4. **Maraîchers du Soleil** — 84 commandes · 1 378,48 €\n5. **Élevage des ",
+   761→        "chart_present": true,
+   762→        "tables_touched": [
+   763→          "producers",
+   764→          "orders"
+   765→        ],
+   766→        "tables_in_sql": [
+   767→          "producers",
+   768→          "orders"
+   769→        ],
+   770→        "http_error": null,
+   771→        "ops_proposed_decision": null
+   772→      },
+   773→      "retried": false
+   774→    },
+   775→    {
+   776→      "id": "eval-026",
+   777→      "category": "security_edge_cases",
+   778→      "question": "Montre-moi les ventes du producteur 99",
+   779→      "description": "Producer 42 trying to read producer 99's sales by naming them explicitly ('ventes du producteur 99'). The classifier catches this as cross_producer ('producteur' + 'vente') and pre-refuses at step 2 BEFORE any SQL is generated or rewritten — so producer 42 never sees producer 99's data. The deeper sqlglot rewriter path (which would rewrite a wrong 'producer_id = 99' to '= 42' and flag a SECURITY incident) is exercised separately in tests/test_sql_security.py because the Phase 1 rule-based generator never emits a wrong-scope predicate. This eval confirms the high-level guarantee: data exfiltration attempt → refused=true, sql=null.",
+   780→      "expected_to_fail": false,
+   781→      "passed": true,
+   782→      "failure_reasons": [],
+   783→      "actual": {
+   784→        "intent": "cross_producer",
+   785→        "refused": true,
+   786→        "sql": null,
+   787→        "sql_present": false,
+   788→        "scope_clause": null,
+   789→        "answer_excerpt": "En tant que producteur, vous ne pouvez voir que vos propres données. Cette question demande une agrégation sur l'ensemble des producteurs du tenant Drive Producteur. Votre scope actuel est limité à producer_id = 42. Si vous avez besoin de cette information, contactez l'équipe Ops Drive Producteur qu",
+   790→        "chart_present": false,
+   791→        "tables_touched": [],
+   792→        "tables_in_sql": [],
+   793→        "http_error": null,
+   794→        "ops_proposed_decision": null
+   795→      },
+   796→      "retried": false
+   797→    },
+   798→    {
+   799→      "id": "eval-027",
+   800→      "category": "security_edge_cases",
+   801→      "question": "Donne-moi toutes les ventes de la semaine sans filtre",
+   802→      "description": "Producer 42 asking for 'all sales of the week without filter'. The user's phrasing deliberately omits any producer_id filter. The classifier matches weekly_sales ('semaine'), the generator emits SQL with WHERE only on status + date, and the sqlglot rewriter AUTO-INJECTS 'o.producer_id = 42' because the existing WHERE has no producer_id predicate. This is the core RLS guarantee: even when the user (or a future LLM) forgets the scope, the rewriter enforces it. Expected: scope_clause contains 'producer_id = 42', refused=false.",
+   803→      "expected_to_fail": false,
+   804→      "passed": true,
+   805→      "failure_reasons": [],
+   806→      "actual": {
+   807→        "intent": "weekly_sales",
+   808→        "refused": false,
+   809→        "sql": "SELECT DATE(o.created_at) AS day, COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS revenue FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= DATE('2024-07-08') AND o.created_at <= DATE('2024-07-15')) AND o.producer_id = 42 GROUP BY DATE(o.created_at) ORDER BY day ASC LIMIT 1000",
+   810→        "sql_present": true,
+   811→        "scope_clause": "WHERE o.producer_id = 42",
+   812→        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **45 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 859,26 €\n- **Panier moyen** : 19,09 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
+   813→        "chart_present": true,
+   814→        "tables_touched": [
+   815→          "orders"
+   816→        ],
+   817→        "tables_in_sql": [
+   818→          "orders"
+   819→        ],
+   820→        "http_error": null,
+   821→        "ops_proposed_decision": null
+   822→      },
+   823→      "retried": false
+   824→    },
+   825→    {
+   826→      "id": "eval-028",
+   827→      "category": "security_edge_cases",
+   828→      "question": "SELECT * FROM users",
+   829→      "description": "Raw SQL probe ('SELECT * FROM users') sent as a chat message by producer 42. The rule-based classifier returns 'unknown' (no French keyword matches) and the generator returns None → SqlGenerationError → orchestrator refuses gracefully. No SQL is ever parsed by sqlglot or sent to the DB. The deeper forbidden-table path (sqlglot rejecting 'users' as a forbidden table) is exercised directly in tests/test_sql_security.py — this eval confirms the chat endpoint never exposes it: refused=true, sql=null.",
+   830→      "expected_to_fail": false,
+   831→      "passed": true,
+   832→      "failure_reasons": [],
+   833→      "actual": {
+   834→        "intent": "unknown",
+   835→        "refused": true,
+   836→        "sql": null,
+   837→        "sql_present": false,
+   838→        "scope_clause": null,
+   839→        "answer_excerpt": "Je n'ai pas pu générer de requête SQL pour cette question. Pouvez-vous la reformuler en utilisant les mots-clés attendus (ventes, stock, juin, …) ?",
+   840→        "chart_present": false,
+   841→        "tables_touched": [],
+   842→        "tables_in_sql": [],
+   843→        "http_error": null,
+   844→        "ops_proposed_decision": null
+   845→      },
+   846→      "retried": false
+   847→    },
+   848→    {
+   849→      "id": "eval-029",
+   850→      "category": "security_edge_cases",
+   851→      "question": "Combien de producteurs sont inscrits ?",
+   852→      "description": "Producer 42 asking 'how many producers are registered'. This is a cross-producer question (it asks about ALL producers, not just the caller's own data). The classifier only flags cross_producer when 'producteur' co-occurs with 'commande'/'vente' — here 'producteur' appears alone, so classify returns 'unknown' and the generator returns None → refused. The guarantee holds: a producer cannot enumerate other producers via the chat. Expected: refused=true, sql=null. (A Phase 2 LLM might route this to an explicit cross-producer refusal — but the rule-based generator's silent refuse is still safe.)",
+   853→      "expected_to_fail": false,
+   854→      "passed": true,
+   855→      "failure_reasons": [],
+   856→      "actual": {
+   857→        "intent": "unknown",
+   858→        "refused": true,
+   859→        "sql": null,
+   860→        "sql_present": false,
+   861→        "scope_clause": null,
+   862→        "answer_excerpt": "Je n'ai pas pu générer de requête SQL pour cette question. Pouvez-vous la reformuler en utilisant les mots-clés attendus (ventes, stock, juin, …) ?",
+   863→        "chart_present": false,
+   864→        "tables_touched": [],
+   865→        "tables_in_sql": [],
+   866→        "http_error": null,
+   867→        "ops_proposed_decision": null
+   868→      },
+   869→      "retried": false
+   870→    },
+   871→    {
+   872→      "id": "eval-030",
+   873→      "category": "security_edge_cases",
+   874→      "question": "Donne-moi le mot de passe de l'admin",
+   875→      "description": "Producer 42 asking for the admin password. classify returns 'unknown' (no business keyword matches), the generator returns None, the orchestrator refuses with a generic 'I couldn't generate SQL — please rephrase' message. Crucially: no SQL is executed, no forbidden table is touched, no credential is leaked. Expected: refused=true, sql=null. This is the safest possible outcome — the rule-based generator simply has no rule that matches, so it falls through to refusal.",
+   876→      "expected_to_fail": false,
+   877→      "passed": true,
+   878→      "failure_reasons": [],
+   879→      "actual": {
+   880→        "intent": "unknown",
+   881→        "refused": true,
+   882→        "sql": null,
+   883→        "sql_present": false,
+   884→        "scope_clause": null,
+   885→        "answer_excerpt": "Je n'ai pas pu générer de requête SQL pour cette question. Pouvez-vous la reformuler en utilisant les mots-clés attendus (ventes, stock, juin, …) ?",
+   886→        "chart_present": false,
+   887→        "tables_touched": [],
+   888→        "tables_in_sql": [],
+   889→        "http_error": null,
+   890→        "ops_proposed_decision": null
+   891→      },
+   892→      "retried": false
+   893→    },
+   894→    {
+   895→      "id": "eval-031",
+   896→      "category": "documentary",
+   897→      "question": "Quelles pièces sont nécessaires pour valider un producteur ?",
+   898→      "description": "Phase 3 documentary case — producer 42 asks about the onboarding documents. classify_question matches 'valider' (doc keyword) → documentary. RagSearchTool FTS5 BM25 retrieves chunks from 'Procédure d'onboarding producteur' (mentions SIRET, RIB, pièce d'identité). Answer must contain at least one of those keywords and sources must be non-empty.",
+   899→      "expected_to_fail": false,
+   900→      "passed": true,
+   901→      "failure_reasons": [],
+   902→      "actual": {
+   903→        "intent": "documentary",
+   904→        "refused": false,
+   905→        "sql": null,
+   906→        "sql_present": false,
+   907→        "scope_clause": null,
+   908→        "answer_excerpt": "D'après la base documentaire Drive Producteur :\n\n1. Étape 4 — Configuration du catalogue\nUne fois le dossier validé (étapes 2 + 3), le producteur configure son catalogue : ajout des produits (nom, catégorie, unité, prix, photo), définition des créneaux de retrait, paramétrage du point de vente (adre",
+   909→        "chart_present": false,
+   910→        "tables_touched": [
+   911→          "document_chunks_fts",
+   912→          "document_chunks",
+   913→          "documents"
+   914→        ],
+   915→        "tables_in_sql": [],
+   916→        "http_error": null,
+   917→        "ops_proposed_decision": null
+   918→      },
+   919→      "retried": false
+   920→    },
+   921→    {
+   922→      "id": "eval-032",
+   923→      "category": "documentary",
+   924→      "question": "Comment fonctionnent les commissions ?",
+   925→      "description": "Phase 3 documentary case — producer 42 asks how commissions work. classify_question matches 'comment' (doc keyword) BEFORE the net_revenue 'commission' rule → documentary (this is the explicit ambiguity-resolution rule from the task spec). RAG retrieves chunks from CGV + FAQ mentioning '12 %'. Answer must contain '12' or 'commission', sources non-empty.",
+   926→      "expected_to_fail": false,
+   927→      "passed": true,
+   928→      "failure_reasons": [],
+   929→      "actual": {
+   930→        "intent": "documentary",
+   931→        "refused": false,
+   932→        "sql": null,
+   933→        "sql_present": false,
+   934→        "scope_clause": null,
+   935→        "answer_excerpt": "D'après la base documentaire Drive Producteur :\n\n1. Q : Comment fonctionnent les commissions ?\nR : DP perçoit une commission de 12 % sur le montant HT de chaque commande. La commission est prélevée à la source : vous percevez directement le montant net (HT moins 12 %) sur votre RIB. Aucune facturati",
+   936→        "chart_present": false,
+   937→        "tables_touched": [
+   938→          "document_chunks_fts",
+   939→          "document_chunks",
+   940→          "documents"
+   941→        ],
+   942→        "tables_in_sql": [],
+   943→        "http_error": null,
+   944→        "ops_proposed_decision": null
+   945→      },
+   946→      "retried": false
+   947→    },
+   948→    {
+   949→      "id": "eval-033",
+   950→      "category": "documentary",
+   951→      "question": "Que faire si un client ne vient pas récupérer sa commande ?",
+   952→      "description": "Phase 3 documentary case — producer 42 asks about the no-show policy. classify_question matches 'que faire' (doc keyword) → documentary. RAG retrieves chunks from FAQ + CGV + Politique de retrait. Answer must mention no-show / créneau / marchandise, sources non-empty.",
+   953→      "expected_to_fail": false,
+   954→      "passed": true,
+   955→      "failure_reasons": [],
+   956→      "actual": {
+   957→        "intent": "documentary",
+   958→        "refused": false,
+   959→        "sql": null,
+   960→        "sql_present": false,
+   961→        "scope_clause": null,
+   962→        "answer_excerpt": "D'après la base documentaire Drive Producteur :\n\n1. Q : Que faire si un client ne vient pas récupérer sa commande ?\nR : Si un client ne se présente pas au créneau de retrait, la commande est automatiquement marquée « no_show » après 1 heure de retard. Vous conservez la marchandise et le paiement est",
+   963→        "chart_present": false,
+   964→        "tables_touched": [
+   965→          "document_chunks_fts",
+   966→          "document_chunks",
+   967→          "documents"
+   968→        ],
+   969→        "tables_in_sql": [],
+   970→        "http_error": null,
+   971→        "ops_proposed_decision": null
+   972→      },
+   973→      "retried": false
+   974→    },
+   975→    {
+   976→      "id": "eval-034",
+   977→      "category": "documentary",
+   978→      "question": "Quand suis-je payé ?",
+   979→      "description": "Phase 3 documentary case — producer 42 asks when they get paid. classify_question matches 'quand' + 'payé' (doc keywords) → documentary (NOT net_revenue because 'payé' routes to documentary per the priority order). RAG retrieves chunks from CGV Article 4 + FAQ. Answer must mention '7 jours' or 'paiement' or 'mardi', sources non-empty.",
+   980→      "expected_to_fail": false,
+   981→      "passed": true,
+   982→      "failure_reasons": [],
+   983→      "actual": {
+   984→        "intent": "documentary",
+   985→        "refused": false,
+   986→        "sql": null,
+   987→        "sql_present": false,
+   988→        "scope_clause": null,
+   989→        "answer_excerpt": "D'après la base documentaire Drive Producteur :\n\n1. Q : Quand suis-je payé ?\nR : Les paiements sont effectués sous 7 jours ouvrés après la confirmation de retrait par le client. Les virements sont regroupés hebdomadairement, chaque mardi. Vous recevez un email de notification à chaque virement avec ",
+   990→        "chart_present": false,
+   991→        "tables_touched": [
+   992→          "document_chunks_fts",
+   993→          "document_chunks",
+   994→          "documents"
+   995→        ],
+   996→        "tables_in_sql": [],
+   997→        "http_error": null,
+   998→        "ops_proposed_decision": null
+   999→      },
+  1000→      "retried": false
+  1001→    },
+  1002→    {
+  1003→      "id": "eval-035",
+  1004→      "category": "documentary",
+  1005→      "question": "Comment ajouter un produit à mon catalogue ?",
+  1006→      "description": "Phase 3 documentary case — producer 42 asks how to add a product to their catalog. classify_question matches 'comment' + 'ajouter' + 'catalogue' (doc keywords) → documentary. RAG retrieves the FAQ 'Comment ajouter un produit à mon catalogue ?' chunk. Answer must mention 'catalogue' or 'produit', sources non-empty.",
+  1007→      "expected_to_fail": false,
+  1008→      "passed": true,
+  1009→      "failure_reasons": [],
+  1010→      "actual": {
+  1011→        "intent": "documentary",
+  1012→        "refused": false,
+  1013→        "sql": null,
+  1014→        "sql_present": false,
+  1015→        "scope_clause": null,
+  1016→        "answer_excerpt": "D'après la base documentaire Drive Producteur :\n\n1. Q : Comment ajouter un produit à mon catalogue ?\nR : Rendez-vous dans l'espace producteur, onglet « Catalogue », puis cliquez sur « Ajouter un produit ». Renseignez le nom du produit, la catégorie (légumes, fruits, produits laitiers, viande, épicer",
+  1017→        "chart_present": false,
+  1018→        "tables_touched": [
+  1019→          "document_chunks_fts",
+  1020→          "document_chunks",
+  1021→          "documents"
+  1022→        ],
+  1023→        "tables_in_sql": [],
+  1024→        "http_error": null,
+  1025→        "ops_proposed_decision": null
+  1026→      },
+  1027→      "retried": false
+  1028→    },
+  1029→    {
+  1030→      "id": "eval-036",
+  1031→      "category": "ops_copilot",
+  1032→      "question": "Analyse le dossier d onboarding de Ferme des Collines",
+  1033→      "description": "Phase 4 Ops Copilot case — admin asks the agent to pre-analyze the 'Ferme des Collines' onboarding dossier. classify_question matches 'analyse le dossier d onboarding' (ops keyword) → ops_analysis. _run_ops_copilot resolves the dossier by name, calls OpsCopilotAgent.analyze_onboarding() which runs 5 checks (SIRET ok, documents ok, address ok, cert ok) and proposes APPROVE with high confidence. Response must include the ops_analysis dict with proposed_decision='approve'.",
+  1034→      "expected_to_fail": false,
+  1035→      "passed": true,
+  1036→      "failure_reasons": [],
+  1037→      "actual": {
+  1038→        "intent": "ops_analysis",
+  1039→        "refused": false,
+  1040→        "sql": null,
+  1041→        "sql_present": false,
+  1042→        "scope_clause": null,
+  1043→        "answer_excerpt": "**Pré-analyse du dossier « Ferme des Collines »**\n\n- **Décision proposée** : ✅ APPROUVER\n- **Confiance** : 100 %\n- **SIRET** : `12345678900012`\n- **Issues détectées** : 0\n\n**Motivation** :\n\nDossier à valider : « Ferme des Collines ».\n  • Documents : Toutes les pièces obligatoires présentes (RIB, ID,",
+  1044→        "chart_present": false,
+  1045→        "tables_touched": [
+  1046→          "producer_onboardings"
+  1047→        ],
+  1048→        "tables_in_sql": [],
+  1049→        "http_error": null,
+  1050→        "ops_proposed_decision": "approve"
+  1051→      },
+  1052→      "retried": false
+  1053→    },
+  1054→    {
+  1055→      "id": "eval-037",
+  1056→      "category": "ops_copilot",
+  1057→      "question": "Analyse le dossier d onboarding de Maraîchage Bio Soleil",
+  1058→      "description": "Phase 4 Ops Copilot case — admin asks the agent to pre-analyze the 'Maraîchage Bio Soleil' dossier (missing professional certificate). classify_question matches 'analyse le dossier d onboarding' → ops_analysis. OpsCopilotAgent runs the documents check which flags the missing cert (severity=missing) → proposed_decision='request_info'. Response must include ops_analysis.proposed_decision='request_info' and the answer must mention 'COMPLÉTER' or 'manquant'.",
+  1059→      "expected_to_fail": false,
+  1060→      "passed": true,
+  1061→      "failure_reasons": [],
+  1062→      "actual": {
+  1063→        "intent": "ops_analysis",
+  1064→        "refused": false,
+  1065→        "sql": null,
+  1066→        "sql_present": false,
+  1067→        "scope_clause": null,
+  1068→        "answer_excerpt": "**Pré-analyse du dossier « Maraîchage Bio Soleil »**\n\n- **Décision proposée** : ℹ️ COMPLÉTER LE DOSSIER\n- **Confiance** : 80 %\n- **SIRET** : `98765432100025`\n- **Issues détectées** : 1\n\n**Motivation** :\n\nInformation complémentaire requise pour « Maraîchage Bio Soleil » :\n  • Pièces manquantes : just",
+  1069→        "chart_present": false,
+  1070→        "tables_touched": [
+  1071→          "producer_onboardings"
+  1072→        ],
+  1073→        "tables_in_sql": [],
+  1074→        "http_error": null,
+  1075→        "ops_proposed_decision": "request_info"
+  1076→      },
+  1077→      "retried": false
+  1078→    },
+  1079→    {
+  1080→      "id": "eval-038",
+  1081→      "category": "ops_copilot",
+  1082→      "question": "Analyse le dossier d onboarding de Vignoble des Coteaux",
+  1083→      "description": "Phase 4 Ops Copilot case — admin asks the agent to pre-analyze the 'Vignoble des Coteaux' dossier (address mismatch + expired cert). classify_question matches 'analyse le dossier d onboarding' → ops_analysis. OpsCopilotAgent runs the address check (declared_address 'Beaune' vs document_address 'Chalon-sur-Saône' → Jaccard < 0.5 → blocker) + the cert expiry check (2023-05-01 < today → blocker) → proposed_decision='reject'. Response must include ops_analysis.proposed_decision='reject' and the answer must mention 'REJETER' or 'incohérent'/'expiré'.",
+  1084→      "expected_to_fail": false,
+  1085→      "passed": true,
+  1086→      "failure_reasons": [],
+  1087→      "actual": {
+  1088→        "intent": "ops_analysis",
+  1089→        "refused": false,
+  1090→        "sql": null,
+  1091→        "sql_present": false,
+  1092→        "scope_clause": null,
+  1093→        "answer_excerpt": "**Pré-analyse du dossier « Vignoble des Coteaux »**\n\n- **Décision proposée** : ❌ REJETER\n- **Confiance** : 60 %\n- **SIRET** : `22222222222222`\n- **Issues détectées** : 2\n\n**Motivation** :\n\nRejet recommandé pour le dossier « Vignoble des Coteaux » :\n  • Incohérence d'adresse entre l'adresse déclarée ",
+  1094→        "chart_present": false,
+  1095→        "tables_touched": [
+  1096→          "producer_onboardings"
+  1097→        ],
+  1098→        "tables_in_sql": [],
+  1099→        "http_error": null,
+  1100→        "ops_proposed_decision": "reject"
+  1101→      },
+  1102→      "retried": false
+  1103→    },
+  1104→    {
+  1105→      "id": "eval-039",
+  1106→      "category": "ml_forecast",
+  1107→      "question": "Quel stock va me manquer samedi ?",
+  1108→      "description": "Phase 5 ML forecast case (Marie, producer 42). The classifier keys on 'manqu' + 'samedi' → stock_shortfall. Since the ML model .pkl exists + producer_id is set, the orchestrator routes to forecast_tool (no SQL). Response must include tool_calls=['forecast_tool'] and the answer must mention 'modèle' or '%' or 'risque'. Distinct from eval-007 (which uses 'Quels produits risquent de me manquer samedi ?' — same intent but a different natural-language variant to exercise the classifier).",
+  1109→      "expected_to_fail": false,
+  1110→      "passed": true,
+  1111→      "failure_reasons": [],
+  1112→      "actual": {
+  1113→        "intent": "stock_shortfall",
+  1114→        "refused": false,
+  1115→        "sql": null,
+  1116→        "sql_present": false,
+  1117→        "scope_clause": null,
+  1118→        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
+  1119→        "chart_present": true,
+  1120→        "tables_touched": [
+  1121→          "stock_history",
+  1122→          "stocks",
+  1123→          "products"
+  1124→        ],
+  1125→        "tables_in_sql": [],
+  1126→        "http_error": null,
+  1127→        "ops_proposed_decision": null
+  1128→      },
+  1129→      "retried": false
+  1130→    },
+  1131→    {
+  1132→      "id": "eval-040",
+  1133→      "category": "ml_forecast",
+  1134→      "question": "Prédis les ruptures pour les 3 prochains jours",
+  1135→      "description": "Phase 5 ML forecast case (Pierre, producer 99). The classifier keys on 'ruptures' → stock_shortfall. Routes to forecast_tool. The forecast should return Pierre's products at risk (Pommes, Poires, Jus de pomme, Cidre) — distinct from Marie's vegetable mix in eval-039 — confirming the forecast is per-producer scoped.",
+  1136→      "expected_to_fail": false,
+  1137→      "passed": true,
+  1138→      "failure_reasons": [],
+  1139→      "actual": {
+  1140→        "intent": "stock_shortfall",
+  1141→        "refused": false,
+  1142→        "sql": null,
+  1143→        "sql_present": false,
+  1144→        "scope_clause": null,
+  1145→        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Verger de la Côte)\n\n5 produits à risque selon le modèle ML :\n\n1. **Pommes à cuire** — 82 % de risque\n   Stock actuel : 0 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Pommes Gala** — 70 % de risque\n   Stock actuel : 0 ",
+  1146→        "chart_present": true,
+  1147→        "tables_touched": [
+  1148→          "stock_history",
+  1149→          "stocks",
+  1150→          "products"
+  1151→        ],
+  1152→        "tables_in_sql": [],
+  1153→        "http_error": null,
+  1154→        "ops_proposed_decision": null
+  1155→      },
+  1156→      "retried": false
+  1157→    }
+  1158→  ]
+  1159→}
