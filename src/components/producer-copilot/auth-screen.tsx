@@ -51,6 +51,16 @@ export function AuthScreen() {
   const [name, setName] = React.useState("");
   const [demoInFlight, setDemoInFlight] = React.useState(false);
   const [demoFallbackNote, setDemoFallbackNote] = React.useState(false);
+  // Background BrandMark size — computed AFTER mount to avoid hydration
+  // mismatch (server can't read window.innerWidth). Default 480 matches the
+  // server-rendered value; the client updates it once mounted.
+  const [bgMarkSize, setBgMarkSize] = React.useState(480);
+  React.useEffect(() => {
+    const update = () => setBgMarkSize(Math.min(640, window.innerWidth * 0.8));
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
 
   // Reset the error when switching modes.
   React.useEffect(() => {
@@ -105,7 +115,7 @@ export function AuthScreen() {
         className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-[0.04]"
         aria-hidden
       >
-        <BrandMark size={Math.min(640, typeof window !== "undefined" ? window.innerWidth * 0.8 : 480)} />
+        <BrandMark size={bgMarkSize} />
       </div>
 
       <motion.div
