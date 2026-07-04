@@ -273,12 +273,8 @@ function WelcomeState({
         </h1>
         <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
           <span className="font-medium text-foreground">Tevet-7</span> · Je suis
-          votre agent Tevet-7. Posez-moi une question sur vos ventes, votre
-          stock ou vos revenus — chaque réponse est sécurisée par un scope{" "}
-          <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[0.85em] text-accent">
-            producer_id
-          </code>
-          .
+          votre agent. Posez-moi une question sur vos données — chaque réponse
+          est sécurisée par un scope tenant.
         </p>
         <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
           <span className="inline-flex items-center rounded-md border border-accent/30 bg-accent/5 px-2 py-0.5 text-[11px] uppercase tracking-wide text-accent">
