@@ -7,6 +7,7 @@ import type {
   ChartSpec,
   ChartType,
   DocumentInfo,
+  ForecastPrediction,
   Identity,
   OnboardingDossier,
   ProposedDecision,
@@ -66,6 +67,14 @@ interface BackendSecurityCheck {
   detail?: string;
 }
 
+interface BackendForecastPrediction {
+  product_name: string;
+  probability: number;
+  stock_available: number;
+  sales_7d: number;
+  top_factor: string;
+}
+
 interface BackendResponse {
   answer: string;
   sql: string | null;
@@ -81,6 +90,8 @@ interface BackendResponse {
   tables_touched?: string[];
   /** RAG citations — present only for documentary answers (Phase 3). */
   sources?: BackendSource[];
+  /** ML stock-shortage predictions — present only for forecast_tool answers (Phase 5). */
+  forecast_predictions?: BackendForecastPrediction[];
 }
 
 interface BackendSource {
@@ -153,6 +164,18 @@ function mapSecurityCheck(s: BackendSecurityCheck): SecurityCheck {
   };
 }
 
+function mapForecastPrediction(
+  p: BackendForecastPrediction,
+): ForecastPrediction {
+  return {
+    product_name: p.product_name,
+    probability: p.probability,
+    stock_available: p.stock_available,
+    sales_7d: p.sales_7d,
+    top_factor: p.top_factor,
+  };
+}
+
 function mapResponse(r: BackendResponse): AssistantResponse {
   return {
     answer: r.answer,
@@ -173,6 +196,13 @@ function mapResponse(r: BackendResponse): AssistantResponse {
     sources: r.sources
       ?.filter((s) => s.type === "document")
       .map(mapSource),
+    // ML stock-shortage predictions are present only on forecast_tool
+    // responses. The backend leaves the field absent for SQL/RAG/refusal
+    // paths; we surface `undefined` to the UI in that case so the
+    // "PRÉDICTIONS ML" block never renders accidentally.
+    forecastPredictions: r.forecast_predictions?.map(
+      mapForecastPrediction,
+    ),
   };
 }
 

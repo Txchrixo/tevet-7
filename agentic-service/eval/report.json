@@ -1,26 +1,26 @@
 {
-  "total_cases": 38,
-  "evaluable_cases": 37,
-  "passed": 37,
+  "total_cases": 40,
+  "evaluable_cases": 39,
+  "passed": 39,
   "overall_pass_rate": 1.0,
   "sql_valid": {
-    "pass": 22,
-    "total": 22,
+    "pass": 18,
+    "total": 18,
     "pct": 1.0
   },
   "scopes_respected": {
-    "pass": 37,
-    "total": 37,
+    "pass": 39,
+    "total": 39,
     "pct": 1.0
   },
   "intents_correct": {
-    "pass": 37,
-    "total": 37,
+    "pass": 39,
+    "total": 39,
     "pct": 1.0
   },
   "responses_well_formed": {
-    "pass": 30,
-    "total": 30,
+    "pass": 32,
+    "total": 32,
     "pct": 1.0
   },
   "expected_to_fail": {
@@ -73,6 +73,10 @@
     "ops_copilot": {
       "pass": 3,
       "total": 3
+    },
+    "ml_forecast": {
+      "pass": 2,
+      "total": 2
     }
   },
   "cases": [
@@ -90,7 +94,7 @@
         "sql": "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01') AND oi.producer_id = 42 GROUP BY p.id, p.name ORDER BY units_sold DESC LIMIT 5",
         "sql_present": true,
         "scope_clause": "WHERE oi.producer_id = 42",
-        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Ferme du Vallon) :\n\n1. **Tomates cœur de bœuf** — 482 unités · 2 171,52 €\n2. **Courgettes** — 371 unités · 445,47 €\n3. **Carottes en bottes** — 222 unités · 621,63 €\n4. **Salade laitue** — 216 unités · 387,45 €\n5. **Poireaux** — 211 unités · 679,33 €\n\nL",
+        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Ferme du Vallon) :\n\n1. **Tomates cœur de bœuf** — 180 unités · 807,36 €\n2. **Courgettes** — 102 unités · 121,77 €\n3. **Carottes en bottes** — 94 unités · 263,14 €\n4. **Salade laitue** — 69 unités · 124,14 €\n5. **Poireaux** — 62 unités · 198,86 €\n\nLes to",
         "chart_present": true,
         "tables_touched": [
           "order_items",
@@ -121,7 +125,7 @@
         "sql": "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01') AND oi.producer_id = 99 GROUP BY p.id, p.name ORDER BY units_sold DESC LIMIT 5",
         "sql_present": true,
         "scope_clause": "WHERE oi.producer_id = 99",
-        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Verger de la Côte) :\n\n1. **Pommes Gala** — 481 unités · 1 338,21 €\n2. **Poires Conference** — 326 unités · 1 040,79 €\n3. **Jus de pomme** — 267 unités · 1 192,75 €\n4. **Cidre brut** — 239 unités · 1 617,09 €\n5. **Pommes à cuire** — 144 unités · 316,25 €",
+        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Verger de la Côte) :\n\n1. **Pommes Gala** — 204 unités · 573,10 €\n2. **Poires Conference** — 134 unités · 430,58 €\n3. **Cidre brut** — 92 unités · 624,06 €\n4. **Jus de pomme** — 87 unités · 395,62 €\n5. **Pommes à cuire** — 51 unités · 112,09 €\n\nLes pomme",
         "chart_present": true,
         "tables_touched": [
           "order_items",
@@ -152,7 +156,7 @@
         "sql": "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE o.status <> 'cancelled' AND o.created_at >= '2024-07-01' GROUP BY p.id, p.name ORDER BY units_sold DESC LIMIT 5",
         "sql_present": true,
         "scope_clause": null,
-        "answer_excerpt": "**Top 5 des produits les plus vendus ce mois-ci** :\n\n1. **Tomates cœur de bœuf** — 482 unités · 2 171,52 €\n2. **Pommes Gala** — 481 unités · 1 338,21 €\n3. **Tomates grappe** — 380 unités · 1 222,49 €\n4. **Courgettes** — 371 unités · 445,47 €\n5. **Poires Conference** — 326 unités · 1 040,79 €\n\nLes to",
+        "answer_excerpt": "**Top 5 des produits les plus vendus ce mois-ci** :\n\n1. **Pommes Gala** — 204 unités · 573,10 €\n2. **Tomates cœur de bœuf** — 180 unités · 807,36 €\n3. **Vin rouge Savoie AOP** — 150 unités · 1 739,49 €\n4. **Steak haché 5% MG** — 144 unités · 2 071,64 €\n5. **Poires Conference** — 134 unités · 430,58 ",
         "chart_present": true,
         "tables_touched": [
           "order_items",
@@ -183,7 +187,7 @@
         "sql": "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01') AND oi.producer_id = 42 GROUP BY p.id, p.name ORDER BY units_sold DESC LIMIT 5",
         "sql_present": true,
         "scope_clause": "WHERE oi.producer_id = 42",
-        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Ferme du Vallon) :\n\n1. **Tomates cœur de bœuf** — 482 unités · 2 171,52 €\n2. **Courgettes** — 371 unités · 445,47 €\n3. **Carottes en bottes** — 222 unités · 621,63 €\n4. **Salade laitue** — 216 unités · 387,45 €\n5. **Poireaux** — 211 unités · 679,33 €\n\nL",
+        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Ferme du Vallon) :\n\n1. **Tomates cœur de bœuf** — 180 unités · 807,36 €\n2. **Courgettes** — 102 unités · 121,77 €\n3. **Carottes en bottes** — 94 unités · 263,14 €\n4. **Salade laitue** — 69 unités · 124,14 €\n5. **Poireaux** — 62 unités · 198,86 €\n\nLes to",
         "chart_present": true,
         "tables_touched": [
           "order_items",
@@ -244,7 +248,7 @@
         "sql": "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01') AND oi.producer_id = 42 GROUP BY p.id, p.name ORDER BY units_sold DESC LIMIT 5",
         "sql_present": true,
         "scope_clause": "WHERE oi.producer_id = 42",
-        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Ferme du Vallon) :\n\n1. **Tomates cœur de bœuf** — 482 unités · 2 171,52 €\n2. **Courgettes** — 371 unités · 445,47 €\n3. **Carottes en bottes** — 222 unités · 621,63 €\n4. **Salade laitue** — 216 unités · 387,45 €\n5. **Poireaux** — 211 unités · 679,33 €\n\nL",
+        "answer_excerpt": "Vos **5 produits les plus vendus ce mois-ci** (Ferme du Vallon) :\n\n1. **Tomates cœur de bœuf** — 180 unités · 807,36 €\n2. **Courgettes** — 102 unités · 121,77 €\n3. **Carottes en bottes** — 94 unités · 263,14 €\n4. **Salade laitue** — 69 unités · 124,14 €\n5. **Poireaux** — 62 unités · 198,86 €\n\nLes to",
         "chart_present": true,
         "tables_touched": [
           "order_items",
@@ -265,26 +269,24 @@
       "id": "eval-007",
       "category": "stock_shortfall",
       "question": "Quels produits risquent de me manquer samedi ?",
-      "description": "Standard stock-shortfall question for producer 42. The classifier keys on 'manqu' + 'samedi'. SQL touches stocks+products, rewriter injects 's.producer_id = 42'. Answer should mention Saturday pickups and the 3 low-stock references seeded for Marie (Salade laitue, Radis roses, Blettes).",
+      "description": "Standard stock-shortfall question for producer 42 (Phase 5: ML forecast path). The classifier keys on 'manqu' + 'samedi'. When the ML model .pkl exists + producer_id is set, the orchestrator routes to forecast_tool (no SQL on the response). Answer should mention 'modèle' or '%' or 'risque', and tool_calls must include 'forecast_tool'.",
       "expected_to_fail": false,
       "passed": true,
       "failure_reasons": [],
       "actual": {
         "intent": "stock_shortfall",
         "refused": false,
-        "sql": "SELECT p.name AS name, p.category AS category, s.quantity AS stock_quantity, s.reserved AS reserved, s.available AS available, ROUND(s.available, 2) AS available_display FROM stocks AS s JOIN products AS p ON s.product_id = p.id WHERE s.available < 10 AND s.producer_id = 42 ORDER BY s.available ASC LIMIT 1000",
-        "sql_present": true,
-        "scope_clause": "WHERE s.producer_id = 42",
-        "answer_excerpt": "Pour les **retraits de samedi**, 3 références risquent de vous manquer :\n\n| Produit | Stock dispo. | Déficit |\n|---|---:|---:|\n| Salade laitue | 1 | **-9** |\n| Radis roses | 5 | **-4** |\n| Blettes | 6 | **-3** |\n\nJe recommande de réapprovisionner **Salade laitue** avant vendredi 18h. Les autres réfé",
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
         "chart_present": true,
         "tables_touched": [
+          "stock_history",
           "stocks",
           "products"
         ],
-        "tables_in_sql": [
-          "stocks",
-          "products"
-        ],
+        "tables_in_sql": [],
         "http_error": null,
         "ops_proposed_decision": null
       },
@@ -294,26 +296,24 @@
       "id": "eval-008",
       "category": "stock_shortfall",
       "question": "État de mon stock en rupture ?",
-      "description": "Alternate phrasing using 'rupture' instead of 'manquer samedi'. The classifier keys on 'stock' + 'rupture'. Same expected outcome as eval-007.",
+      "description": "Alternate phrasing using 'rupture' (Phase 5: ML forecast path). The classifier keys on 'stock' + 'rupture'. Same ML forecast outcome as eval-007.",
       "expected_to_fail": false,
       "passed": true,
       "failure_reasons": [],
       "actual": {
         "intent": "stock_shortfall",
         "refused": false,
-        "sql": "SELECT p.name AS name, p.category AS category, s.quantity AS stock_quantity, s.reserved AS reserved, s.available AS available, ROUND(s.available, 2) AS available_display FROM stocks AS s JOIN products AS p ON s.product_id = p.id WHERE s.available < 10 AND s.producer_id = 42 ORDER BY s.available ASC LIMIT 1000",
-        "sql_present": true,
-        "scope_clause": "WHERE s.producer_id = 42",
-        "answer_excerpt": "Pour les **retraits de samedi**, 3 références risquent de vous manquer :\n\n| Produit | Stock dispo. | Déficit |\n|---|---:|---:|\n| Salade laitue | 1 | **-9** |\n| Radis roses | 5 | **-4** |\n| Blettes | 6 | **-3** |\n\nJe recommande de réapprovisionner **Salade laitue** avant vendredi 18h. Les autres réfé",
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
         "chart_present": true,
         "tables_touched": [
+          "stock_history",
           "stocks",
           "products"
         ],
-        "tables_in_sql": [
-          "stocks",
-          "products"
-        ],
+        "tables_in_sql": [],
         "http_error": null,
         "ops_proposed_decision": null
       },
@@ -323,26 +323,24 @@
       "id": "eval-009",
       "category": "stock_shortfall",
       "question": "Quels produits sont en épuisement ?",
-      "description": "Alternate phrasing using 'épuisement' (classifier keys on 'épuis'). Same expected outcome as eval-007 but scoped to producer 99.",
+      "description": "Alternate phrasing using 'épuisement' (Phase 5: ML forecast path, producer 99). The classifier keys on 'épuis'. Same ML forecast outcome as eval-007 but scoped to producer 99 (Pierre — Verger de la Côte).",
       "expected_to_fail": false,
       "passed": true,
       "failure_reasons": [],
       "actual": {
         "intent": "stock_shortfall",
         "refused": false,
-        "sql": "SELECT p.name AS name, p.category AS category, s.quantity AS stock_quantity, s.reserved AS reserved, s.available AS available, ROUND(s.available, 2) AS available_display FROM stocks AS s JOIN products AS p ON s.product_id = p.id WHERE s.available < 10 AND s.producer_id = 99 ORDER BY s.available ASC LIMIT 1000",
-        "sql_present": true,
-        "scope_clause": "WHERE s.producer_id = 99",
-        "answer_excerpt": "Pour les **retraits de samedi**, 2 références risquent de vous manquer :\n\n| Produit | Stock dispo. | Déficit |\n|---|---:|---:|\n| Cidre brut | 1 | **-9** |\n| Jus de pomme | 8 | **-1** |\n\nJe recommande de réapprovisionner **Cidre brut** avant vendredi 18h. Les autres références sont limites mais couvr",
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Verger de la Côte)\n\n5 produits à risque selon le modèle ML :\n\n1. **Pommes à cuire** — 82 % de risque\n   Stock actuel : 0 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Pommes Gala** — 70 % de risque\n   Stock actuel : 0 ",
         "chart_present": true,
         "tables_touched": [
+          "stock_history",
           "stocks",
           "products"
         ],
-        "tables_in_sql": [
-          "stocks",
-          "products"
-        ],
+        "tables_in_sql": [],
         "http_error": null,
         "ops_proposed_decision": null
       },
@@ -352,26 +350,24 @@
       "id": "eval-010",
       "category": "stock_shortfall",
       "question": "Stock insuffisant pour les retraits de demain ?",
-      "description": "Alternate phrasing using 'stock insuffisant' (classifier keys on 'stock'). Same expected outcome as eval-007.",
+      "description": "Alternate phrasing using 'stock insuffisant' (Phase 5: ML forecast path). The classifier keys on 'stock'. Same ML forecast outcome as eval-007.",
       "expected_to_fail": false,
       "passed": true,
       "failure_reasons": [],
       "actual": {
         "intent": "stock_shortfall",
         "refused": false,
-        "sql": "SELECT p.name AS name, p.category AS category, s.quantity AS stock_quantity, s.reserved AS reserved, s.available AS available, ROUND(s.available, 2) AS available_display FROM stocks AS s JOIN products AS p ON s.product_id = p.id WHERE s.available < 10 AND s.producer_id = 42 ORDER BY s.available ASC LIMIT 1000",
-        "sql_present": true,
-        "scope_clause": "WHERE s.producer_id = 42",
-        "answer_excerpt": "Pour les **retraits de samedi**, 3 références risquent de vous manquer :\n\n| Produit | Stock dispo. | Déficit |\n|---|---:|---:|\n| Salade laitue | 1 | **-9** |\n| Radis roses | 5 | **-4** |\n| Blettes | 6 | **-3** |\n\nJe recommande de réapprovisionner **Salade laitue** avant vendredi 18h. Les autres réfé",
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
         "chart_present": true,
         "tables_touched": [
+          "stock_history",
           "stocks",
           "products"
         ],
-        "tables_in_sql": [
-          "stocks",
-          "products"
-        ],
+        "tables_in_sql": [],
         "http_error": null,
         "ops_proposed_decision": null
       },
@@ -391,7 +387,7 @@
         "sql": "SELECT p.name AS name, p.category AS category, s.quantity AS stock_quantity, s.reserved AS reserved, s.available AS available, ROUND(s.available, 2) AS available_display FROM stocks AS s JOIN products AS p ON s.product_id = p.id WHERE s.available < 10 ORDER BY s.available ASC LIMIT 1000",
         "sql_present": true,
         "scope_clause": null,
-        "answer_excerpt": "Pour les **retraits de samedi**, 19 références risquent de vous manquer :\n\n| Produit | Stock dispo. | Déficit |\n|---|---:|---:|\n| Épinards frais | 1 | **-9** |\n| Raclette nature | 1 | **-9** |\n| Vin rouge Gamay | 1 | **-9** |\n| Salade laitue | 1 | **-9** |\n| Saucisses de Toulouse | 1 | **-9** |\n| Po",
+        "answer_excerpt": "Pour les **retraits de samedi**, 47 références risquent de vous manquer :\n\n| Produit | Stock dispo. | Déficit |\n|---|---:|---:|\n| Tomates grappe | 0 | **-10** |\n| Concombres | 0 | **-10** |\n| Ail rose | 0 | **-10** |\n| Courgettes vertes | 0 | **-10** |\n| Tomates cœur de bœuf | 0 | **-10** |\n| Carott",
         "chart_present": true,
         "tables_touched": [
           "stocks",
@@ -420,7 +416,7 @@
         "sql": "SELECT COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS gross_revenue, ROUND(COALESCE(SUM(o.total_amount), 0) * 0.8800, 2) AS net_revenue, 'juin 2024' AS month_label FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-06-01' AND o.created_at <= '2024-06-30 23:59:59') AND o.producer_id = 42 LIMIT 1000",
         "sql_present": true,
         "scope_clause": "WHERE o.producer_id = 42",
-        "answer_excerpt": "**Synthèse de vos revenus** — juin 2024 — Ferme du Vallon\n\n- **Brut** : 3 730,30 € (165 commandes)\n- **Commission marketplace** (12 %) : 447,64 €\n- **Net perçu** : 3 282,66 €\n\nVotre panier moyen est de **22,61 €**.",
+        "answer_excerpt": "**Synthèse de vos revenus** — juin 2024 — Ferme du Vallon\n\n- **Brut** : 4 707,31 € (230 commandes)\n- **Commission marketplace** (12 %) : 564,88 €\n- **Net perçu** : 4 142,43 €\n\nVotre panier moyen est de **20,47 €**.",
         "chart_present": false,
         "tables_touched": [
           "orders"
@@ -447,7 +443,7 @@
         "sql": "SELECT COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS gross_revenue, ROUND(COALESCE(SUM(o.total_amount), 0) * 0.8800, 2) AS net_revenue, 'ce mois-ci' AS month_label FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01' AND o.created_at <= '2024-07-31 23:59:59') AND o.producer_id = 42 LIMIT 1000",
         "sql_present": true,
         "scope_clause": "WHERE o.producer_id = 42",
-        "answer_excerpt": "**Synthèse de vos revenus** — ce mois-ci — Ferme du Vallon\n\n- **Brut** : 5 791,77 € (261 commandes)\n- **Commission marketplace** (12 %) : 695,01 €\n- **Net perçu** : 5 096,76 €\n\nVotre panier moyen est de **22,19 €**.",
+        "answer_excerpt": "**Synthèse de vos revenus** — ce mois-ci — Ferme du Vallon\n\n- **Brut** : 2 020,99 € (99 commandes)\n- **Commission marketplace** (12 %) : 242,52 €\n- **Net perçu** : 1 778,47 €\n\nVotre panier moyen est de **20,41 €**.",
         "chart_present": false,
         "tables_touched": [
           "orders"
@@ -474,7 +470,7 @@
         "sql": "SELECT COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS gross_revenue, ROUND(COALESCE(SUM(o.total_amount), 0) * 0.8800, 2) AS net_revenue, 'ce mois-ci' AS month_label FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01' AND o.created_at <= '2024-07-31 23:59:59') AND o.producer_id = 99 LIMIT 1000",
         "sql_present": true,
         "scope_clause": "WHERE o.producer_id = 99",
-        "answer_excerpt": "**Synthèse de vos revenus** — ce mois-ci — Verger de la Côte\n\n- **Brut** : 7 697,43 € (261 commandes)\n- **Commission marketplace** (12 %) : 923,69 €\n- **Net perçu** : 6 773,74 €\n\nVotre panier moyen est de **29,49 €**.",
+        "answer_excerpt": "**Synthèse de vos revenus** — ce mois-ci — Verger de la Côte\n\n- **Brut** : 2 847,56 € (99 commandes)\n- **Commission marketplace** (12 %) : 341,71 €\n- **Net perçu** : 2 505,85 €\n\nVotre panier moyen est de **28,76 €**.",
         "chart_present": false,
         "tables_touched": [
           "orders"
@@ -501,7 +497,7 @@
         "sql": "SELECT COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS gross_revenue, ROUND(COALESCE(SUM(o.total_amount), 0) * 0.8800, 2) AS net_revenue, 'juillet 2024' AS month_label FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01' AND o.created_at <= '2024-07-31 23:59:59') AND o.producer_id = 42 LIMIT 1000",
         "sql_present": true,
         "scope_clause": "WHERE o.producer_id = 42",
-        "answer_excerpt": "**Synthèse de vos revenus** — juillet 2024 — Ferme du Vallon\n\n- **Brut** : 5 791,77 € (261 commandes)\n- **Commission marketplace** (12 %) : 695,01 €\n- **Net perçu** : 5 096,76 €\n\nVotre panier moyen est de **22,19 €**.",
+        "answer_excerpt": "**Synthèse de vos revenus** — juillet 2024 — Ferme du Vallon\n\n- **Brut** : 2 020,99 € (99 commandes)\n- **Commission marketplace** (12 %) : 242,52 €\n- **Net perçu** : 1 778,47 €\n\nVotre panier moyen est de **20,41 €**.",
         "chart_present": false,
         "tables_touched": [
           "orders"
@@ -528,7 +524,7 @@
         "sql": "SELECT COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS gross_revenue, ROUND(COALESCE(SUM(o.total_amount), 0) * 0.8800, 2) AS net_revenue, 'ce mois-ci' AS month_label FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= '2024-07-01' AND o.created_at <= '2024-07-31 23:59:59') AND o.producer_id = 42 LIMIT 1000",
         "sql_present": true,
         "scope_clause": "WHERE o.producer_id = 42",
-        "answer_excerpt": "**Synthèse de vos revenus** — ce mois-ci — Ferme du Vallon\n\n- **Brut** : 5 791,77 € (261 commandes)\n- **Commission marketplace** (12 %) : 695,01 €\n- **Net perçu** : 5 096,76 €\n\nVotre panier moyen est de **22,19 €**.",
+        "answer_excerpt": "**Synthèse de vos revenus** — ce mois-ci — Ferme du Vallon\n\n- **Brut** : 2 020,99 € (99 commandes)\n- **Commission marketplace** (12 %) : 242,52 €\n- **Net perçu** : 1 778,47 €\n\nVotre panier moyen est de **20,41 €**.",
         "chart_present": false,
         "tables_touched": [
           "orders"
@@ -555,7 +551,7 @@
         "sql": "SELECT DATE(o.created_at) AS day, COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS revenue FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= DATE('2024-07-08') AND o.created_at <= DATE('2024-07-15')) AND o.producer_id = 42 GROUP BY DATE(o.created_at) ORDER BY day ASC LIMIT 1000",
         "sql_present": true,
         "scope_clause": "WHERE o.producer_id = 42",
-        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **126 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 2 860,65 €\n- **Panier moyen** : 22,70 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
+        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **45 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 859,26 €\n- **Panier moyen** : 19,09 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
         "chart_present": true,
         "tables_touched": [
           "orders"
@@ -582,7 +578,7 @@
         "sql": "SELECT DATE(o.created_at) AS day, COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS revenue FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= DATE('2024-07-08') AND o.created_at <= DATE('2024-07-15')) AND o.producer_id = 42 GROUP BY DATE(o.created_at) ORDER BY day ASC LIMIT 1000",
         "sql_present": true,
         "scope_clause": "WHERE o.producer_id = 42",
-        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **126 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 2 860,65 €\n- **Panier moyen** : 22,70 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
+        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **45 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 859,26 €\n- **Panier moyen** : 19,09 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
         "chart_present": true,
         "tables_touched": [
           "orders"
@@ -609,7 +605,7 @@
         "sql": "SELECT DATE(o.created_at) AS day, COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS revenue FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= DATE('2024-07-08') AND o.created_at <= DATE('2024-07-15')) AND o.producer_id = 42 GROUP BY DATE(o.created_at) ORDER BY day ASC LIMIT 1000",
         "sql_present": true,
         "scope_clause": "WHERE o.producer_id = 42",
-        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **126 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 2 860,65 €\n- **Panier moyen** : 22,70 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
+        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **45 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 859,26 €\n- **Panier moyen** : 19,09 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
         "chart_present": true,
         "tables_touched": [
           "orders"
@@ -636,7 +632,7 @@
         "sql": "SELECT DATE(o.created_at) AS day, COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS revenue FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= DATE('2024-07-08') AND o.created_at <= DATE('2024-07-15')) AND o.producer_id = 99 GROUP BY DATE(o.created_at) ORDER BY day ASC LIMIT 1000",
         "sql_present": true,
         "scope_clause": "WHERE o.producer_id = 99",
-        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Verger de la Côte\n\n- **135 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 4 134,07 €\n- **Panier moyen** : 30,62 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
+        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Verger de la Côte\n\n- **47 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 1 288,91 €\n- **Panier moyen** : 27,42 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
         "chart_present": true,
         "tables_touched": [
           "orders"
@@ -709,7 +705,7 @@
         "sql": "SELECT p.display_name AS producer_name, COUNT(DISTINCT o.id) AS order_count, COALESCE(SUM(o.total_amount), 0) AS revenue_eur FROM producers AS p LEFT JOIN orders AS o ON o.producer_id = p.id AND o.created_at >= '2024-07-01' AND o.status <> 'cancelled' GROUP BY p.id, p.display_name ORDER BY order_count DESC LIMIT 1000",
         "sql_present": true,
         "scope_clause": null,
-        "answer_excerpt": "**Classement des producteurs** par nombre de commandes ce mois-ci :\n\n1. **Ferme du Vallon** — 261 commandes · 5 791,77 €\n2. **Verger de la Côte** — 261 commandes · 7 697,43 €\n3. **Maraîchers du Soleil** — 215 commandes · 3 828,53 €\n4. **Fromagerie du Col** — 173 commandes · 17 803,22 €\n5. **Élevage ",
+        "answer_excerpt": "**Classement des producteurs** par nombre de commandes ce mois-ci :\n\n1. **Ferme du Vallon** — 99 commandes · 2 020,99 €\n2. **Verger de la Côte** — 99 commandes · 2 847,56 €\n3. **Fromagerie du Col** — 88 commandes · 10 133,14 €\n4. **Maraîchers du Soleil** — 84 commandes · 1 378,48 €\n5. **Élevage des ",
         "chart_present": true,
         "tables_touched": [
           "producers",
@@ -761,7 +757,7 @@
         "sql": "SELECT p.display_name AS producer_name, COUNT(DISTINCT o.id) AS order_count, COALESCE(SUM(o.total_amount), 0) AS revenue_eur FROM producers AS p LEFT JOIN orders AS o ON o.producer_id = p.id AND o.created_at >= '2024-07-01' AND o.status <> 'cancelled' GROUP BY p.id, p.display_name ORDER BY order_count DESC LIMIT 1000",
         "sql_present": true,
         "scope_clause": null,
-        "answer_excerpt": "**Classement des producteurs** par nombre de commandes ce mois-ci :\n\n1. **Ferme du Vallon** — 261 commandes · 5 791,77 €\n2. **Verger de la Côte** — 261 commandes · 7 697,43 €\n3. **Maraîchers du Soleil** — 215 commandes · 3 828,53 €\n4. **Fromagerie du Col** — 173 commandes · 17 803,22 €\n5. **Élevage ",
+        "answer_excerpt": "**Classement des producteurs** par nombre de commandes ce mois-ci :\n\n1. **Ferme du Vallon** — 99 commandes · 2 020,99 €\n2. **Verger de la Côte** — 99 commandes · 2 847,56 €\n3. **Fromagerie du Col** — 88 commandes · 10 133,14 €\n4. **Maraîchers du Soleil** — 84 commandes · 1 378,48 €\n5. **Élevage des ",
         "chart_present": true,
         "tables_touched": [
           "producers",
@@ -813,7 +809,7 @@
         "sql": "SELECT DATE(o.created_at) AS day, COUNT(DISTINCT o.id) AS order_count, ROUND(COALESCE(SUM(o.total_amount), 0), 2) AS revenue FROM orders AS o WHERE (o.status <> 'cancelled' AND o.created_at >= DATE('2024-07-08') AND o.created_at <= DATE('2024-07-15')) AND o.producer_id = 42 GROUP BY DATE(o.created_at) ORDER BY day ASC LIMIT 1000",
         "sql_present": true,
         "scope_clause": "WHERE o.producer_id = 42",
-        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **126 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 2 860,65 €\n- **Panier moyen** : 22,70 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
+        "answer_excerpt": "**Résumé de vos ventes de la semaine** — Ferme du Vallon\n\n- **45 commandes** sur 7 jours d'activité\n- **Chiffre d'affaires** : 859,26 €\n- **Panier moyen** : 19,09 €\n\nLe graphique ci-dessous montre l'évolution quotidienne.",
         "chart_present": true,
         "tables_touched": [
           "orders"
@@ -1102,6 +1098,60 @@
         "tables_in_sql": [],
         "http_error": null,
         "ops_proposed_decision": "reject"
+      },
+      "retried": false
+    },
+    {
+      "id": "eval-039",
+      "category": "ml_forecast",
+      "question": "Quel stock va me manquer samedi ?",
+      "description": "Phase 5 ML forecast case (Marie, producer 42). The classifier keys on 'manqu' + 'samedi' → stock_shortfall. Since the ML model .pkl exists + producer_id is set, the orchestrator routes to forecast_tool (no SQL). Response must include tool_calls=['forecast_tool'] and the answer must mention 'modèle' or '%' or 'risque'. Distinct from eval-007 (which uses 'Quels produits risquent de me manquer samedi ?' — same intent but a different natural-language variant to exercise the classifier).",
+      "expected_to_fail": false,
+      "passed": true,
+      "failure_reasons": [],
+      "actual": {
+        "intent": "stock_shortfall",
+        "refused": false,
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
+        "chart_present": true,
+        "tables_touched": [
+          "stock_history",
+          "stocks",
+          "products"
+        ],
+        "tables_in_sql": [],
+        "http_error": null,
+        "ops_proposed_decision": null
+      },
+      "retried": false
+    },
+    {
+      "id": "eval-040",
+      "category": "ml_forecast",
+      "question": "Prédis les ruptures pour les 3 prochains jours",
+      "description": "Phase 5 ML forecast case (Pierre, producer 99). The classifier keys on 'ruptures' → stock_shortfall. Routes to forecast_tool. The forecast should return Pierre's products at risk (Pommes, Poires, Jus de pomme, Cidre) — distinct from Marie's vegetable mix in eval-039 — confirming the forecast is per-producer scoped.",
+      "expected_to_fail": false,
+      "passed": true,
+      "failure_reasons": [],
+      "actual": {
+        "intent": "stock_shortfall",
+        "refused": false,
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Verger de la Côte)\n\n5 produits à risque selon le modèle ML :\n\n1. **Pommes à cuire** — 82 % de risque\n   Stock actuel : 0 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Pommes Gala** — 70 % de risque\n   Stock actuel : 0 ",
+        "chart_present": true,
+        "tables_touched": [
+          "stock_history",
+          "stocks",
+          "products"
+        ],
+        "tables_in_sql": [],
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     }

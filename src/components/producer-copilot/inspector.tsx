@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/feather-icons";
 
 import { SqlBlock } from "./sql-block";
+import { ForecastDisplay } from "./forecast-display";
 
 interface InspectorProps {
   message: ChatMessage | null;
@@ -47,6 +48,15 @@ export function Inspector({ message, onClose }: InspectorProps) {
   // RAG mode = documentary response with cited sources. Distinguished from
   // analytical (SQL) responses so the inspector reads as a distinct trace.
   const isRag = !!r.sources && r.sources.length > 0;
+  // Forecast mode = ML stock-shortage prediction via `forecast_tool`
+  // (Phase 5). Distinct from both analytical (SQL) and documentary (RAG):
+  // the trace shows feature engineering / prédiction ML / classement steps,
+  // a "PRÉDICTIONS ML" block replaces the SQL block, and the security checks
+  // include "Modèle ML valide" + "Features disponibles".
+  const isForecast =
+    r.toolCalls.includes("forecast_tool") &&
+    !!r.forecastPredictions &&
+    r.forecastPredictions.length > 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -85,6 +95,26 @@ export function Inspector({ message, onClose }: InspectorProps) {
                   </span>{" "}
                   source{(r.sources?.length ?? 0) > 1 ? "s" : ""} citée
                   {(r.sources?.length ?? 0) > 1 ? "s" : ""} ·{" "}
+                  <span className="font-heading text-foreground tabular-nums">
+                    {totalMs}
+                  </span>{" "}
+                  ms ·{" "}
+                  <span className="font-heading text-foreground tabular-nums">
+                    {totalTokensDisplay}
+                  </span>{" "}
+                  tokens
+                </span>
+              </div>
+            ) : isForecast ? (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs">
+                <Cpu size={14} className="shrink-0 text-accent" />
+                <span className="font-body text-foreground">
+                  Prédiction ML ·{" "}
+                  <span className="font-heading text-foreground tabular-nums">
+                    {r.forecastPredictions?.length ?? 0}
+                  </span>{" "}
+                  produit{(r.forecastPredictions?.length ?? 0) > 1 ? "s" : ""} à
+                  risque ·{" "}
                   <span className="font-heading text-foreground tabular-nums">
                     {totalMs}
                   </span>{" "}
@@ -159,8 +189,9 @@ export function Inspector({ message, onClose }: InspectorProps) {
             </ol>
           </section>
 
-          {/* SQL (analytical responses only) */}
-          {r.sql && !isRag && (
+          {/* SQL (analytical responses only — never co-renders with forecast
+              since the forecast_tool returns sql: null) */}
+          {r.sql && !isRag && !isForecast && (
             <section>
               <SectionLabel icon={<Database size={12} />}>
                 SQL exécuté
@@ -173,6 +204,29 @@ export function Inspector({ message, onClose }: InspectorProps) {
                   defaultOpen
                 />
               </div>
+            </section>
+          )}
+
+          {/* PRÉDICTIONS ML (forecast_tool responses only — Phase 5). Same
+              block as in the chat message: probability bars per product,
+              model card footer. Rendered with the `compact` variant so it
+              fits the inspector's narrower column without duplicating the
+              section header. */}
+          {isForecast && r.forecastPredictions && r.forecastPredictions.length > 0 && (
+            <section>
+              <SectionLabel icon={<Cpu size={12} />}>
+                Prédictions ML
+              </SectionLabel>
+              <div className="mt-2">
+                <ForecastDisplay
+                  predictions={r.forecastPredictions}
+                  compact
+                />
+              </div>
+              <p className="mt-2 text-[10px] text-muted-foreground">
+                Modèle RandomForest · 100 arbres · entraîné sur 90 jours
+                d&apos;historique
+              </p>
             </section>
           )}
 

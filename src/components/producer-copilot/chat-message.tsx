@@ -8,6 +8,7 @@ import type { ChatMessage as ChatMessageT, Source } from "@/lib/types";
 import {
   Check,
   Clock,
+  Cpu,
   Database,
   FileText,
   ShieldOff,
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/feather-icons";
 
 import { ChartDisplay } from "./chart-display";
+import { ForecastDisplay } from "./forecast-display";
 import { Markdown } from "./markdown";
 import { SqlBlock } from "./sql-block";
 import { BrandMark } from "./brand-mark";
@@ -60,6 +62,15 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
         .replace(/\s/g, "\u00A0")
     : "—";
   const tokensDisplay = totalTokens.toLocaleString("fr-FR").replace(/\s/g, "\u00A0");
+  // ML forecast responses are visually distinct from analytical (SQL) ones:
+  // a "PRÉDICTIONS ML" block replaces the SQL block, the footer badge flips
+  // to FORECAST_TOOL with a Cpu icon, and the micro-label reads
+  // "PRÉDICTION ML" instead of "Scope vérifié".
+  const isForecast =
+    !!response &&
+    response.toolCalls.includes("forecast_tool") &&
+    !!response.forecastPredictions &&
+    response.forecastPredictions.length > 0;
 
   return (
     <motion.div
@@ -109,6 +120,15 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
               </div>
             )}
 
+            {/* ML predictions — forecast_tool responses (Phase 5). Sits where
+                the SQL block would be on analytical answers; sql + chart are
+                null on this path so they never co-render. */}
+            {isForecast && response?.forecastPredictions && (
+              <div className="mt-3">
+                <ForecastDisplay predictions={response.forecastPredictions} />
+              </div>
+            )}
+
             {response?.refused ? null : (
               response?.sql && (
                 <div className="mt-3">
@@ -136,6 +156,11 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
                   <span className="text-muted-foreground/50">·</span>
                   scoping violation
                 </span>
+              ) : isForecast ? (
+                <span className="inline-flex items-center gap-1">
+                  <Cpu size={12} className="text-accent" />
+                  Prédiction ML
+                </span>
               ) : response?.sources && response.sources.length > 0 ? (
                 <span className="inline-flex items-center gap-1">
                   <FileText size={12} className="text-accent" />
@@ -161,8 +186,15 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
                 s
               </span>
               {response && response.toolCalls.length > 0 && (
-                <span className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-1.5 py-0 text-[10px] text-muted-foreground">
-                  <Database size={10} />
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1 rounded-md border bg-secondary px-1.5 py-0 text-[10px] uppercase tracking-wide",
+                    isForecast
+                      ? "border-accent/40 text-accent"
+                      : "border-border text-muted-foreground",
+                  )}
+                >
+                  {isForecast ? <Cpu size={10} /> : <Database size={10} />}
                   {response.toolCalls[0]}
                 </span>
               )}

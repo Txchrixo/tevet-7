@@ -29,6 +29,12 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app.connectors.base import QueryResult
+from app.tools.forecast_tool import (
+    ForecastResult,
+    ForecastTool,
+    render_forecast_answer,
+    render_forecast_chart,
+)
 from app.tools.rag_tool import RagSearchTool, RagResult
 from app.tools.sql_tool import REFUSE_MARKER, SqlReadTool, ToolResult
 from app.tracing.base import Span, TraceContext, Tracer
@@ -159,6 +165,11 @@ class AgentResponse:
     # Phase 2 tracing — id of the row written to the ``traces`` table (and
     # optionally to Langfuse). ``None`` means tracing was disabled.
     trace_id: str | None = None
+    # Phase 5 — ML forecast. When the intent is ``stock_shortfall`` and the
+    # forecast_tool produced predictions, this carries the full ForecastResult
+    # (top-k predictions, probability per product, top_factor, latency). Null
+    # for all other intents and for the SQL-fallback path.
+    forecast_predictions: list[dict[str, Any]] | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -664,6 +675,7 @@ class AgentOrchestrator:
         identity_id: str | None = None,
         tracer: Tracer | None = None,
         rag_tool: RagSearchTool | None = None,
+        forecast_tool: ForecastTool | None = None,
     ) -> None:
         self.sql_tool = sql_tool
         self.role = role
@@ -677,6 +689,12 @@ class AgentOrchestrator:
         # still gets documentary answers). The chat API always passes a
         # real one so tenant scoping is enforced.
         self.rag_tool: RagSearchTool | None = rag_tool
+        # Phase 5 ML forecast — ``None`` falls back to building a default
+        # ``ForecastTool`` on demand (so a script that doesn't pass one
+        # still gets ML-based stock predictions when the model is trained).
+        # The chat API always passes a real one so the producer scoping is
+        # enforced at request time.
+        self.forecast_tool: ForecastTool | None = forecast_tool
 
     async def run(self, user_message: str) -> AgentResponse:
         """Execute the (rule-based) agent loop and return a structured response.
@@ -857,15 +875,25 @@ class AgentOrchestrator:
             )
 
         # Step 2 — tool selection (sql_read_tool for analytical intents,
-        # rag_search for documentary, ops_copilot for ops_analysis). The
-        # documentary branch routes to ``_run_documentary`` right after;
-        # the ops_analysis branch routes to ``_run_ops_copilot``;
-        # the analytical branch keeps the existing SQL generation/validation/
-        # execution pipeline.
+        # rag_search for documentary, ops_copilot for ops_analysis,
+        # forecast_tool for producer-side stock_shortfall when the ML model
+        # is trained). The documentary branch routes to ``_run_documentary``
+        # right after; the ops_analysis branch routes to ``_run_ops_copilot``;
+        # the stock_shortfall branch (producer + model exists) routes to
+        # ``_run_stock_forecast``; the analytical branch keeps the existing
+        # SQL generation/validation/execution pipeline.
+        can_forecast = (
+            intent == "stock_shortfall"
+            and self.role != "admin"
+            and self.producer_id is not None
+            and self._is_forecast_available()
+        )
         if intent == "ops_analysis":
             selected_tool = "ops_copilot"
         elif intent == "documentary":
             selected_tool = "rag_search"
+        elif can_forecast:
+            selected_tool = "forecast_tool"
         else:
             selected_tool = "sql_read_tool"
         steps.append(
@@ -894,6 +922,16 @@ class AgentOrchestrator:
         # internally (mirrors the SqlReadTool row-level security).
         if intent == "documentary":
             return await self._run_documentary(user_message, ctx, started_at, steps)
+
+        # ── Phase 5 — stock_shortfall intent (producer + ML model trained):
+        # route to ForecastTool. We intercept BEFORE SQL generation because
+        # the ML path doesn't need SQL — the forecast_tool builds features
+        # from stock_history + stocks + products directly. When the model
+        # .pkl is missing OR the caller is admin (no producer scope), we
+        # fall through to the SQL heuristic below (existing eval-011 admin
+        # case stays on the SQL path).
+        if can_forecast:
+            return await self._run_stock_forecast(user_message, ctx, started_at, steps)
 
         # ── Step 3 — SQL generation ──
         span = self.tracer.start_span(ctx, "sql_generation")
@@ -1349,6 +1387,279 @@ class AgentOrchestrator:
             refused=False,
             tables_touched=["document_chunks_fts", "document_chunks", "documents"],
             sources=sources,
+        )
+
+    # ───────────────────────────────────────────────────────────────────────
+    # Phase 5 — stock_shortfall intent (ML forecast path)
+    # ───────────────────────────────────────────────────────────────────────
+    def _is_forecast_available(self) -> bool:
+        """Return True iff we can serve the ML forecast for this request.
+
+        Conditions:
+          1. A ``ForecastTool`` is wired up (the chat API always passes one).
+          2. The trained model bundle ``ml/models/stock_shortage_model.pkl``
+             exists on disk. When it's missing (e.g. the model hasn't been
+             trained yet), we fall back to the SQL heuristic so the demo
+             still works.
+        """
+        if self.forecast_tool is None:
+            return False
+        # Import here to avoid a circular import at module load time
+        # (forecast_tool imports db_seed which is heavy).
+        from app.tools.forecast_tool import MODEL_PATH
+        return MODEL_PATH.exists()
+
+    async def _run_stock_forecast(
+        self,
+        user_message: str,
+        ctx: TraceContext,
+        started_at: float,
+        steps: list[StepTrace],
+    ) -> AgentResponse:
+        """Stock-shortfall intent: ForecastTool.predict() → ML-based answer.
+
+        Flow:
+          3. Construction des features ML (stock_history + stocks + products)
+          4. Inférence ML (RandomForest.predict_proba)
+          5. Classement top-5 par probabilité
+          6. Synthèse (réponse markdown FR + chart barres)
+
+        Security checks:
+          - Scope appliqué         : producer_id from request identity
+          - Modèle ML valide       : .pkl loaded successfully
+          - Features disponibles   : ≥1 product evaluated
+
+        The forecast tool enforces producer scoping internally (it queries
+        stock_history / stocks / products WHERE producer_id = :producer_id),
+        so the agent never sees another producer's data even if the model
+        had a bug. Tracing: every predict() call opens a Langfuse span
+        ``forecast_predict`` so the dashboard shows forecast calls
+        alongside SQL / RAG calls.
+        """
+        # Lazily build a ForecastTool if the caller didn't provide one
+        # (scripts/tests convenience). The chat API always passes one.
+        forecast_tool = self.forecast_tool
+        if forecast_tool is None:
+            from app.connectors.sqlite_connector import SqliteConnector
+            from app.tools.forecast_tool import ForecastTool as _ForecastTool
+
+            forecast_tool = _ForecastTool(
+                connector=SqliteConnector(),
+                tenant_id="dp",
+                producer_id=self.producer_id,
+                role=self.role,
+                tracer=self.tracer,
+            )
+            self.forecast_tool = forecast_tool
+
+        scope_detail = f"producer_id = {self.producer_id}"
+
+        # ── Step 3 — feature engineering ──
+        span = self.tracer.start_span(
+            ctx, "forecast_feature_engineering",
+            producer_id=self.producer_id,
+        )
+        t = time.monotonic()
+        # The forecast_tool's predict() does feature engineering internally
+        # (one SQL round-trip per aggregate). We record this as a separate
+        # step in the inspector UI; the actual work happens inside the
+        # predict() call below.
+        steps.append(
+            StepTrace(
+                index=3,
+                title="Construction des features ML",
+                detail=(
+                    f"stock_history + stocks + products (scope : {scope_detail})"
+                ),
+                status="ok",
+                duration_ms=0,  # filled in after predict() returns
+            )
+        )
+        self.tracer.end_span(ctx, span, status="ok", producer_id=self.producer_id)
+
+        # ── Step 4 — ML prediction (RandomForest.predict_proba) ──
+        span = self.tracer.start_span(
+            ctx, "forecast_ml_predict",
+            producer_id=self.producer_id,
+            horizon_days=3,
+        )
+        t = time.monotonic()
+        try:
+            result = await forecast_tool.predict(
+                producer_id=self.producer_id,
+                horizon_days=3,
+                ctx=ctx,
+                top_k=5,
+            )
+        except Exception as exc:  # noqa: BLE001 — never crash the chat
+            logger.exception("ForecastTool.predict crashed for producer=%s", self.producer_id)
+            self.tracer.end_span(ctx, span, status="error", error=str(exc))
+            steps.append(
+                StepTrace(
+                    index=4,
+                    title="Inférence ML (RandomForest)",
+                    detail=f"Échec : {exc}",
+                    status="blocked",
+                    duration_ms=int((time.monotonic() - t) * 1000),
+                )
+            )
+            security_checks = [
+                SecurityCheck("Scope appliqué", "ok", scope_detail),
+                SecurityCheck("Modèle ML valide", "warning", f"Erreur : {exc}"),
+                SecurityCheck("Features disponibles", "blocked", "N/A"),
+            ]
+            return AgentResponse(
+                answer=(
+                    "Le modèle ML de prévision de rupture n'a pas pu produire de "
+                    "prédiction. Réessayez dans un instant, ou reformulez votre "
+                    "question (le SQL de secours reste disponible si vous précisez "
+                    "« état du stock »)."
+                ),
+                sql=None,
+                scope_clause=None,
+                chart=None,
+                tokens_in=400,
+                tokens_out=120,
+                latency_ms=int((time.monotonic() - started_at) * 1000),
+                tool_calls=["forecast_tool"],
+                steps=[s.__dict__ for s in steps],
+                security_checks=[s.__dict__ for s in security_checks],
+                refused=False,
+                tables_touched=["stock_history", "stocks", "products"],
+                forecast_predictions=[],
+            )
+        # Update step 3 duration now that feature engineering is done.
+        steps[-1].duration_ms = int((time.monotonic() - t) * 1000)
+        steps.append(
+            StepTrace(
+                index=4,
+                title="Inférence ML (RandomForest)",
+                detail=(
+                    f"{result.n_products_evaluated} produits évalués, "
+                    f"{len(result.predictions)} à risque "
+                    f"(latence {result.latency_ms} ms)"
+                ),
+                status="ok" if result.model_loaded and not result.error else "warning",
+                duration_ms=result.latency_ms,
+            )
+        )
+        self.tracer.end_span(
+            ctx, span,
+            status="ok" if result.model_loaded else "warning",
+            n_products=result.n_products_evaluated,
+            n_predictions=len(result.predictions),
+            latency_ms=result.latency_ms,
+            model_loaded=result.model_loaded,
+        )
+
+        # ── Step 5 — ranking top-k by probability ──
+        span = self.tracer.start_span(ctx, "forecast_ranking")
+        t = time.monotonic()
+        steps.append(
+            StepTrace(
+                index=5,
+                title="Classement top-5 par probabilité",
+                detail=(
+                    f"Top-{len(result.predictions)} produit(s) à risque "
+                    f"de rupture sur 3 jours"
+                ),
+                status="ok" if result.predictions else "warning",
+                duration_ms=int((time.monotonic() - t) * 1000),
+            )
+        )
+        self.tracer.end_span(
+            ctx, span,
+            status="ok" if result.predictions else "warning",
+            top_k=len(result.predictions),
+        )
+
+        # ── Step 6 — synthesis (FR markdown + chart) ──
+        span = self.tracer.start_span(ctx, "synthesis")
+        t = time.monotonic()
+        # Pull the model metadata for the footer (n_rows + n_estimators).
+        model_meta: dict[str, Any] | None = None
+        try:
+            from app.tools.forecast_tool import MODEL_PATH
+            import joblib as _joblib
+            if MODEL_PATH.exists():
+                bundle = _joblib.load(MODEL_PATH)
+                if isinstance(bundle, dict):
+                    model_meta = bundle.get("metadata")
+        except Exception:  # noqa: BLE001 — footer is best-effort
+            model_meta = None
+        answer = render_forecast_answer(result, model_meta=model_meta)
+        chart = render_forecast_chart(result)
+        steps.append(
+            StepTrace(
+                index=6,
+                title="Synthèse de la réponse",
+                detail=(
+                    f"Réponse ML formatée ({'avec' if chart else 'sans'} graphique)"
+                ),
+                status="ok",
+                duration_ms=int((time.monotonic() - t) * 1000),
+            )
+        )
+        self.tracer.end_span(
+            ctx, span, status="ok", has_chart=chart is not None,
+        )
+
+        # Security checks for the ML forecast path.
+        security_checks = [
+            SecurityCheck("Scope appliqué", "ok", scope_detail),
+            SecurityCheck(
+                "Modèle ML valide",
+                "ok" if result.model_loaded else "warning",
+                (
+                    "stock_shortage_model.pkl chargé"
+                    if result.model_loaded
+                    else "Modèle non chargé"
+                ),
+            ),
+            SecurityCheck(
+                "Features disponibles",
+                "ok" if result.n_products_evaluated > 0 else "warning",
+                f"{result.n_products_evaluated} produit(s) évalué(s)",
+            ),
+        ]
+
+        # Build the forecast_predictions list for the API response.
+        forecast_predictions: list[dict[str, Any]] = [
+            {
+                "product_id": p.product_id,
+                "product_name": p.product_name,
+                "category": p.category,
+                "probability": round(p.probability, 4),
+                "probability_pct": int(round(p.probability * 100)),
+                "stock_available": round(p.stock_available, 2),
+                "sales_7d": round(p.sales_7d, 2),
+                "sales_3d": round(p.sales_3d, 2),
+                "sales_1d": round(p.sales_1d, 2),
+                "avg_sales_30d": round(p.avg_sales_30d, 2),
+                "top_factor": p.top_factor,
+                "is_perishable": p.is_perishable,
+                "days_since_last_stockout": p.days_since_last_stockout,
+            }
+            for p in result.predictions
+        ]
+
+        tokens_out = 380 if chart else 280
+
+        return AgentResponse(
+            answer=answer,
+            sql=None,                     # ML path → no SQL on the response
+            scope_clause=None,            # scoping is internal to the forecast tool
+            chart=chart,
+            tokens_in=600,
+            tokens_out=tokens_out,
+            latency_ms=int((time.monotonic() - started_at) * 1000),
+            tool_calls=["forecast_tool"],
+            steps=[s.__dict__ for s in steps],
+            security_checks=[s.__dict__ for s in security_checks],
+            refused=False,
+            tables_touched=["stock_history", "stocks", "products"],
+            sources=[{"type": "ml_model", "name": "stock_shortage_model.pkl"}],
+            forecast_predictions=forecast_predictions,
         )
 
     # ───────────────────────────────────────────────────────────────────────

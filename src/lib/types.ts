@@ -47,6 +47,24 @@ export interface SecurityCheck {
   detail?: string;
 }
 
+/**
+ * A single ML stock-shortage prediction, returned by the `forecast_tool`
+ * (Phase 5). One entry per product the agent ran through the trained
+ * RandomForest model — `probability` is the model's confidence that the
+ * product will run out of stock within the forecast horizon.
+ */
+export interface ForecastPrediction {
+  product_name: string;
+  /** Model confidence in [0, 1] that the product will run out of stock. */
+  probability: number;
+  /** Current stock level (units) used as a feature. */
+  stock_available: number;
+  /** Units sold over the trailing 7 days — features + context. */
+  sales_7d: number;
+  /** Short human-readable label for the most influential feature. */
+  top_factor: string;
+}
+
 export interface AssistantResponse {
   answer: string;
   /** SQL displayed in the message and inspector. Null for refusals. */
@@ -68,6 +86,14 @@ export interface AssistantResponse {
    * Empty/undefined for analytical responses.
    */
   sources?: Source[];
+  /**
+   * ML stock-shortage predictions (Phase 5). Populated only when the agent
+   * routed the question through the `forecast_tool` instead of the
+   * `sql_read_tool` — i.e. "Quel stock va me manquer samedi ?". Empty for
+   * analytical + documentary responses. Renders a distinct "PRÉDICTIONS ML"
+   * block beneath the answer text.
+   */
+  forecastPredictions?: ForecastPrediction[];
 }
 
 /**

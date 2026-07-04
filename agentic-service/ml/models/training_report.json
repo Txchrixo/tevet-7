@@ -1,0 +1,174 @@
+{
+  "metadata": {
+    "trained_at": "2026-07-04T03:31:49.839728+00:00",
+    "n_rows": 6279,
+    "n_train": 5023,
+    "n_test": 1256,
+    "prevalence": 0.24526198439241917,
+    "feature_columns": [
+      "sales_7d",
+      "sales_3d",
+      "sales_1d",
+      "stock_available",
+      "day_of_week",
+      "is_weekend",
+      "month",
+      "is_perishable",
+      "category_encoded",
+      "producer_id",
+      "days_since_last_stockout",
+      "avg_sales_30d"
+    ],
+    "model_params": {
+      "n_estimators": 100,
+      "max_depth": 8,
+      "class_weight": "balanced",
+      "random_state": 42
+    },
+    "categories": [
+      "boissons",
+      "charcuterie",
+      "fruits",
+      "légumes",
+      "produits laitiers",
+      "viande",
+      "épicerie"
+    ]
+  },
+  "metrics": {
+    "accuracy": 0.9012738853503185,
+    "precision": 0.7266009852216748,
+    "recall": 0.9577922077922078,
+    "f1": 0.8263305322128851,
+    "roc_auc": 0.9765980327689188,
+    "confusion_matrix": [
+      [
+        837,
+        111
+      ],
+      [
+        13,
+        295
+      ]
+    ],
+    "classification_report": {
+      "0": {
+        "precision": 0.9847058823529412,
+        "recall": 0.8829113924050633,
+        "f1-score": 0.9310344827586207,
+        "support": 948.0
+      },
+      "1": {
+        "precision": 0.7266009852216748,
+        "recall": 0.9577922077922078,
+        "f1-score": 0.8263305322128851,
+        "support": 308.0
+      },
+      "accuracy": 0.9012738853503185,
+      "macro avg": {
+        "precision": 0.8556534337873081,
+        "recall": 0.9203518000986355,
+        "f1-score": 0.8786825074857529,
+        "support": 1256.0
+      },
+      "weighted avg": {
+        "precision": 0.9214126432475033,
+        "recall": 0.9012738853503185,
+        "f1-score": 0.9053586732298895,
+        "support": 1256.0
+      }
+    },
+    "top_features": [
+      {
+        "feature": "stock_available",
+        "importance": 0.3305991724862838
+      },
+      {
+        "feature": "days_since_last_stockout",
+        "importance": 0.26446343985330234
+      },
+      {
+        "feature": "sales_7d",
+        "importance": 0.11202606202614195
+      },
+      {
+        "feature": "avg_sales_30d",
+        "importance": 0.10365530955794103
+      },
+      {
+        "feature": "sales_3d",
+        "importance": 0.05795041313304125
+      },
+      {
+        "feature": "sales_1d",
+        "importance": 0.03229610120147843
+      },
+      {
+        "feature": "month",
+        "importance": 0.029088597943213633
+      },
+      {
+        "feature": "is_perishable",
+        "importance": 0.018700006930692983
+      },
+      {
+        "feature": "category_encoded",
+        "importance": 0.01708489667050899
+      },
+      {
+        "feature": "day_of_week",
+        "importance": 0.01614742062187722
+      }
+    ],
+    "all_features": [
+      {
+        "feature": "stock_available",
+        "importance": 0.3305991724862838
+      },
+      {
+        "feature": "days_since_last_stockout",
+        "importance": 0.26446343985330234
+      },
+      {
+        "feature": "sales_7d",
+        "importance": 0.11202606202614195
+      },
+      {
+        "feature": "avg_sales_30d",
+        "importance": 0.10365530955794103
+      },
+      {
+        "feature": "sales_3d",
+        "importance": 0.05795041313304125
+      },
+      {
+        "feature": "sales_1d",
+        "importance": 0.03229610120147843
+      },
+      {
+        "feature": "month",
+        "importance": 0.029088597943213633
+      },
+      {
+        "feature": "is_perishable",
+        "importance": 0.018700006930692983
+      },
+      {
+        "feature": "category_encoded",
+        "importance": 0.01708489667050899
+      },
+      {
+        "feature": "day_of_week",
+        "importance": 0.01614742062187722
+      },
+      {
+        "feature": "producer_id",
+        "importance": 0.015053392913402654
+      },
+      {
+        "feature": "is_weekend",
+        "importance": 0.0029351866621158034
+      }
+    ]
+  }
+}

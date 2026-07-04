@@ -104,13 +104,13 @@
     "expected": {
       "intent": "stock_shortfall",
       "refused": false,
-      "sql_expected": true,
-      "scope_clause_contains": "producer_id = 42",
-      "tables_allowed": ["stocks", "products"],
-      "answer_contains_any": ["samedi", "réapprovisionner", "surveiller"],
-      "chart_expected": true
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "answer_contains_any": ["risque", "rupture", "modèle", "%"],
+      "chart_expected": true,
+      "tool_calls_includes": ["forecast_tool"]
     },
-    "description": "Standard stock-shortfall question for producer 42. The classifier keys on 'manqu' + 'samedi'. SQL touches stocks+products, rewriter injects 's.producer_id = 42'. Answer should mention Saturday pickups and the 3 low-stock references seeded for Marie (Salade laitue, Radis roses, Blettes)."
+    "description": "Standard stock-shortfall question for producer 42 (Phase 5: ML forecast path). The classifier keys on 'manqu' + 'samedi'. When the ML model .pkl exists + producer_id is set, the orchestrator routes to forecast_tool (no SQL on the response). Answer should mention 'modèle' or '%' or 'risque', and tool_calls must include 'forecast_tool'."
   },
   {
     "id": "eval-008",
@@ -120,13 +120,13 @@
     "expected": {
       "intent": "stock_shortfall",
       "refused": false,
-      "sql_expected": true,
-      "scope_clause_contains": "producer_id = 42",
-      "tables_allowed": ["stocks", "products"],
-      "answer_contains_any": ["rupture", "réapprovisionner", "surveiller"],
-      "chart_expected": true
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "answer_contains_any": ["risque", "rupture", "modèle", "%"],
+      "chart_expected": true,
+      "tool_calls_includes": ["forecast_tool"]
     },
-    "description": "Alternate phrasing using 'rupture' instead of 'manquer samedi'. The classifier keys on 'stock' + 'rupture'. Same expected outcome as eval-007."
+    "description": "Alternate phrasing using 'rupture' (Phase 5: ML forecast path). The classifier keys on 'stock' + 'rupture'. Same ML forecast outcome as eval-007."
   },
   {
     "id": "eval-009",
@@ -136,13 +136,13 @@
     "expected": {
       "intent": "stock_shortfall",
       "refused": false,
-      "sql_expected": true,
-      "scope_clause_contains": "producer_id = 99",
-      "tables_allowed": ["stocks", "products"],
-      "answer_contains_any": ["épuis", "réapprovisionner", "surveiller", "samedi"],
-      "chart_expected": true
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "answer_contains_any": ["risque", "rupture", "modèle", "%"],
+      "chart_expected": true,
+      "tool_calls_includes": ["forecast_tool"]
     },
-    "description": "Alternate phrasing using 'épuisement' (classifier keys on 'épuis'). Same expected outcome as eval-007 but scoped to producer 99."
+    "description": "Alternate phrasing using 'épuisement' (Phase 5: ML forecast path, producer 99). The classifier keys on 'épuis'. Same ML forecast outcome as eval-007 but scoped to producer 99 (Pierre — Verger de la Côte)."
   },
   {
     "id": "eval-010",
@@ -152,13 +152,13 @@
     "expected": {
       "intent": "stock_shortfall",
       "refused": false,
-      "sql_expected": true,
-      "scope_clause_contains": "producer_id = 42",
-      "tables_allowed": ["stocks", "products"],
-      "answer_contains_any": ["samedi", "réapprovisionner", "surveiller"],
-      "chart_expected": true
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "answer_contains_any": ["risque", "rupture", "modèle", "%"],
+      "chart_expected": true,
+      "tool_calls_includes": ["forecast_tool"]
     },
-    "description": "Alternate phrasing using 'stock insuffisant' (classifier keys on 'stock'). Same expected outcome as eval-007."
+    "description": "Alternate phrasing using 'stock insuffisant' (Phase 5: ML forecast path). The classifier keys on 'stock'. Same ML forecast outcome as eval-007."
   },
   {
     "id": "eval-011",
@@ -618,5 +618,37 @@
       "ops_proposed_decision": "reject"
     },
     "description": "Phase 4 Ops Copilot case — admin asks the agent to pre-analyze the 'Vignoble des Coteaux' dossier (address mismatch + expired cert). classify_question matches 'analyse le dossier d onboarding' → ops_analysis. OpsCopilotAgent runs the address check (declared_address 'Beaune' vs document_address 'Chalon-sur-Saône' → Jaccard < 0.5 → blocker) + the cert expiry check (2023-05-01 < today → blocker) → proposed_decision='reject'. Response must include ops_analysis.proposed_decision='reject' and the answer must mention 'REJETER' or 'incohérent'/'expiré'."
+  },
+  {
+    "id": "eval-039",
+    "category": "ml_forecast",
+    "question": "Quel stock va me manquer samedi ?",
+    "identity": {"identity_id": "marie", "producer_id": 42, "role": "producer"},
+    "expected": {
+      "intent": "stock_shortfall",
+      "refused": false,
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "answer_contains_any": ["risque", "rupture", "modèle", "%"],
+      "chart_expected": true,
+      "tool_calls_includes": ["forecast_tool"]
+    },
+    "description": "Phase 5 ML forecast case (Marie, producer 42). The classifier keys on 'manqu' + 'samedi' → stock_shortfall. Since the ML model .pkl exists + producer_id is set, the orchestrator routes to forecast_tool (no SQL). Response must include tool_calls=['forecast_tool'] and the answer must mention 'modèle' or '%' or 'risque'. Distinct from eval-007 (which uses 'Quels produits risquent de me manquer samedi ?' — same intent but a different natural-language variant to exercise the classifier)."
+  },
+  {
+    "id": "eval-040",
+    "category": "ml_forecast",
+    "question": "Prédis les ruptures pour les 3 prochains jours",
+    "identity": {"identity_id": "pierre", "producer_id": 99, "role": "producer"},
+    "expected": {
+      "intent": "stock_shortfall",
+      "refused": false,
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "answer_contains_any": ["risque", "rupture", "modèle", "%"],
+      "chart_expected": true,
+      "tool_calls_includes": ["forecast_tool"]
+    },
+    "description": "Phase 5 ML forecast case (Pierre, producer 99). The classifier keys on 'ruptures' → stock_shortfall. Routes to forecast_tool. The forecast should return Pierre's products at risk (Pommes, Poires, Jus de pomme, Cidre) — distinct from Marie's vegetable mix in eval-039 — confirming the forecast is per-producer scoped."
   }
 ]

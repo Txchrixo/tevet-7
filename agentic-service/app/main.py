@@ -56,6 +56,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("SQLite database ready at %s", settings.database_url)
     except Exception:  # noqa: BLE001
         logger.exception("init_db() failed — /chat will return errors until fixed")
+    # Phase 5: ensure the ML stock-shortage model is trained. Lazy + non-
+    # blocking: if training fails, the forecast tool falls back to the SQL
+    # heuristic at request time so the demo still works.
+    try:
+        from ml.train_on_startup import ensure_model_trained
+        model_ok = ensure_model_trained()
+        if model_ok:
+            logger.info("ML model: stock_shortage_model.pkl ready (forecast_tool active)")
+        else:
+            logger.warning(
+                "ML model not trained — forecast_tool will fall back to SQL heuristic"
+            )
+    except Exception:  # noqa: BLE001 — never block app startup on ML
+        logger.exception("ensure_model_trained() failed — forecast_tool will fall back")
     # Phase 2 tracing: initialise the tracer singleton early so the first
     # /chat request doesn't pay the (small) construction cost. Also logs
     # which tracer is active (LocalTracer vs LangfuseTracer) so the operator

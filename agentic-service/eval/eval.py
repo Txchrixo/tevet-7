@@ -256,6 +256,20 @@ def run_assertions(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
                     f"got {actual_decision!r}"
                 )
 
+    # 12. tool_calls includes (Phase 5 ml_forecast cases).
+    # Verifies that the agent's tool_calls list contains every required
+    # tool name (e.g. "forecast_tool"). Used for the ML path where we
+    # can't assert on SQL presence.
+    required_tools = expected.get("tool_calls_includes")
+    if required_tools:
+        actual_tools = response.get("tool_calls") or []
+        missing_tools = [t for t in required_tools if t not in actual_tools]
+        if missing_tools:
+            reasons.append(
+                f"tool_calls missing {missing_tools} "
+                f"(got: {actual_tools})"
+            )
+
     return reasons
 
 

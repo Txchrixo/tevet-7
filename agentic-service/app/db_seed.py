@@ -19,6 +19,7 @@ invented for the demo.
 from __future__ import annotations
 
 import logging
+import math
 import random
 from datetime import datetime, timedelta
 from typing import Any
@@ -101,6 +102,16 @@ products = Table(
     Column("is_organic", Boolean, nullable=False, default=False),
     Column("is_available", Boolean, nullable=False, default=True),
     Column("created_at", DateTime, nullable=False),
+    # ── Phase 5 ML columns ────────────────────────────────────────────────
+    # Three columns the RandomForest forecast model uses as features. They
+    # are derived from the existing ``category`` + ``weights`` at seed time so
+    # we don't have to extend the ``_PRODUCERS`` tuple schema. ``base_popularity``
+    # is the normalised sales weight (0..1); ``is_perishable`` flags categories
+    # that rotate fast (légumes, fruits, viande, produits laitiers);
+    # ``seasonality_peak_month`` is the 1..12 month when demand peaks.
+    Column("base_popularity", Float, nullable=False, default=1.0),
+    Column("is_perishable", Boolean, nullable=False, default=False),
+    Column("seasonality_peak_month", Integer, nullable=True),
 )
 
 stocks = Table(
@@ -140,6 +151,43 @@ order_items = Table(
     Column("quantity", Float, nullable=False),
     Column("unit_price_eur", Float, nullable=False),
     Column("line_total_eur", Float, nullable=False),
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 5 — ML training table: daily stock snapshots per (product, date).
+# ─────────────────────────────────────────────────────────────────────────────
+# One row per (product_id, date) over the 90+ day history window. Each row
+# captures the start-of-day stock_level, the day's actual sales (sum of
+# order_items.quantity for that product on that date), the restock quantity
+# applied that day, and a stockout_flag set to 1 when daily_sales >
+# stock_level (rupture).
+#
+# This is the **training data source** for the RandomForest stock-shortage
+# model — see ``ml/train_stock_model.py``. The forecast tool at inference
+# time builds features from this same table (sales_7d, sales_3d, sales_1d,
+# days_since_last_stockout, avg_sales_30d) plus the current ``stocks``
+# snapshot, so the live features match the training distribution.
+#
+# The rupture target is computed by the training script as
+# ``stockout_next_3d = 1 if stockout_flag=1 in any of date+1, date+2, date+3``.
+stock_history = Table(
+    "stock_history",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("producer_id", Integer, ForeignKey("producers.id"), nullable=False, index=True),
+    Column("product_id", Integer, ForeignKey("products.id"), nullable=False, index=True),
+    Column("date", DateTime, nullable=False, index=True),  # snapshot date (midnight)
+    Column("stock_level", Float, nullable=False),         # start-of-day stock
+    Column("reserved", Float, nullable=False, default=0),
+    Column("available", Float, nullable=False),            # start-of-day available
+    Column("daily_sales", Float, nullable=False, default=0),    # demand that day
+    Column("restocked_qty", Float, nullable=False, default=0),  # restock applied that day
+    Column("stockout_flag", Boolean, nullable=False, default=False),
+    Column("day_of_week", Integer, nullable=False),       # 0=Mon .. 6=Sun
+    Column("is_weekend", Boolean, nullable=False),        # True if Fri(4) or Sat(5)
+    Column("month", Integer, nullable=False),             # 1..12
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
 )
 
 pickup_bookings = Table(
@@ -582,39 +630,189 @@ _JUNE_START = datetime(2024, 6, 1, 0, 0, 0)
 _JUNE_END = datetime(2024, 6, 30, 23, 59, 59)
 _CURRENT_MONTH_START = datetime(2024, 7, 1, 0, 0, 0)
 
+# ── Phase 5 ML history window ──────────────────────────────────────────────
+# 90 days of history (2024-04-15 → 2024-07-14) + the current demo day
+# (2024-07-15). The seed generates orders across the full window using a
+# daily demand model (weekend_boost + seasonality + gaussian noise) so the
+# RandomForest has 90+ days × ~10 products × 7 producers ≈ 6300+ rows of
+# training data in ``stock_history``.
+_HISTORY_START = datetime(2024, 4, 15, 0, 0, 0)
+_HISTORY_END = datetime(2024, 7, 14, 23, 59, 59)
+_HISTORY_DAYS = 91  # 2024-04-15 → 2024-07-14 inclusive
 
-def _generate_orders(
+# Per-producer average orders/day (Phase 5). Tuned so the 91-day window +
+# July-current yields ~5000 orders total (was 2341 with the old June+July
+# split). The values reflect each producer's catalogue size + customer base:
+# Marie (vegetables, high volume) > Pierre (orchard) > Maraîchers > Élevage
+# ≈ Fromagerie > Vignoble > Apiculteur (niche, low volume).
+_PRODUCER_DAILY_ORDERS: dict[int, float] = {
+    42: 8.5,   # Marie — Ferme du Vallon
+    99: 8.0,   # Pierre — Verger de la Côte
+    17: 7.0,   # Maraîchers du Soleil
+    58: 6.5,   # Élevage des Prés
+    23: 7.0,   # Fromagerie du Col
+    71: 5.0,   # Apiculteur des Cimes
+    34: 6.0,   # Vignoble des Bruyères
+}
+
+# Per-category seasonality peak month (1..12). Used by both the seed demand
+# generator (so the rupture signal is correlated with the season) and the
+# ML feature builder (so the model learns seasonal demand).
+# légumes → July (summer tomatoes/courgettes), fruits → September (apples),
+# viande/charcuterie → July (BBQ), produits laitiers → December (raclette),
+# épicerie/boissons → December (holidays).
+_CATEGORY_PEAK_MONTH: dict[str, int] = {
+    "légumes": 7,
+    "fruits": 9,
+    "viande": 7,
+    "charcuterie": 7,
+    "produits laitiers": 12,
+    "épicerie": 12,
+    "boissons": 12,
+}
+
+# Categories that rotate fast (perishable) — the seed gives them a smaller
+# stock buffer and smaller restock quantity so they rupture more often.
+_PERISHABLE_CATEGORIES = {"légumes", "fruits", "viande", "charcuterie", "produits laitiers"}
+
+
+def _derive_product_meta(category: str, weight: int, max_weight: int) -> dict[str, Any]:
+    """Derive the three ML feature columns for a product row.
+
+    Returns ``{base_popularity, is_perishable, seasonality_peak_month}``.
+    ``base_popularity`` is normalised to 0.1..1.0 (small floor so even the
+    least-popular product has non-zero demand); ``is_perishable`` is True
+    for fast-rotating categories; ``seasonality_peak_month`` comes from
+    the lookup table above (None if the category is unknown).
+    """
+    norm = (weight / max_weight) if max_weight > 0 else 1.0
+    base_popularity = max(0.1, round(norm, 3))
+    return {
+        "base_popularity": base_popularity,
+        "is_perishable": category in _PERISHABLE_CATEGORIES,
+        "seasonality_peak_month": _CATEGORY_PEAK_MONTH.get(category),
+    }
+
+
+def _seasonality_factor(month: int, peak_month: int | None) -> float:
+    """Cosine seasonality factor in [0.6, 1.0].
+
+    1.0 at the peak month, 0.6 at the opposite month. Used to multiply the
+    daily demand so summer vegetables get a demand bump in July, etc. The
+    amplitude (0.2) is intentionally modest so off-season producers (e.g.
+    Fromagerie peaking in December) still rupture during the April-July
+    seed window — otherwise the RandomForest would never see a positive
+    example for those producers and the forecast demo would be flat.
+    """
+    if peak_month is None:
+        return 1.0
+    return 0.8 + 0.2 * math.cos((month - peak_month) * 2.0 * math.pi / 12.0)
+
+
+def _generate_orders_and_history(
     producer_id: int,
     shop_id: int,
     product_rows: list[dict[str, Any]],
     weights: list[int],
-    n_current: int,
-    n_june: int,
-) -> list[dict[str, Any]]:
-    """Build a list of order dicts (header + items) for one producer."""
-    orders_out: list[dict[str, Any]] = []
-    statuses = ["pending", "paid", "ready_for_pickup", "completed", "completed", "completed", "cancelled"]
-    order_id_pool = _RNG.randint(1000, 99999)
+    base_orders_per_day: float,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Build orders + stock_history rows for one producer over the 91-day
+    history window plus July-current (2024-04-15 → 2024-07-15).
 
-    def _make_orders_for_period(n: int, start: datetime, end: datetime) -> None:
-        nonlocal order_id_pool
-        if end <= start:
-            return
-        for _ in range(n):
+    Returns ``(orders, stock_history_rows)``.
+
+    Demand model
+    ------------
+    For each day d and each product p:
+        daily_demand[p, d] = max(0, round(
+            base_popularity[p] * scale
+            * weekend_boost(d)
+            * seasonality_factor(month(d), peak_month[p])
+            * gauss(1, 0.2)
+        ))
+    where ``scale = 1.5`` maps base_popularity (0.1..1.0) to ~0.15..1.5
+    units/day, and ``weekend_boost = 1.4`` on Fri/Sat else 1.0.
+
+    Orders per day
+    --------------
+    Each day gets ``round(base_orders_per_day * gauss(1, 0.15))`` orders.
+    Each order picks 1-5 products weighted by popularity, with quantity 1-6.
+
+    Stock simulation
+    ----------------
+    Each product starts with ``reorder_point + random`` units. Every 7 days
+    (per-product restock offset) it gets ``reorder_qty`` units added. Daily
+    sales decrement the stock; if daily_sales > stock_level the product
+    ruptures that day (stockout_flag=1, stock_level → 0). Perishables get a
+    tighter buffer (3 days) than shelf-stable products (5 days) so they
+    rupture more often.
+    """
+    orders_out: list[dict[str, Any]] = []
+    stock_history_out: list[dict[str, Any]] = []
+    order_id_pool = _RNG.randint(1000, 99999)
+    statuses = ["pending", "paid", "ready_for_pickup", "completed", "completed", "completed", "cancelled"]
+
+    max_w = max(weights) if weights else 1
+    # Per-product rolling stock state.
+    product_state: dict[int, dict[str, Any]] = {}
+    for idx, p in enumerate(product_rows):
+        meta = _derive_product_meta(p["category"], weights[idx], max_w)
+        # Inject the meta into the product row so the caller can persist it.
+        p["base_popularity"] = meta["base_popularity"]
+        p["is_perishable"] = meta["is_perishable"]
+        p["seasonality_peak_month"] = meta["seasonality_peak_month"]
+        # Demand scale 2.0 (Phase 5 bump from 1.5) so even off-season producers
+        # see enough demand to rupture during the 91-day window.
+        avg_daily_demand = max(0.5, meta["base_popularity"] * 2.0)
+        buffer_days = 3 if meta["is_perishable"] else 4
+        # Restock 5 days of demand every 7 days → 2-day deficit per cycle.
+        # Both perishables and non-perishables use the same restock quantity
+        # so all producers rupture occasionally (was 5/7 split, which left
+        # dairy/wine/honey producers with 0 ruptures in training data).
+        reorder_qty = avg_daily_demand * 5
+        product_state[p["id"]] = {
+            "stock_level": avg_daily_demand * buffer_days + _RNG.uniform(0, 5),
+            "reorder_qty": reorder_qty,
+            "reorder_point": avg_daily_demand * buffer_days,
+            "avg_daily_demand": avg_daily_demand,
+            "last_stockout_day": -10,
+            "restock_day_offset": _RNG.randint(0, 6),
+        }
+
+    # Generate per-day demand for the full history window.
+    daily_demand: dict[tuple[int, int], float] = {}
+    for day_idx in range(_HISTORY_DAYS):
+        date = _HISTORY_START + timedelta(days=day_idx)
+        dow = date.weekday()
+        is_weekend = dow in (4, 5)
+        weekend_boost = 1.4 if is_weekend else 1.0
+        month = date.month
+        for p in product_rows:
+            # Demand scale 2.0 (Phase 5 bump from 1.5).
+            base = p["base_popularity"] * 2.0
+            seasonality = _seasonality_factor(month, p["seasonality_peak_month"])
+            noise = _RNG.gauss(1, 0.2)
+            demand = base * weekend_boost * seasonality * noise
+            demand = max(0, round(demand))
+            daily_demand[(p["id"], day_idx)] = float(demand)
+
+    # ── Generate orders per day ──
+    for day_idx in range(_HISTORY_DAYS):
+        date = _HISTORY_START + timedelta(days=day_idx)
+        n_orders_today = max(0, int(round(base_orders_per_day * _RNG.gauss(1, 0.15))))
+        for _ in range(n_orders_today):
             order_id_pool += 1
-            # random timestamp in window
-            delta = (end - start).total_seconds()
-            ts = start + timedelta(seconds=_RNG.uniform(0, delta))
-            # Number of line items
-            n_items = _RNG.choices([1, 2, 3, 4, 5], weights=[40, 30, 15, 10, 5])[0]
-            chosen_products = _RNG.choices(
-                product_rows, weights=weights, k=n_items
+            ts = date + timedelta(
+                hours=_RNG.uniform(8, 19),
+                minutes=_RNG.uniform(0, 59),
+                seconds=_RNG.uniform(0, 59),
             )
+            n_items = _RNG.choices([1, 2, 3, 4, 5], weights=[40, 30, 15, 10, 5])[0]
+            chosen_products = _RNG.choices(product_rows, weights=weights, k=n_items)
             line_total = 0.0
             items: list[dict[str, Any]] = []
             for prod in chosen_products:
                 qty = float(_RNG.randint(1, 6))
-                # small random price variance around catalogue price
                 price = round(prod["price_eur"] * _RNG.uniform(0.95, 1.05), 2)
                 lt = round(qty * price, 2)
                 line_total += lt
@@ -645,9 +843,47 @@ def _generate_orders(
                 }
             )
 
-    _make_orders_for_period(n_june, _JUNE_START, _JUNE_END)
-    _make_orders_for_period(n_current, _CURRENT_MONTH_START, _REFERENCE_NOW)
-    return orders_out
+        # ── Stock simulation for this day ──
+        dow = date.weekday()
+        is_weekend = dow in (4, 5)
+        for p in product_rows:
+            pid = p["id"]
+            state = product_state[pid]
+            demand_today = daily_demand[(pid, day_idx)]
+            stock_start = state["stock_level"]
+            # Restock at the start of the day if it's the restock day.
+            restocked = 0.0
+            if day_idx % 7 == state["restock_day_offset"]:
+                restocked = state["reorder_qty"]
+                stock_start += restocked
+            # Apply demand; rupture if demand exceeds available stock.
+            stockout = False
+            available_after = stock_start - demand_today
+            if available_after < 0:
+                stockout = True
+                available_after = 0.0
+            stock_history_out.append(
+                {
+                    "producer_id": producer_id,
+                    "product_id": pid,
+                    "date": date,
+                    "stock_level": round(stock_start, 2),
+                    "reserved": 0.0,
+                    "available": round(max(stock_start, 0.0), 2),
+                    "daily_sales": round(demand_today, 2),
+                    "restocked_qty": round(restocked, 2),
+                    "stockout_flag": stockout,
+                    "day_of_week": dow,
+                    "is_weekend": is_weekend,
+                    "month": date.month,
+                    "created_at": _REFERENCE_NOW,
+                }
+            )
+            state["stock_level"] = available_after
+            if stockout:
+                state["last_stockout_day"] = day_idx
+
+    return orders_out, stock_history_out
 
 
 async def init_db() -> None:
@@ -718,8 +954,12 @@ async def init_db() -> None:
             )
 
             product_rows: list[dict[str, Any]] = []
+            max_w = max(prod["weights"]) if prod["weights"] else 1
             for idx, (pname, cat, unit, price, bio) in enumerate(prod["products"]):
                 pid = prod["id"] * 100 + idx + 1
+                # Phase 5 ML meta — derived from category + weight so we
+                # don't have to extend the _PRODUCERS tuple schema.
+                meta = _derive_product_meta(cat, prod["weights"][idx], max_w)
                 row = {
                     "id": pid,
                     "producer_id": prod["id"],
@@ -733,48 +973,121 @@ async def init_db() -> None:
                     "is_organic": bio,
                     "is_available": True,
                     "created_at": created_at + timedelta(days=30 + idx),
+                    "base_popularity": meta["base_popularity"],
+                    "is_perishable": meta["is_perishable"],
+                    "seasonality_peak_month": meta["seasonality_peak_month"],
                 }
                 product_rows.append(row)
                 await conn.execute(products.insert().values(**row))
 
-                # Stock — varies by product (some low for the "rupture" demo)
-                base_qty = _RNG.uniform(5, 50)
-                reserved = _RNG.uniform(0, min(base_qty * 0.3, 10))
-                # Force one or two products into a low-stock situation so the
-                # "stock manquant samedi" demo returns something interesting.
-                if idx == 3:  # 4th product
-                    base_qty = _RNG.uniform(2, 6)
-                    reserved = base_qty - 1
+                # Stock — placeholder; the real current snapshot is written
+                # AFTER the order+history simulation below (we set it to the
+                # end-of-day stock_level on the last simulated day). For now
+                # we insert a conservative placeholder so the stocks table
+                # exists with the right producer scoping; the post-simulation
+                # UPDATE overwrites quantity/reserved/available.
                 await conn.execute(
                     stocks.insert().values(
                         id=pid,  # one stock row per product
                         producer_id=prod["id"],
                         product_id=pid,
                         shop_id=shop_id,
-                        quantity=round(base_qty, 2),
-                        reserved=round(reserved, 2),
-                        available=round(max(base_qty - reserved, 0), 2),
-                        updated_at=_REFERENCE_NOW - timedelta(hours=_RNG.randint(1, 48)),
+                        quantity=20.0,
+                        reserved=0.0,
+                        available=20.0,
+                        updated_at=_REFERENCE_NOW,
                     )
                 )
             all_product_rows[prod["id"]] = product_rows
 
-        # ── orders + order_items + payments + pickup_bookings ──
-        # Build the orders structure first (in-memory), then insert in batches.
+        # ── Phase 5 — generate orders + stock_history per producer ──
+        # Replaces the old _generate_orders(n_june, n_current) call. Each
+        # producer gets a 91-day history window with daily demand modelled
+        # as base_popularity × weekend_boost × seasonality × gaussian noise.
+        # The stock_history rows drive the ML training; the orders drive
+        # the existing top_products / net_revenue / weekly_sales SQL paths.
         all_orders: list[dict[str, Any]] = []
+        all_stock_history: list[dict[str, Any]] = []
+        # Per-product final stock_level (end of simulation) so we can UPDATE
+        # the stocks table after the loop.
+        final_stock_by_product: dict[int, dict[str, float]] = {}
         for prod in _PRODUCERS:
             shop_id = prod["id"] * 10 + 1
             product_rows = all_product_rows[prod["id"]]
             weights = prod["weights"]
-            orders_for_prod = _generate_orders(
+            base_daily = _PRODUCER_DAILY_ORDERS.get(prod["id"], 5.0)
+            orders_for_prod, history_for_prod = _generate_orders_and_history(
                 producer_id=prod["id"],
                 shop_id=shop_id,
                 product_rows=product_rows,
                 weights=weights,
-                n_current=prod["orders_per_month"]["current"],
-                n_june=prod["orders_per_month"]["june"],
+                base_orders_per_day=base_daily,
             )
             all_orders.extend(orders_for_prod)
+            all_stock_history.extend(history_for_prod)
+            # Capture the last snapshot per product to UPDATE the stocks
+            # table after this loop (last-write-wins: history_for_prod is
+            # ordered by day, so the last row per product is the latest).
+            # NOTE: snap["stock_level"] is the START-of-day level. The
+            # end-of-day level is start - daily_sales (restock was already
+            # added to start). Cap at 0 — rupture zeroes the stock.
+            for snap in history_for_prod:
+                end_of_day = snap["stock_level"] - snap["daily_sales"]
+                final_stock_by_product[snap["product_id"]] = {
+                    "stock_level": max(end_of_day, 0.0),
+                }
+
+        # Force one or two products per producer into a low-stock situation
+        # so the "stock manquant samedi" demo returns something interesting.
+        # We do this AFTER the simulation by zeroing the restock on the last
+        # simulated day for the 4th product (idx=3) of each producer — same
+        # pattern as the pre-Phase-5 seed, so existing eval cases (eval-007
+        # … eval-011) keep their expected low-stock references.
+        for prod in _PRODUCERS:
+            product_rows = all_product_rows[prod["id"]]
+            for idx in (3, 5):
+                if idx < len(product_rows):
+                    pid = product_rows[idx]["id"]
+                    if pid in final_stock_by_product:
+                        final_stock_by_product[pid]["stock_level"] = _RNG.uniform(2.0, 7.0)
+
+        # UPDATE the stocks table with the final per-product stock_level.
+        for pid, info in final_stock_by_product.items():
+            level = round(float(info["stock_level"]), 2)
+            await conn.execute(
+                stocks.update()
+                .where(stocks.c.product_id == pid)
+                .values(
+                    quantity=level,
+                    reserved=0.0,
+                    available=level,
+                    updated_at=_REFERENCE_NOW,
+                )
+            )
+
+        # Insert the stock_history rows (one INSERT per row — fine for
+        # ~7000 rows; SQLite handles it in well under a second).
+        sh_counter = 0
+        for snap in all_stock_history:
+            sh_counter += 1
+            await conn.execute(
+                stock_history.insert().values(
+                    id=sh_counter,
+                    producer_id=snap["producer_id"],
+                    product_id=snap["product_id"],
+                    date=snap["date"],
+                    stock_level=snap["stock_level"],
+                    reserved=snap["reserved"],
+                    available=snap["available"],
+                    daily_sales=snap["daily_sales"],
+                    restocked_qty=snap["restocked_qty"],
+                    stockout_flag=snap["stockout_flag"],
+                    day_of_week=snap["day_of_week"],
+                    is_weekend=snap["is_weekend"],
+                    month=snap["month"],
+                    created_at=snap["created_at"],
+                )
+            )
 
         # Insert orders + items + payments
         order_counter = 0
@@ -860,8 +1173,37 @@ async def init_db() -> None:
                 select(func.count()).select_from(orders).where(orders.c.producer_id == pid)
             )
             n = r.scalar_one()
-            logger.info("Producer %s (%s): %d orders seeded", pid, name, n)
-    logger.info("Database seeded — %d producers, %d orders total", len(_PRODUCERS), len(all_orders))
+            r2 = await conn.execute(
+                select(func.count()).select_from(stock_history).where(
+                    stock_history.c.producer_id == pid
+                )
+            )
+            n_sh = r2.scalar_one()
+            r3 = await conn.execute(
+                select(func.count()).select_from(stock_history).where(
+                    (stock_history.c.producer_id == pid)
+                    & (stock_history.c.stockout_flag.is_(True))
+                )
+            )
+            n_rupt = r3.scalar_one()
+            logger.info(
+                "Producer %s (%s): %d orders, %d stock_history rows (%d ruptures)",
+                pid, name, n, n_sh, n_rupt,
+            )
+        r_total_sh = await conn.execute(select(func.count()).select_from(stock_history))
+        n_total_sh = r_total_sh.scalar_one()
+        r_total_rupt = await conn.execute(
+            select(func.count()).select_from(stock_history).where(
+                stock_history.c.stockout_flag.is_(True)
+            )
+        )
+        n_total_rupt = r_total_rupt.scalar_one()
+    logger.info(
+        "Database seeded — %d producers, %d orders, %d stock_history rows "
+        "(%d ruptures — %.1f%% prevalence)",
+        len(_PRODUCERS), len(all_orders), n_total_sh, n_total_rupt,
+        (100.0 * n_total_rupt / n_total_sh) if n_total_sh else 0.0,
+    )
 
     # ── Documentary RAG seed — 4 fictitious DP documents ──
     # These power the documentary intent (CGV, FAQ, onboarding procedure,

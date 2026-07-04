@@ -48,6 +48,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.orchestrator import AgentOrchestrator
 from app.connectors.sqlite_connector import SqliteConnector
+from app.tools.forecast_tool import ForecastTool
 from app.tools.rag_tool import RagSearchTool
 from app.tools.sql_tool import SqlReadTool
 from app.tracing import get_tracer
@@ -126,6 +127,18 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             role=req.role,
             tracer=get_tracer(),
         )
+        # Phase 5 — build the forecast tool with the same identity context so
+        # stock-shortage questions are scoped identically. The forecast tool
+        # enforces producer scoping internally (queries stock_history /
+        # stocks / products WHERE producer_id = :producer_id) so a producer
+        # never sees another producer's ML predictions, even with a model bug.
+        forecast_tool = ForecastTool(
+            connector=connector,
+            tenant_id="dp",
+            producer_id=req.producer_id,
+            role=req.role,
+            tracer=get_tracer(),
+        )
         orchestrator = AgentOrchestrator(
             sql_tool=sql_tool,
             role=req.role,
@@ -133,6 +146,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             identity_id=req.identity_id,
             tracer=get_tracer(),
             rag_tool=rag_tool,
+            forecast_tool=forecast_tool,
         )
         response = await orchestrator.run(req.message)
 
@@ -154,6 +168,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             "tables_touched": response.tables_touched,
             "sources": response.sources,
             "ops_analysis": response.ops_analysis,
+            "forecast_predictions": response.forecast_predictions,
             "trace_id": response.trace_id,
         }
     except Exception as exc:  # noqa: BLE001 — never crash the frontend
@@ -176,6 +191,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             "tables_touched": [],
             "sources": [],
             "ops_analysis": None,
+            "forecast_predictions": None,
             "trace_id": None,
             "error": str(exc),
         }
