@@ -9,23 +9,23 @@ import type {
 } from "./types";
 
 // ---------------------------------------------------------------------------
-// Backend contract — POST /api/chat?XTransformPort=8001
+// Backend contract — POST /api/chat (proxied by Next.js route handler)
 // ---------------------------------------------------------------------------
 //
-// The FastAPI service (built in parallel under agentic-service/) speaks
-// snake_case JSON. The frontend `AssistantResponse` type uses camelCase, so we
-// map fields 1:1 here. The semantic shape is identical: answer, sql, scope
-// clause, chart spec, token counts, latency, tool calls, trace steps, security
-// checks, refusal flag. The backend also returns a `tables_touched` array
-// which we ignore (the prototype UI does not display it yet).
+// The FastAPI service (under agentic-service/) speaks snake_case JSON. The
+// frontend `AssistantResponse` type uses camelCase, so we map fields 1:1 here.
+// The semantic shape is identical: answer, sql, scope clause, chart spec,
+// token counts, latency, tool calls, trace steps, security checks, refusal
+// flag. The backend also returns a `tables_touched` array which we ignore.
 //
-// The endpoint is reached through the Caddy gateway: any request carrying
-// `?XTransformPort=8001` is reverse-proxied to `localhost:8001` preserving
-// path + body. We MUST use a relative URL so the browser origin stays on the
-// preview host and Caddy can rewrite the port.
+// The browser calls the relative `/api/chat` (same origin). A Next.js route
+// handler at `src/app/api/chat/route.ts` proxies the request server-side to
+// `http://localhost:8001/api/chat`. This avoids any dependency on the Caddy
+// gateway (port 81) or `XTransformPort` query — the proxy works regardless
+// of which port the Preview Panel uses to serve the app.
 
-const BACKEND_URL = "/api/chat?XTransformPort=8001";
-const BACKEND_TIMEOUT_MS = 8000;
+const BACKEND_URL = "/api/chat";
+const BACKEND_TIMEOUT_MS = 12000;
 
 // -- Raw backend types (snake_case) ----------------------------------------
 
