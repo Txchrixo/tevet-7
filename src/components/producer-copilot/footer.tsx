@@ -38,6 +38,7 @@ export function Footer() {
   const user = useCopilotStore((s) => s.user);
   const token = useCopilotStore((s) => s.token);
   const demoFallback = useCopilotStore((s) => s.demoFallback);
+  const activeTenant = useCopilotStore((s) => s.activeTenant);
   const { label, dot } = statusConfig(backendStatus);
 
   // Auth status label — drives the left-side text in the footer.
@@ -51,14 +52,23 @@ export function Footer() {
     authStatus = "Mode démo (backend hors ligne)";
   }
 
+  // Active tenant name — dynamic so the footer stays correct after a tenant
+  // switch. Falls back to "Drive Producteur" in demo mode (the seeded demo
+  // tenant). The platform identity (Tevet-7) is shown on the left; this is
+  // the tenant CONTEXT, not the app name.
+  const tenantName = activeTenant?.name ?? "Drive Producteur";
+
   return (
     <footer className="mt-auto border-t border-border bg-background">
       <div className="flex h-9 items-center justify-between gap-2 px-3 text-[11px] text-muted-foreground sm:px-4">
         <span className="truncate font-body uppercase tracking-wide">
-          Tevet-7 <span className="text-muted-foreground/50">·</span> {authStatus}
+          Tevet-7{" "}
+          <span className="text-muted-foreground/50">·</span> Plateforme
+          d'agents IA{" "}
+          <span className="text-muted-foreground/50">·</span> {authStatus}
         </span>
         <span className="hidden truncate text-center font-body uppercase tracking-wide sm:inline">
-          Drive Producteur tenant
+          Tenant : {tenantName}
         </span>
         <span className="flex shrink-0 items-center gap-2.5 font-body uppercase tracking-wide sm:gap-3">
           <span

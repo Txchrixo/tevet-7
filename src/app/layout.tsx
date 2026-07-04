@@ -4,9 +4,9 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "Tevet-7 — Producer Copilot (Drive Producteur)",
+  title: "Tevet-7 — Configurable AI Agent Platform",
   description:
-    "Tevet-7 — plateforme d'agents IA configurable. Producer Copilot Phase 0 pour Drive Producteur : agent SQL scopé par tenant avec row-level security visible.",
+    "Tevet-7 — plateforme d'agents IA configurable. Premier tenant : Drive Producteur (marketplace circuit court). Agent SQL scopé par tenant avec row-level security visible, file d'approbation humaine (Ops Console) et recherche documentaire (RAG)."
 };
 
 export default function RootLayout({

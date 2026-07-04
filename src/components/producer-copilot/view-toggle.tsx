@@ -7,9 +7,17 @@ import { useCopilotStore } from "@/lib/store";
 import { MessageSquare, ShieldCheck } from "@/components/ui/feather-icons";
 
 /**
- * Segmented control — switches the admin between the Producer Copilot (chat)
- * and the Ops Console (approval queue). Admin-only: returns `null` for any
+ * Segmented control — switches the admin between the Agent (chat) and
+ * the Ops Console (approval queue). Admin-only: returns `null` for any
  * other identity so producers never see the toggle.
+ *
+ * Label choice (Task 35 — Niveau 1 rebranding): we use "Agent" rather
+ * than the old producer-specific label or a generic "Copilot". Tevet-7 is
+ * a configurable AI agent PLATFORM — Drive Producteur is just the first
+ * tenant. The chat surface is THE agent view of the platform, so
+ * "Agent" is platform-neutral and reads naturally next to "Ops Console".
+ * The internal store value stays "copilot" to avoid a schema rename
+ * (the user never sees that string).
  *
  * The active segment uses the primary surface (filled), the inactive one
  * uses a ghost style. Both buttons keep the same height/width for a stable
@@ -31,7 +39,7 @@ export function ViewToggle() {
     >
       <ToggleSegment
         active={view === "copilot"}
-        label="Producer Copilot"
+        label="Agent"
         icon={<MessageSquare size={14} />}
         onClick={() => setView("copilot")}
       />

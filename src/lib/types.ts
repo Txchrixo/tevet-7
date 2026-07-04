@@ -1,4 +1,4 @@
-// Core domain types for the Tevet-7 Producer Copilot prototype.
+// Core domain types for the Tevet-7 platform (configurable AI agent platform).
 
 export type IdentityKind = "producer" | "admin";
 

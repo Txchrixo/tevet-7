@@ -158,7 +158,7 @@ export default function Home() {
               <div className="border-t border-border bg-background px-3 py-3 sm:px-4">
                 <ChatInput />
                 <p className="mt-1.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground">
-                  Prototype Phase 0 — réponses simulées
+                  Prototype Phase 6a — réponses simulées
                 </p>
               </div>
             </>
@@ -234,8 +234,9 @@ function WelcomeState({
           Bonjour {identity.name.split(" ")[0]}
         </h1>
         <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
-          <span className="font-medium text-foreground">Tevet-7</span> · Producer
-          Copilot. Posez-moi une question sur vos ventes, votre stock ou vos
+          Je suis votre{" "}
+          <span className="font-medium text-foreground">agent Tevet-7</span>.{" "}
+          Posez-moi une question sur vos ventes, votre stock ou vos
           revenus — chaque réponse est sécurisée par un scope{" "}
           <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[0.85em] text-accent">
             producer_id

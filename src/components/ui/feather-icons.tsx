@@ -5,7 +5,7 @@
  * Each icon is a functional React component accepting
  * `{ size?, className?, strokeWidth? }` defaulting to size=20, strokeWidth=1.75.
  *
- * These are the only icons used by the Producer Copilot UI and the home page.
+ * These are the only icons used by the Tevet-7 UI and the home page.
  * shadcn/ui internal components (e.g. dropdown-menu) keep their own lucide-react
  * imports for chevrons — those are NOT our icons and are left untouched.
  */

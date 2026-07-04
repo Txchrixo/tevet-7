@@ -132,10 +132,11 @@ export function AuthScreen() {
           <div className="mt-4">
             <BrandLogo size={26} />
           </div>
-          <h1 className="mt-4 text-2xl">Producer Copilot</h1>
+          <h1 className="mt-4 text-2xl">Tevet-7</h1>
           <p className="mt-1.5 max-w-xs text-sm text-muted-foreground">
-            Connectez-vous pour accéder à votre copilot Drive Producteur.
-            Chaque question est sécurisée par un scope producteur.
+            Plateforme d'agents IA configurable. Connectez-vous pour
+            accéder à votre agent — chaque question est sécurisée par un
+            scope tenant.
           </p>
         </div>
 
@@ -288,9 +289,9 @@ export function AuthScreen() {
           )}
 
           <p className="mt-4 text-center text-[11px] text-muted-foreground">
-            La démo vous connecte en tant que{" "}
-            <span className="font-medium text-foreground">Marie Dubois</span>{" "}
-            (Producer #42 · Ferme du Vallon).
+            La démo vous connecte sur le tenant{" "}
+            <span className="font-medium text-foreground">Drive Producteur</span>{" "}
+            en tant que Marie Dubois (Producer #42 · Ferme du Vallon).
           </p>
         </div>
 

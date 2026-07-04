@@ -70,14 +70,25 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
 
       <Separator orientation="vertical" className="hidden h-5 md:block" />
 
+      {/* Active tenant badge — context indicator (NOT the app name).
+          The app identity is the BrandLogo (Tevet-7 heptagon + wordmark)
+          above; this badge surfaces the ACTIVE tenant so the user always
+          knows which tenant's data they're operating on. Phase 6b will make
+          this a dropdown to switch tenants when the user has multiple
+          memberships; for now it just displays the active tenant name.
+          Visually muted + bordered so it reads as context, not as the brand. */}
       <Badge
         variant="outline"
-        className="hidden uppercase tracking-wide text-[11px] font-body sm:inline-flex"
+        className="hidden gap-1.5 border-border bg-secondary/50 px-2 py-0.5 text-[10px] font-body uppercase tracking-wide text-muted-foreground sm:inline-flex"
+        title={`Tenant actif : ${
+          isAuthenticated && activeTenant ? activeTenant.name : "Drive Producteur"
+        }`}
       >
-        Drive Producteur
+        <span className="size-1.5 rounded-full bg-accent/70" aria-hidden />
+        {isAuthenticated && activeTenant ? activeTenant.name : "Drive Producteur"}
       </Badge>
 
-      {/* Admin-only view toggle — switches between Producer Copilot and Ops Console.
+      {/* Admin-only view toggle — switches between the Agent (chat) and Ops Console.
           Returns null for producers so the header layout is identical to before.
           On mobile the labels collapse to icon-only. */}
       <ViewToggle />
@@ -121,7 +132,7 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
           variant="outline"
           className="hidden uppercase tracking-wide text-[11px] font-body sm:inline-flex"
         >
-          {isAuthenticated ? "Phase 6a" : demoFallback ? "Démo" : "Phase 0"}
+          {demoFallback ? "Démo" : "Phase 6a"}
         </Badge>
 
         <Button
