@@ -270,3 +270,72 @@ export interface MeResult {
   user: User;
   memberships: Tenant[];
 }
+
+// ---------------------------------------------------------------------------
+// Onboarding wizard (Phase 6b)
+// ---------------------------------------------------------------------------
+//
+// A freshly created tenant has no data connector and no schema/roles
+// configured. The onboarding wizard walks the user through 4 steps:
+//   1. Connect data (Postgres URL or CSV file upload)
+//   2. Detect schema (auto-detect tables/columns, pick which to expose)
+//   3. Define roles (admin + scoped roles with allowed tables)
+//   4. Ready (summary + redirect to the agent chat)
+//
+// All of these types are persisted server-side on the backend; the frontend
+// keeps a working copy in the store while the user is in the wizard.
+
+/** The data source the tenant connected to during onboarding. */
+export type ConnectorType = "postgres" | "csv" | "sqlite_demo";
+
+/** Result of POST /onboarding/connect — the connection test outcome. */
+export interface ConnectionTest {
+  ok: boolean;
+  error: string | null;
+  tables_count: number;
+}
+
+/** A single column inside an auto-detected table. */
+export interface SchemaColumn {
+  name: string;
+  type: string;
+  description: string;
+  /** User can toggle whether the agent sees this column. */
+  selected: boolean;
+}
+
+/** A table detected from the connector (Postgres introspection or CSV header). */
+export interface SchemaTable {
+  name: string;
+  description: string;
+  columns: SchemaColumn[];
+  /** User can toggle whether the agent sees this table. */
+  selected: boolean;
+  /**
+   * The column the user picked as the RLS scope (e.g. "producer_id" or
+   * "team_id"). Null = no row-level scoping on this table.
+   */
+  scope_column: string | null;
+}
+
+/** Auto-detected schema draft returned by /onboarding/detect-schema. */
+export interface SchemaDraft {
+  tables: SchemaTable[];
+}
+
+/** A role defined in step 3 of the wizard. */
+export interface RoleConfig {
+  name: string;
+  /** Which column to scope by (null = admin / unscoped). */
+  scope_column: string | null;
+  /** Tables this role is allowed to query. */
+  allowed_tables: string[];
+}
+
+/** GET /onboarding/status — drives the wizard gate in page.tsx. */
+export interface OnboardingStatus {
+  onboarded: boolean;
+  connector_type: ConnectorType | null;
+  schema_tables_count: number;
+  roles_count: number;
+}

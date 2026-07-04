@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Check,
   ChevronDown,
+  Database,
   Eye,
   LogOut,
   Menu,
@@ -49,6 +50,11 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
   const logout = useCopilotStore((s) => s.logout);
   const setActiveTenant = useCopilotStore((s) => s.setActiveTenant);
   const demoFallback = useCopilotStore((s) => s.demoFallback);
+
+  // Phase 6b — re-open the onboarding wizard from the user menu
+  // ("Configurer le workspace"). For an already-onboarded tenant this is
+  // the "edit" entry point; for a not-yet-onboarded tenant it opens step 1.
+  const startOnboarding = useCopilotStore((s) => s.startOnboarding);
 
   const isAuthenticated = !!user && !!token;
 
@@ -255,6 +261,36 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
                       </DropdownMenuItem>
                     );
                   })}
+                  <DropdownMenuSeparator />
+                </>
+              )}
+
+              {/* Configure workspace — re-opens the onboarding wizard for
+                  the active tenant (Phase 6b "edit" entry point). For a
+                  not-yet-onboarded tenant this opens step 1; for an
+                  already-onboarded tenant it opens step 1 too (the wizard
+                  pre-fills nothing today, but the user can re-test + save
+                  to update the configuration). */}
+              {activeTenant && (
+                <>
+                  <DropdownMenuItem
+                    className="gap-2 p-2"
+                    onSelect={() => {
+                      startOnboarding(activeTenant.tenant_id);
+                    }}
+                  >
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-foreground">
+                      <Database size={13} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium text-foreground">
+                        Configurer le workspace
+                      </div>
+                      <div className="truncate text-[11px] text-muted-foreground">
+                        Connexion, schéma, rôles
+                      </div>
+                    </div>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                 </>
               )}

@@ -1,6 +1,10 @@
 """``/api/approvals`` — Ops Copilot human-in-the-loop management endpoints.
 
 Phase 4 — Ops Copilot backend (Task 26).
+Phase 6b — multi-tenant: approval_requests + producer_onboardings are scoped
+by ``tenant_id`` (a column on both tables). New tenants (CSV / Postgres)
+get their own empty approval queue; the admin UI shows their own tenant's
+pending approvals only. The ``tenant_id`` comes from the JWT (Phase 6a).
 
 Endpoints
 =========

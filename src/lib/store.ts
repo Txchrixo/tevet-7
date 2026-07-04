@@ -13,11 +13,17 @@ import {
 } from "./api";
 import {
   activateTenant,
+  authHeader,
   getMe,
   login as loginApi,
   signup as signupApi,
   AuthApiError,
 } from "./auth-api";
+import {
+  completeOnboarding as completeOnboardingApi,
+  getOnboardingStatus,
+  OnboardingApiError,
+} from "./onboarding-api";
 import {
   DEFAULT_IDENTITY_ID,
   IDENTITIES,
@@ -28,8 +34,12 @@ import type {
   ApprovalSummary,
   AssistantResponse,
   ChatMessage,
+  ConnectorType,
   DocumentInfo,
   Identity,
+  OnboardingStatus,
+  RoleConfig,
+  SchemaDraft,
   Tenant,
   User,
 } from "./types";
@@ -38,6 +48,20 @@ let idCounter = 0;
 function makeId(prefix: string): string {
   idCounter += 1;
   return `${prefix}-${Date.now().toString(36)}-${idCounter}`;
+}
+
+/**
+ * Slugify a free-form name into a URL-safe tenant slug. Used as the default
+ * `slug` when the create-tenant form is submitted without an explicit slug.
+ */
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "workspace";
 }
 
 /** Minimum typing-indicator duration so the assistant reveal feels smooth. */
@@ -63,6 +87,40 @@ function sleep(ms: number): Promise<void> {
 }
 
 export type BackendStatus = "connected" | "demo" | "unknown";
+
+// ---------------------------------------------------------------------------
+// Onboarding wizard (Phase 6b)
+// ---------------------------------------------------------------------------
+
+/**
+ * The wizard's working data. Lives in the store so it survives step
+ * navigation (back/forward) without a re-fetch. Cleared on
+ * `exitOnboarding` / `finishOnboarding`.
+ */
+export interface OnboardingData {
+  /** Which connector the user picked in step 1. */
+  connectorType: ConnectorType | null;
+  /** PostgreSQL URL (only meaningful when `connectorType === "postgres"`). */
+  connectionUrl: string;
+  /** CSV file (only meaningful when `connectorType === "csv"`). Held in
+   * memory only — re-sent on each subsequent connect/detect call. */
+  csvFile: File | null;
+  /** Result of the last successful connection test (step 1). */
+  connectionTest: { ok: boolean; tables_count: number } | null;
+  /** Schema draft returned by /onboarding/detect-schema (step 2). */
+  schemaDraft: SchemaDraft | null;
+  /** Roles configured in step 3. */
+  rolesConfig: RoleConfig[];
+}
+
+const INITIAL_ONBOARDING_DATA: OnboardingData = {
+  connectorType: null,
+  connectionUrl: "",
+  csvFile: null,
+  connectionTest: null,
+  schemaDraft: null,
+  rolesConfig: [],
+};
 
 // ---------------------------------------------------------------------------
 // Auth helpers
@@ -231,6 +289,34 @@ interface CopilotState {
   /** True while a decision POST is in flight (disables the action buttons). */
   decisionInFlight: boolean;
 
+  // -- Onboarding wizard (Phase 6b) -----------------------------------------
+  /**
+   * The wizard step the user is currently on:
+   *   - 0 = not started (the gate has not decided to show the wizard)
+   *   - 1 = Connect data
+   *   - 2 = Detect schema
+   *   - 3 = Define roles
+   *   - 4 = Ready
+   *
+   * When `onboardingStep > 0`, the page renders the wizard instead of the
+   * chat — even if the active tenant's backend status says it's already
+   * onboarded. This lets the user re-open the wizard from the header menu
+   * ("Configurer le workspace") to edit the configuration.
+   */
+  onboardingStep: number;
+  /** The tenant the wizard is operating on. Null = no wizard in flight. */
+  onboardingTenantId: string | null;
+  /** Working copy of the wizard's data — survives step navigation. */
+  onboardingData: OnboardingData;
+  /** Cached onboarding status for the active tenant (drives the gate). */
+  onboardingStatus: OnboardingStatus | null;
+  /** True while a wizard API call (connect/detect/save/complete) is in flight. */
+  onboardingLoading: boolean;
+  /** Last wizard error message — surfaced inline in the wizard. */
+  onboardingError: string | null;
+  /** True while GET /onboarding/status is in flight (drives the gate loader). */
+  onboardingStatusLoading: boolean;
+
   // -- Auth actions ---------------------------------------------------------
   /**
    * Log in with email + password. On success: persists the JWT to
@@ -294,6 +380,44 @@ interface CopilotState {
     decision: ApprovalDecision,
     reason: string,
   ) => Promise<void>;
+
+  // -- Onboarding actions (Phase 6b) ----------------------------------------
+  /**
+   * Create a new tenant (workspace) for the authenticated user. Used by the
+   * AuthScreen's "Créer votre workspace" flow after a fresh signup. The
+   * backend creates the tenant + the user's first membership (role=admin)
+   * and returns a refreshed JWT with the new tenant_id claim.
+   *
+   * On success: persists the new JWT, refreshes the tenant list, and starts
+   * the onboarding wizard for the new tenant.
+   */
+  createTenant: (name: string, slug: string) => Promise<Tenant>;
+  /**
+   * Open the onboarding wizard for the given tenant. Resets the wizard's
+   * working copy to a clean state and sets `onboardingStep=1`.
+   */
+  startOnboarding: (tenantId: string) => void;
+  /** Close the wizard without completing it (cancel button). */
+  exitOnboarding: () => void;
+  /** Move the wizard to the given step (1-4). */
+  setOnboardingStep: (step: number) => void;
+  /** Patch the wizard's working data (partial merge). */
+  updateOnboardingData: (partial: Partial<OnboardingData>) => void;
+  /** Clear the last wizard error (used when the user re-tries). */
+  clearOnboardingError: () => void;
+  /**
+   * Mark the active tenant as onboarded and close the wizard. Calls the
+   * backend `/onboarding/complete` endpoint, refreshes the tenant list +
+   * status, and resets the wizard state. The chat becomes visible again.
+   */
+  finishOnboarding: () => Promise<void>;
+  /**
+   * Fetch the onboarding status for the active tenant. Used by the page
+   * gate on mount and after tenant switches. A 404 / network error is
+   * treated as "already onboarded" so the demo flow isn't broken while the
+   * backend onboarding API lands in parallel.
+   */
+  loadOnboardingStatus: (tenantId: string) => Promise<void>;
 }
 
 function identityById(id: string): Identity {
@@ -368,6 +492,15 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   selectedApprovalDetail: null,
   decisionInFlight: false,
 
+  // -- Onboarding (Phase 6b) ------------------------------------------------
+  onboardingStep: 0,
+  onboardingTenantId: null,
+  onboardingData: INITIAL_ONBOARDING_DATA,
+  onboardingStatus: null,
+  onboardingLoading: false,
+  onboardingError: null,
+  onboardingStatusLoading: false,
+
   // -----------------------------------------------------------------------
   // Auth actions
   // -----------------------------------------------------------------------
@@ -402,6 +535,23 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       set({ activeTenant, authLoading: false });
       // Recompute the chat identity from the new auth state.
       set(recomputeIdentity(get()));
+      // Check onboarding status for the active tenant — the page gate reads
+      // this to decide whether to render the wizard or the chat. Demo
+      // tenants (is_demo=true) are always considered onboarded.
+      if (activeTenant) {
+        if (activeTenant.is_demo) {
+          set({
+            onboardingStatus: {
+              onboarded: true,
+              connector_type: "sqlite_demo",
+              schema_tables_count: 0,
+              roles_count: 0,
+            },
+          });
+        } else {
+          void get().loadOnboardingStatus(activeTenant.tenant_id);
+        }
+      }
       toast.success(`Connecté en tant que ${user.name || user.email}`, {
         description: activeTenant
           ? `${activeTenant.name} · ${activeTenant.role}`
@@ -445,6 +595,26 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         tenants.find((t) => t.tenant_id === tenantId) ?? null;
       set({ activeTenant, authLoading: false });
       set(recomputeIdentity(get()));
+      // Check onboarding status — a freshly created user with no tenants
+      // leaves the status null (the AuthScreen will prompt to create one).
+      if (activeTenant) {
+        if (activeTenant.is_demo) {
+          set({
+            onboardingStatus: {
+              onboarded: true,
+              connector_type: "sqlite_demo",
+              schema_tables_count: 0,
+              roles_count: 0,
+            },
+          });
+        } else {
+          void get().loadOnboardingStatus(activeTenant.tenant_id);
+        }
+      } else {
+        // No active tenant → reset the onboarding status so the AuthScreen
+        // can prompt to create a workspace.
+        set({ onboardingStatus: null });
+      }
       if (tenants.length === 0) {
         toast.success(`Compte créé — bienvenue ${user.name || user.email}`, {
           description:
@@ -492,6 +662,14 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       view: "copilot",
       identityId: DEFAULT_IDENTITY_ID,
       identity: identityById(DEFAULT_IDENTITY_ID),
+      // Reset the onboarding wizard — a logged-out user can't be onboarding.
+      onboardingStep: 0,
+      onboardingTenantId: null,
+      onboardingData: { ...INITIAL_ONBOARDING_DATA },
+      onboardingStatus: null,
+      onboardingError: null,
+      onboardingLoading: false,
+      onboardingStatusLoading: false,
     });
     toast.success("Déconnecté", {
       description: "Vous êtes en mode démo (identités mock).",
@@ -507,8 +685,37 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       writeTokenToStorage(newToken);
       const activeTenant =
         get().tenants.find((t) => t.tenant_id === tenantId) ?? null;
-      set({ token: newToken, activeTenant, authLoading: false });
+      // Reset the onboarding wizard — switching tenant invalidates any
+      // in-progress wizard state (it was for a different tenant).
+      set({
+        token: newToken,
+        activeTenant,
+        authLoading: false,
+        onboardingStep: 0,
+        onboardingTenantId: null,
+        onboardingData: { ...INITIAL_ONBOARDING_DATA },
+        onboardingError: null,
+        onboardingLoading: false,
+      });
       set(recomputeIdentity(get()));
+      // Check onboarding status for the new active tenant — the page gate
+      // reads this to decide whether to render the wizard or the chat.
+      if (activeTenant) {
+        if (activeTenant.is_demo) {
+          set({
+            onboardingStatus: {
+              onboarded: true,
+              connector_type: "sqlite_demo",
+              schema_tables_count: 0,
+              roles_count: 0,
+            },
+          });
+        } else {
+          void get().loadOnboardingStatus(activeTenant.tenant_id);
+        }
+      } else {
+        set({ onboardingStatus: null });
+      }
       toast.success("Tenant activé", {
         description: activeTenant?.name ?? tenantId,
       });
@@ -545,6 +752,23 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         authLoading: false,
       });
       set(recomputeIdentity(get()));
+      // Check onboarding status for the active tenant — drives the page gate.
+      if (activeTenant) {
+        if (activeTenant.is_demo) {
+          set({
+            onboardingStatus: {
+              onboarded: true,
+              connector_type: "sqlite_demo",
+              schema_tables_count: 0,
+              roles_count: 0,
+            },
+          });
+        } else {
+          void get().loadOnboardingStatus(activeTenant.tenant_id);
+        }
+      } else {
+        set({ onboardingStatus: null });
+      }
     } catch (err) {
       // The token is invalid/expired OR the backend is down. We can't tell
       // the difference from the error type alone — clear the token to be
@@ -865,6 +1089,230 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       toast.error("Décision échouée", {
         description:
           err instanceof Error ? err.message : "Backend Tevet-7 injoignable.",
+      });
+    }
+  },
+
+  // -----------------------------------------------------------------------
+  // Onboarding wizard actions (Phase 6b)
+  // -----------------------------------------------------------------------
+
+  createTenant: async (name, slug) => {
+    const token = get().token;
+    if (!token) {
+      throw new Error("Non authentifié — impossible de créer un tenant.");
+    }
+    set({ authLoading: true, authError: null });
+    try {
+      // POST /api/tenants → the backend creates the tenant + the user's
+      // first membership (role=admin) and returns a refreshed JWT with the
+      // new tenant_id claim.
+      const res = await fetch("/api/tenants", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          ...authHeader(token),
+        },
+        body: JSON.stringify({
+          name: name.trim(),
+          slug: slug.trim() || slugify(name),
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        let detail = `HTTP ${res.status} ${res.statusText}`;
+        try {
+          const j = JSON.parse(text) as {
+            error?: string;
+            detail?: string;
+            message?: string;
+          };
+          detail = j.error ?? j.detail ?? j.message ?? detail;
+        } catch {
+          /* keep fallback */
+        }
+        throw new Error(detail);
+      }
+      // Backend response shape:
+      //   {tenant: {id, name, slug, is_demo, created_at, owner_user_id},
+      //    membership: {tenant_id, role, producer_id, is_active},
+      //    token: "..."}
+      //
+      // The tenant object uses `id` (not `tenant_id`); we normalise to the
+      // frontend's `Tenant` shape so the rest of the store can treat all
+      // tenants uniformly.
+      const json = (await res.json()) as {
+        tenant: {
+          id: string;
+          name: string;
+          slug: string;
+          is_demo: boolean;
+        };
+        membership: {
+          tenant_id: string;
+          role: string;
+          producer_id: number | null;
+          is_active: boolean;
+        };
+        token: string;
+      };
+      const newTenant: Tenant = {
+        tenant_id: json.tenant.id,
+        name: json.tenant.name,
+        slug: json.tenant.slug,
+        role: json.membership?.role ?? "admin",
+        is_demo: json.tenant.is_demo,
+      };
+      // Persist the new JWT (it carries the new tenant_id claim).
+      writeTokenToStorage(json.token);
+      set({ token: json.token, activeTenant: newTenant, authLoading: false });
+      // Refresh the tenant list so the header switcher shows the new tenant.
+      try {
+        const me = await getMe(json.token);
+        // Ensure the freshly created tenant is in the list (the backend may
+        // or may not include it in the /me response depending on whether
+        // the membership was committed before the JWT was issued).
+        const hasNew = me.memberships.some(
+          (t) => t.tenant_id === newTenant.tenant_id,
+        );
+        const tenants = hasNew
+          ? me.memberships
+          : [newTenant, ...me.memberships];
+        set({ tenants, user: me.user });
+      } catch (err) {
+        console.warn(
+          "getMe failed after createTenant — proceeding without refresh",
+          err instanceof Error ? err.message : err,
+        );
+        set({ tenants: [newTenant, ...get().tenants] });
+      }
+      set(recomputeIdentity(get()));
+      // A freshly created tenant is NOT onboarded — pre-populate the status
+      // so the page gate renders the wizard immediately.
+      set({
+        onboardingStatus: {
+          onboarded: false,
+          connector_type: null,
+          schema_tables_count: 0,
+          roles_count: 0,
+        },
+      });
+      toast.success("Workspace créé", {
+        description: `${newTenant.name} · ${newTenant.slug}`,
+      });
+      return newTenant;
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Création du tenant échouée";
+      set({ authLoading: false, authError: message });
+      throw new Error(message);
+    }
+  },
+
+  startOnboarding: (tenantId) => {
+    set({
+      onboardingStep: 1,
+      onboardingTenantId: tenantId,
+      onboardingData: { ...INITIAL_ONBOARDING_DATA },
+      onboardingError: null,
+      onboardingLoading: false,
+    });
+  },
+
+  exitOnboarding: () => {
+    set({
+      onboardingStep: 0,
+      onboardingTenantId: null,
+      onboardingData: { ...INITIAL_ONBOARDING_DATA },
+      onboardingError: null,
+      onboardingLoading: false,
+    });
+  },
+
+  setOnboardingStep: (step) => {
+    const clamped = Math.max(1, Math.min(4, step));
+    set({ onboardingStep: clamped, onboardingError: null });
+  },
+
+  updateOnboardingData: (partial) => {
+    set({
+      onboardingData: { ...get().onboardingData, ...partial },
+    });
+  },
+
+  clearOnboardingError: () => set({ onboardingError: null }),
+
+  finishOnboarding: async () => {
+    const tenantId = get().onboardingTenantId ?? get().activeTenant?.tenant_id;
+    if (!tenantId) {
+      toast.error("Aucun tenant actif à finaliser");
+      return;
+    }
+    set({ onboardingLoading: true, onboardingError: null });
+    try {
+      const result = await completeOnboardingApi(tenantId);
+      // Refresh the cached status — the tenant is now onboarded.
+      set({
+        onboardingStatus: {
+          onboarded: true,
+          connector_type: get().onboardingData.connectorType,
+          schema_tables_count:
+            get().onboardingData.schemaDraft?.tables.filter((t) => t.selected)
+              .length ?? 0,
+          roles_count: get().onboardingData.rolesConfig.length,
+        },
+        onboardingLoading: false,
+        onboardingStep: 0,
+        onboardingTenantId: null,
+        onboardingData: { ...INITIAL_ONBOARDING_DATA },
+        // If the backend returned a refreshed tenant record, update the
+        // active tenant + membership list. Most backend implementations
+        // only return `{onboarded: true, tenant_id: "..."}` (no full
+        // tenant), so we fall back to the existing record when `tenant`
+        // is null — the local copy is already correct.
+        activeTenant: result.tenant ?? get().activeTenant,
+        tenants: result.tenant
+          ? get().tenants.map((t) =>
+              t.tenant_id === result.tenant!.tenant_id ? result.tenant! : t,
+            )
+          : get().tenants,
+      });
+      set(recomputeIdentity(get()));
+      toast.success("Workspace configuré", {
+        description: "Votre agent Tevet-7 est prêt.",
+      });
+    } catch (err) {
+      const message =
+        err instanceof OnboardingApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Finalisation échouée";
+      set({ onboardingLoading: false, onboardingError: message });
+      toast.error("Finalisation échouée", { description: message });
+    }
+  },
+
+  loadOnboardingStatus: async (tenantId) => {
+    set({ onboardingStatusLoading: true });
+    try {
+      const status = await getOnboardingStatus(tenantId);
+      set({ onboardingStatus: status, onboardingStatusLoading: false });
+    } catch (err) {
+      // Fall back to "onboarded: true" so the demo flow isn't broken.
+      console.warn(
+        "loadOnboardingStatus failed — treating tenant as onboarded",
+        err instanceof Error ? err.message : err,
+      );
+      set({
+        onboardingStatus: {
+          onboarded: true,
+          connector_type: null,
+          schema_tables_count: 0,
+          roles_count: 0,
+        },
+        onboardingStatusLoading: false,
       });
     }
   },

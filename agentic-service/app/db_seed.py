@@ -447,6 +447,52 @@ tenant_memberships = Table(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Phase 6b — Onboarding backend (tenant_configs)
+# ─────────────────────────────────────────────────────────────────────────────
+# One row per tenant storing the onboarding wizard output:
+#
+#   connector_type   — "sqlite_demo" | "postgres" | "csv"
+#   connection_url   — the tenant's Postgres URL (NULL for sqlite_demo / csv)
+#   csv_path         — path to the uploaded CSV file (NULL for postgres / sqlite_demo)
+#   schema_config    — JSON string with the same shape as app/schema.yaml
+#                      (tables, columns, scope, allowed_for_roles, ...). Saved
+#                      by the onboarding wizard after the user reviews the
+#                      auto-detected draft.
+#   roles_config     — JSON string with the tenant's role definitions + scope
+#                      columns (e.g. {"producer": {"scope_column": "producer_id"},
+#                                     "admin": {"scope_column": null}, ...}).
+#   onboarded        — bool, False until the user completes the wizard. The
+#                      chat endpoint refuses to run for tenants where this is
+#                      False (returns a clear "complete onboarding" message).
+#
+# The demo tenant "dp" is seeded with connector_type="sqlite_demo",
+# schema_config=<app/schema.yaml as JSON>, onboarded=True — so the demo
+# keeps working unchanged (the factory returns a SqliteConnector for it).
+tenant_configs = Table(
+    "tenant_configs",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "tenant_id",
+        String,
+        ForeignKey("tenants.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    ),
+    Column("connector_type", String, nullable=False, default="sqlite_demo"),
+    # "sqlite_demo" | "postgres" | "csv"
+    Column("connection_url", String, nullable=True),  # for postgres
+    Column("csv_path", String, nullable=True),  # for csv
+    Column("schema_config", Text, nullable=True),  # JSON string
+    Column("roles_config", Text, nullable=True),  # JSON string
+    Column("onboarded", Boolean, nullable=False, default=False),
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+    Column("updated_at", DateTime, nullable=False, default=datetime.utcnow),
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Engine singleton
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1318,6 +1364,19 @@ async def init_db() -> None:
     except Exception:  # noqa: BLE001 — never block app startup on auth seed
         logger.exception("seed_demo_tenant() failed — auth endpoints may not work")
 
+    # ── Phase 6b — Onboarding backend: seed the demo tenant's config ──
+    # The demo tenant "dp" gets a tenant_configs row with
+    # connector_type="sqlite_demo" so the connector factory returns a
+    # SqliteConnector for it (same as before — backward compat). The
+    # schema_config is the full app/schema.yaml content (the demo's
+    # business contract). The roles_config captures the producer/admin
+    # scope columns used by the rewriter.
+    try:
+        await seed_demo_tenant_config()
+        logger.info("Phase 6b demo tenant_configs row seeded (dp, sqlite_demo)")
+    except Exception:  # noqa: BLE001 — never block app startup
+        logger.exception("seed_demo_tenant_config() failed — onboarding endpoints may not work")
+
 
 async def _seed_onboardings(engine: AsyncEngine) -> None:
     """Insert 4 fictitious onboarding dossiers + their pre-analyzed approval_requests.
@@ -1459,6 +1518,78 @@ async def _seed_onboardings(engine: AsyncEngine) -> None:
         "Ops Copilot seed — %d onboarding dossiers + %d pre-analyzed approval_requests",
         len(dossiers), len(approval_rows),
     )
+
+
+async def seed_demo_tenant_config() -> None:
+    """Seed the demo tenant ``dp`` config row in ``tenant_configs``.
+
+    Idempotent — safe to call on every startup. The row has:
+      - connector_type = "sqlite_demo"  (→ SqliteConnector in the factory)
+      - connection_url = None
+      - csv_path       = None
+      - schema_config  = the full app/schema.yaml content (JSON-encoded)
+      - roles_config   = {"producer": {"scope_column": "producer_id"},
+                          "admin": {"scope_column": null},
+                          "customer": {"scope_column": "producer_id"}}
+      - onboarded      = True
+
+    The schema_config is loaded from disk so we don't duplicate the YAML
+    content in this module. The roles_config mirrors the scoping convention
+    defined in app/schema.yaml (row-level scope by producer_id).
+    """
+    import json as _json
+    from pathlib import Path as _Path
+
+    import yaml as _yaml
+
+    engine = get_engine()
+    now = datetime.utcnow()
+    schema_path = _Path(__file__).resolve().parent / "schema.yaml"
+    schema_yaml_text = schema_path.read_text(encoding="utf-8")
+    schema_dict = _yaml.safe_load(schema_yaml_text) or {}
+    roles_config = {
+        "producer": {"scope_column": "producer_id"},
+        "admin": {"scope_column": None},
+        "customer": {"scope_column": "producer_id"},
+    }
+
+    async with engine.connect() as conn:
+        r = await conn.execute(
+            select(tenant_configs.c.id).where(tenant_configs.c.tenant_id == "dp")
+        )
+        existing = r.fetchone()
+    if existing is not None:
+        # Update the schema_config + roles_config + onboarded flag in case
+        # the YAML file changed since the last startup (idempotent reseed).
+        async with engine.begin() as txn:
+            await txn.execute(
+                tenant_configs.update().where(tenant_configs.c.tenant_id == "dp").values(
+                    connector_type="sqlite_demo",
+                    connection_url=None,
+                    csv_path=None,
+                    schema_config=_json.dumps(schema_dict, ensure_ascii=False),
+                    roles_config=_json.dumps(roles_config, ensure_ascii=False),
+                    onboarded=True,
+                    updated_at=now,
+                )
+            )
+        logger.info("seed_demo_tenant_config — refreshed dp tenant_configs row")
+        return
+    async with engine.begin() as txn:
+        await txn.execute(
+            tenant_configs.insert().values(
+                tenant_id="dp",
+                connector_type="sqlite_demo",
+                connection_url=None,
+                csv_path=None,
+                schema_config=_json.dumps(schema_dict, ensure_ascii=False),
+                roles_config=_json.dumps(roles_config, ensure_ascii=False),
+                onboarded=True,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    logger.info("seed_demo_tenant_config — created dp tenant_configs row")
 
 
 async def dispose_engine() -> None:

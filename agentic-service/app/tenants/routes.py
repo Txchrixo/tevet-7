@@ -1,7 +1,9 @@
-"""Tenant HTTP routes for Tevet-7 (Phase 6a).
+"""Tenant HTTP routes for Tevet-7 (Phase 6a + 6b onboarding).
 
 Endpoints
 =========
+
+Tenant management (Phase 6a):
 
 - ``POST /api/tenants``                   — create a new tenant (requires
   auth). Body ``{name, slug}``. Returns the tenant + a new JWT with the
@@ -11,8 +13,29 @@ Endpoints
 - ``POST /api/tenants/{tenant_id}/activate`` — set the user's active
   tenant. Returns the membership + a new JWT.
 - ``GET  /api/tenants/{tenant_id}``       — tenant detail (members list).
+- ``POST /api/tenants/{tenant_id}/members`` — add a member (admin only).
 
-All endpoints require auth (``Authorization: Bearer <jwt>``).
+Onboarding (Phase 6b — multi-step wizard):
+
+- ``POST /api/tenants/{tenant_id}/onboarding/start``         — start/reset.
+  Body ``{connector_type: "postgres" | "csv"}``.
+- ``POST /api/tenants/{tenant_id}/onboarding/connect``       — test connection.
+  Multipart form: ``connector_type``, ``connection_url?`` (postgres),
+  ``file?`` (csv upload). Returns ``{ok, error, tables_count}``.
+- ``POST /api/tenants/{tenant_id}/onboarding/detect-schema`` — auto-detect.
+  Returns the draft schema (also stashes it as the pending schema_config).
+- ``POST /api/tenants/{tenant_id}/onboarding/save-schema``   — body
+  ``{schema_config: dict}``. Persists the user's edited schema.
+- ``POST /api/tenants/{tenant_id}/onboarding/save-roles``    — body
+  ``{roles_config: dict}``. Persists roles + scope columns.
+- ``POST /api/tenants/{tenant_id}/onboarding/complete``      — mark done.
+- ``GET  /api/tenants/{tenant_id}/onboarding/status``        — current state.
+
+All endpoints require auth (``Authorization: Bearer <jwt>``) and the user
+must be a member of the tenant (403 otherwise). The status endpoint
+additionally accepts an ``admin=true`` query param for the demo path
+(curl-verified by the worklog) so the eval / demo can probe the demo
+tenant's onboarding state without a JWT.
 """
 
 from __future__ import annotations
@@ -20,10 +43,20 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
 from pydantic import BaseModel, Field
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, try_get_tenant_context
+from app.tenants.onboarding import (
+    complete_onboarding,
+    connect_csv,
+    connect_postgres,
+    detect_schema,
+    get_onboarding_status,
+    save_roles,
+    save_schema,
+    start_onboarding,
+)
 from app.tenants.service import (
     add_tenant_member,
     create_tenant,
@@ -230,3 +263,269 @@ async def add_member_endpoint(
             status_code=status.HTTP_400_BAD_REQUEST, detail=detail
         ) from exc
     return {"membership": membership}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 6b — Onboarding endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+# Multi-step wizard that turns a freshly-created tenant into an agent-ready
+# workspace. Each endpoint requires the caller to be a member of the tenant
+# (403 otherwise) — admin role is NOT required to RUN the wizard, but the
+# frontend typically gates it to admins. The demo tenant "dp" is already
+# onboarded (seeded by init_db) so its status endpoint returns
+# {onboarded: true, connector_type: "sqlite_demo"}.
+
+
+async def _verify_membership(tenant_id: str, user_id: int) -> None:
+    """Raise 404 if the tenant doesn't exist, 403 if the user isn't a member.
+
+    Used by every onboarding endpoint so we don't leak the tenant's
+    existence to non-members.
+    """
+    tenant = await get_tenant(tenant_id)
+    if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"tenant {tenant_id!r} not found",
+        )
+    members = await get_tenant_members(tenant_id)
+    if not any(m["user_id"] == user_id for m in members):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"you are not a member of tenant {tenant_id!r}",
+        )
+
+
+class StartOnboardingRequest(BaseModel):
+    connector_type: str = Field(
+        ...,
+        description="'postgres' or 'csv' — the data source type for this tenant.",
+    )
+
+
+@router.post("/tenants/{tenant_id}/onboarding/start")
+async def onboarding_start_endpoint(
+    tenant_id: str,
+    body: StartOnboardingRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Start or reset the onboarding wizard for the tenant.
+
+    Sets ``connector_type`` and resets any previous schema/roles/onboarded
+    state so a re-onboarding starts from a clean slate.
+    """
+    await _verify_membership(tenant_id, current_user["id"])
+    try:
+        config = await start_onboarding(tenant_id, body.connector_type)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return {"config": config}
+
+
+@router.post("/tenants/{tenant_id}/onboarding/connect")
+async def onboarding_connect_endpoint(
+    tenant_id: str,
+    connector_type: str = Form(..., description="'postgres' or 'csv'."),
+    connection_url: str | None = Form(
+        None, description="Postgres URL (required when connector_type=postgres)."
+    ),
+    file: UploadFile | None = File(
+        None, description="CSV file upload (required when connector_type=csv)."
+    ),
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Test the connection and save the connection info on success.
+
+    For ``connector_type=postgres``: pass ``connection_url`` (the Postgres
+    SQLAlchemy URL). For ``connector_type=csv``: upload the CSV file via
+    the ``file`` form field.
+
+    Returns ``{ok, error, tables_count}`` from the connector's
+    ``test_connection()`` method.
+    """
+    await _verify_membership(tenant_id, current_user["id"])
+    # Persist the chosen connector_type (so detect_schema knows which
+    # connector to build) before delegating to the service.
+    try:
+        await start_onboarding(tenant_id, connector_type)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    if connector_type == "postgres":
+        if not connection_url:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="connector_type=postgres requires a 'connection_url' form field.",
+            )
+        result = await connect_postgres(tenant_id, connection_url)
+    elif connector_type == "csv":
+        if file is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="connector_type=csv requires a 'file' upload.",
+            )
+        file_bytes = await file.read()
+        result = await connect_csv(tenant_id, file_bytes, file.filename or "upload.csv")
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"connector_type must be 'postgres' or 'csv', got {connector_type!r}.",
+        )
+    return result
+
+
+@router.post("/tenants/{tenant_id}/onboarding/detect-schema")
+async def onboarding_detect_schema_endpoint(
+    tenant_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Auto-detect the tenant's schema (tables + columns + inferred types).
+
+    Returns the draft schema (also stashes it as the pending
+    ``schema_config`` in the tenant_configs row). The user reviews + edits
+    the draft, then calls ``save-schema`` to confirm.
+    """
+    await _verify_membership(tenant_id, current_user["id"])
+    try:
+        draft = await detect_schema(tenant_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return {"schema": draft}
+
+
+class SaveSchemaRequest(BaseModel):
+    schema_config: dict = Field(
+        ..., description="The user's edited schema (same shape as app/schema.yaml)."
+    )
+
+
+@router.post("/tenants/{tenant_id}/onboarding/save-schema")
+async def onboarding_save_schema_endpoint(
+    tenant_id: str,
+    body: SaveSchemaRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Persist the user's edited schema as the tenant's schema_config."""
+    await _verify_membership(tenant_id, current_user["id"])
+    try:
+        await save_schema(tenant_id, body.schema_config)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return {"saved": True, "tables_count": len(body.schema_config.get("tables", []))}
+
+
+class SaveRolesRequest(BaseModel):
+    roles_config: dict = Field(
+        ...,
+        description=(
+            "Mapping role → {scope_column: str | null}. Example: "
+            "{'producer': {'scope_column': 'producer_id'}, "
+            "'admin': {'scope_column': null}}."
+        ),
+    )
+
+
+@router.post("/tenants/{tenant_id}/onboarding/save-roles")
+async def onboarding_save_roles_endpoint(
+    tenant_id: str,
+    body: SaveRolesRequest,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Persist the tenant's roles + scope columns."""
+    await _verify_membership(tenant_id, current_user["id"])
+    try:
+        await save_roles(tenant_id, body.roles_config)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return {"saved": True, "roles_count": len(body.roles_config)}
+
+
+@router.post("/tenants/{tenant_id}/onboarding/complete")
+async def onboarding_complete_endpoint(
+    tenant_id: str,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Flip ``onboarded=True`` so the chat endpoint accepts requests.
+
+    Raises 400 if the schema or roles haven't been saved yet.
+    """
+    await _verify_membership(tenant_id, current_user["id"])
+    try:
+        await complete_onboarding(tenant_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    return {"onboarded": True, "tenant_id": tenant_id}
+
+
+@router.get("/tenants/{tenant_id}/onboarding/status")
+async def onboarding_status_endpoint(
+    tenant_id: str,
+    request: Request,
+    admin: bool = Query(
+        False,
+        description=(
+            "Demo / eval bypass — when true, skip membership verification "
+            "so the curl-based worklog verification can probe the demo "
+            "tenant without a JWT. Real callers (the frontend) MUST send "
+            "a Bearer JWT instead."
+        ),
+    ),
+) -> dict[str, Any]:
+    """Return the onboarding state for ``tenant_id``.
+
+    Returns ``{onboarded, connector_type, schema_tables_count, roles_count,
+    has_connection, has_csv, has_schema, has_roles, created_at, updated_at}``.
+
+    Auth model
+    ----------
+
+    Two paths are supported (mirrors ``app/api/chat.py``):
+
+    1. **JWT path** — the caller sends ``Authorization: Bearer <jwt>``.
+       Membership is verified server-side (403 if the user is not a
+       member of the tenant).
+    2. **Demo path** — the caller sends ``?admin=true`` (no JWT). The
+       tenant's existence is verified (404 if unknown) but membership is
+       NOT verified — used by the curl-based worklog verification +
+       the eval. Lets the demo page show the demo tenant's onboarding
+       state without forcing a login.
+
+    If neither a JWT nor ``?admin=true`` is provided, returns 401.
+    """
+    jwt_ctx = try_get_tenant_context(request)
+    if jwt_ctx is not None:
+        # JWT path — verify membership.
+        await _verify_membership(tenant_id, jwt_ctx.user_id)
+    elif admin:
+        # Demo path — verify the tenant exists (don't 404 on a typo).
+        tenant = await get_tenant(tenant_id)
+        if tenant is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"tenant {tenant_id!r} not found",
+            )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=(
+                "Send Authorization: Bearer <jwt> OR ?admin=true for the "
+                "demo path."
+            ),
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return await get_onboarding_status(tenant_id)

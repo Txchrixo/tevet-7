@@ -48,6 +48,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.orchestrator import AgentOrchestrator
 from app.auth.dependencies import TenantContext, try_get_tenant_context
+from app.connectors.factory import TenantNotOnboardedError, get_connector_for_tenant
 from app.connectors.sqlite_connector import SqliteConnector
 from app.tools.forecast_tool import ForecastTool
 from app.tools.rag_tool import RagSearchTool
@@ -183,7 +184,40 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
 
     try:
         # Build a per-request connector + tool + orchestrator.
-        connector = SqliteConnector()
+        # Phase 6b — the connector is now chosen dynamically based on the
+        # tenant's ``tenant_configs`` row:
+        #   - demo tenant "dp" (and the legacy body path) → SqliteConnector
+        #     (unchanged — backward compat).
+        #   - tenants with ``connector_type="postgres"`` → PostgresConnector.
+        #   - tenants with ``connector_type="csv"``      → CsvConnector.
+        # If the tenant is not onboarded yet, the factory raises
+        # ``TenantNotOnboardedError`` — we catch it below and return a
+        # clear French message prompting the user to complete onboarding.
+        try:
+            connector = await get_connector_for_tenant(tenant_id)
+        except TenantNotOnboardedError:
+            return {
+                "answer": (
+                    "Votre workspace n'est pas encore configuré. Complétez "
+                    "l'onboarding pour activer l'agent."
+                ),
+                "sql": None,
+                "scope_clause": None,
+                "chart": None,
+                "tokens_in": 0,
+                "tokens_out": 0,
+                "latency_ms": 0,
+                "tool_calls": [],
+                "steps": [],
+                "security_checks": [],
+                "refused": True,
+                "tables_touched": [],
+                "sources": [],
+                "ops_analysis": None,
+                "forecast_predictions": None,
+                "trace_id": None,
+                "not_onboarded": True,
+            }
         schema = connector.get_schema()
         allowed_tables = connector.get_allowed_tables(role)
         scope_column = "producer_id" if role == "producer" else None

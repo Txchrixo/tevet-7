@@ -64,11 +64,14 @@ def _start_auth_span(span_name: str, **metadata: Any) -> tuple[Any, Any, Any]:
     """Open a trace + span for an auth event. Returns ``(tracer, ctx, span)``.
 
     The first parameter is named ``span_name`` (not ``name``) so callers
-    can pass ``name="Marie Dubois"`` as metadata without colliding.
+    can pass ``name="Marie Dubois"`` as metadata without colliding with
+    the ``name`` positional arg of ``Tracer.start_span``.
     """
     tracer = get_tracer()
     ctx = tracer.start_trace(span_name, dict(metadata))
-    span = tracer.start_span(ctx, span_name, **metadata)
+    # Strip 'name' from metadata to avoid colliding with start_span's `name` arg.
+    span_meta = {k: v for k, v in metadata.items() if k != "name"}
+    span = tracer.start_span(ctx, span_name, **span_meta)
     return tracer, ctx, span
 
 

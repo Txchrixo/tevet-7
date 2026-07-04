@@ -1,6 +1,12 @@
 """``/api/documents`` — documentary RAG management endpoints.
 
 Phase 3 — RAG layer for the Producer Copilot.
+Phase 6b — multi-tenant: documents are scoped by ``tenant_id`` (a column on
+the ``documents`` + ``document_chunks`` tables). New tenants (CSV / Postgres)
+get their own empty document set; they can upload CGV / FAQ docs into the
+shared SQLite store before or after running the onboarding wizard. The
+``tenant_id`` comes from the JWT (Phase 6a) so each tenant's docs are
+isolated without a per-tenant database.
 
 Endpoints
 =========

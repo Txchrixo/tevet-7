@@ -17,6 +17,7 @@ import { ChatMessage, TypingIndicator } from "@/components/producer-copilot/chat
 import { Footer } from "@/components/producer-copilot/footer";
 import { Header } from "@/components/producer-copilot/header";
 import { Inspector } from "@/components/producer-copilot/inspector";
+import { OnboardingWizard } from "@/components/producer-copilot/onboarding-wizard";
 import { OpsConsole } from "@/components/producer-copilot/ops-console";
 import { Sidebar } from "@/components/producer-copilot/sidebar";
 import { BrandMark } from "@/components/producer-copilot/brand-mark";
@@ -39,6 +40,15 @@ export default function Home() {
   const demoFallback = useCopilotStore((s) => s.demoFallback);
   const authLoading = useCopilotStore((s) => s.authLoading);
   const loadAuthFromStorage = useCopilotStore((s) => s.loadAuthFromStorage);
+
+  // Onboarding state — drives the wizard gate (Phase 6b).
+  const onboardingStep = useCopilotStore((s) => s.onboardingStep);
+  const onboardingTenantId = useCopilotStore((s) => s.onboardingTenantId);
+  const onboardingStatus = useCopilotStore((s) => s.onboardingStatus);
+  const onboardingStatusLoading = useCopilotStore(
+    (s) => s.onboardingStatusLoading,
+  );
+  const activeTenant = useCopilotStore((s) => s.activeTenant);
 
   const [sidebarSheet, setSidebarSheet] = React.useState(false);
   const [inspectorSheet, setInspectorSheet] = React.useState(false);
@@ -89,7 +99,10 @@ export default function Home() {
   //
   //   1. While the persisted JWT is being validated → minimal loader.
   //   2. If NOT authenticated AND NOT in demo fallback → AuthScreen.
-  //   3. Otherwise (authenticated OR demo fallback) → 3-zone layout.
+  //   3. If authenticated AND the active tenant is NOT onboarded AND the
+  //      user hasn't manually opened the wizard → render the wizard gate
+  //      (auto-start onboarding for the active tenant).
+  //   4. Otherwise (authenticated OR demo fallback) → 3-zone layout.
   const isAuthenticated = !!token && !!user;
   if (!bootstrapped && authLoading) {
     return (
@@ -105,6 +118,58 @@ export default function Home() {
   }
   if (!isAuthenticated && !demoFallback) {
     return <AuthScreen />;
+  }
+
+  // -- Onboarding gate (Phase 6b) -------------------------------------------
+  //
+  //   When the user is authenticated + has an active tenant that is NOT yet
+  //   onboarded, the wizard takes over the screen. The wizard also takes
+  //   over when the user has manually started it from the header menu
+  //   (`onboardingStep > 0` overrides the status check so the "edit" flow
+  //   works for already-onboarded tenants too).
+  //
+  //   Demo tenants (is_demo=true) are always considered onboarded — the
+  //   store pre-populates `onboardingStatus.onboarded = true` for them so
+  //   existing demo users land straight in the chat.
+  const wizardTenantId =
+    onboardingTenantId ?? activeTenant?.tenant_id ?? null;
+  const shouldShowWizard =
+    isAuthenticated &&
+    wizardTenantId !== null &&
+    (onboardingStep > 0 ||
+      (onboardingStatus !== null && !onboardingStatus.onboarded));
+
+  if (shouldShowWizard && wizardTenantId) {
+    // If the wizard isn't open yet but the tenant needs onboarding, auto-
+    // start it (step 1). This happens on first login to a fresh tenant.
+    if (onboardingStep === 0) {
+      // Kick off the wizard synchronously via the store's setState — we
+      // don't have the `startOnboarding` action wired here, but the
+      // `shouldShowWizard` check is enough: the wizard renders step 1 by
+      // default because `onboardingStep` defaults to 0 → the wizard's
+      // step switch renders `step === 0` as the connect step. We bump it
+      // to 1 here so the progress indicator lights up.
+      useCopilotStore.setState({
+        onboardingStep: 1,
+        onboardingTenantId: wizardTenantId,
+      });
+    }
+    // While the status is being fetched (first paint after login), show a
+    // minimal loader so we don't flash the chat before the wizard.
+    if (onboardingStatusLoading && onboardingStep === 0) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
+          <div className="flex size-12 items-center justify-center rounded-md border border-border bg-background text-accent">
+            <BrandMark size={28} />
+          </div>
+          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            Tevet-7 <span className="text-muted-foreground/50">·</span>{" "}
+            vérification du workspace…
+          </p>
+        </div>
+      );
+    }
+    return <OnboardingWizard tenantId={wizardTenantId} />;
   }
 
   return (
