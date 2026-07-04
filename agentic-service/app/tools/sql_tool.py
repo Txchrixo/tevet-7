@@ -512,7 +512,23 @@ class SqlReadTool:
         self.enforce_scope = role != "admin" and scope_column is not None and scope_value is not None
         self.default_limit = schema.get("metadata", {}).get("default_limit", self.DEFAULT_LIMIT)
         self.llm_client = llm_client
-        self.generator: SQLGenerator = generator or RuleBasedSQLGenerator(schema=schema)
+        # Phase A1: use LLMSQLGenerator when OpenAI API key is available,
+        # fall back to RuleBasedSQLGenerator (DP patterns + generic patterns).
+        if generator is not None:
+            self.generator: SQLGenerator = generator
+        else:
+            from app.config import get_settings
+            settings = get_settings()
+            api_key = settings.openai_api_key
+            if api_key and api_key != "sk-replace-me":
+                from app.tools.llm_sql_generator import LLMSQLGenerator
+                self.generator = LLMSQLGenerator(
+                    schema=schema,
+                    api_key=api_key,
+                    model=settings.llm_model,
+                )
+            else:
+                self.generator = RuleBasedSQLGenerator(schema=schema)
         # Build a quick lookup: table_name -> scope_column (or None)
         self._table_scope_columns: dict[str, str | None] = {}
         for t in schema.get("tables", []):
