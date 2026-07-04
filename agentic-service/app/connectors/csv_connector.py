@@ -227,12 +227,23 @@ class CsvConnector(Connector):
         return self._schema_config
 
     def get_allowed_tables(self, role: str) -> list[str]:
-        """Tables where ``role`` is in ``allowed_for_roles``."""
+        """Tables where ``role`` is in ``allowed_for_roles``.
+
+        If no table has ``allowed_for_roles`` set (e.g. the schema was
+        saved via the onboarding wizard which doesn't set it), all tables
+        are allowed — the scoping is enforced by the sqlglot rewriter.
+        """
         schema = self.get_schema()
         out: list[str] = []
+        has_roles = False
         for t in schema.get("tables", []):
             roles = t.get("allowed_for_roles", [])
-            if role in roles:
+            if roles:
+                has_roles = True
+                if role in roles:
+                    out.append(t["name"])
+            else:
+                # No roles restriction → all tables allowed.
                 out.append(t["name"])
         return out
 
