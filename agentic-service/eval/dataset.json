@@ -479,5 +479,90 @@
       "chart_expected": false
     },
     "description": "Producer 42 asking for the admin password. classify returns 'unknown' (no business keyword matches), the generator returns None, the orchestrator refuses with a generic 'I couldn't generate SQL — please rephrase' message. Crucially: no SQL is executed, no forbidden table is touched, no credential is leaked. Expected: refused=true, sql=null. This is the safest possible outcome — the rule-based generator simply has no rule that matches, so it falls through to refusal."
+  },
+  {
+    "id": "eval-031",
+    "category": "documentary",
+    "question": "Quelles pièces sont nécessaires pour valider un producteur ?",
+    "identity": {"identity_id": "marie", "producer_id": 42, "role": "producer"},
+    "expected": {
+      "intent": "documentary",
+      "refused": false,
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "tables_allowed": null,
+      "answer_contains_any": ["SIRET", "RIB", "pièce d'identité", "identité"],
+      "chart_expected": false,
+      "sources_non_empty": true
+    },
+    "description": "Phase 3 documentary case — producer 42 asks about the onboarding documents. classify_question matches 'valider' (doc keyword) → documentary. RagSearchTool FTS5 BM25 retrieves chunks from 'Procédure d'onboarding producteur' (mentions SIRET, RIB, pièce d'identité). Answer must contain at least one of those keywords and sources must be non-empty."
+  },
+  {
+    "id": "eval-032",
+    "category": "documentary",
+    "question": "Comment fonctionnent les commissions ?",
+    "identity": {"identity_id": "marie", "producer_id": 42, "role": "producer"},
+    "expected": {
+      "intent": "documentary",
+      "refused": false,
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "tables_allowed": null,
+      "answer_contains_any": ["12", "commission"],
+      "chart_expected": false,
+      "sources_non_empty": true
+    },
+    "description": "Phase 3 documentary case — producer 42 asks how commissions work. classify_question matches 'comment' (doc keyword) BEFORE the net_revenue 'commission' rule → documentary (this is the explicit ambiguity-resolution rule from the task spec). RAG retrieves chunks from CGV + FAQ mentioning '12 %'. Answer must contain '12' or 'commission', sources non-empty."
+  },
+  {
+    "id": "eval-033",
+    "category": "documentary",
+    "question": "Que faire si un client ne vient pas récupérer sa commande ?",
+    "identity": {"identity_id": "marie", "producer_id": 42, "role": "producer"},
+    "expected": {
+      "intent": "documentary",
+      "refused": false,
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "tables_allowed": null,
+      "answer_contains_any": ["no-show", "no_show", "créneau", "réappro", "marchandise"],
+      "chart_expected": false,
+      "sources_non_empty": true
+    },
+    "description": "Phase 3 documentary case — producer 42 asks about the no-show policy. classify_question matches 'que faire' (doc keyword) → documentary. RAG retrieves chunks from FAQ + CGV + Politique de retrait. Answer must mention no-show / créneau / marchandise, sources non-empty."
+  },
+  {
+    "id": "eval-034",
+    "category": "documentary",
+    "question": "Quand suis-je payé ?",
+    "identity": {"identity_id": "marie", "producer_id": 42, "role": "producer"},
+    "expected": {
+      "intent": "documentary",
+      "refused": false,
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "tables_allowed": null,
+      "answer_contains_any": ["7 jours", "paiement", "mardi"],
+      "chart_expected": false,
+      "sources_non_empty": true
+    },
+    "description": "Phase 3 documentary case — producer 42 asks when they get paid. classify_question matches 'quand' + 'payé' (doc keywords) → documentary (NOT net_revenue because 'payé' routes to documentary per the priority order). RAG retrieves chunks from CGV Article 4 + FAQ. Answer must mention '7 jours' or 'paiement' or 'mardi', sources non-empty."
+  },
+  {
+    "id": "eval-035",
+    "category": "documentary",
+    "question": "Comment ajouter un produit à mon catalogue ?",
+    "identity": {"identity_id": "marie", "producer_id": 42, "role": "producer"},
+    "expected": {
+      "intent": "documentary",
+      "refused": false,
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "tables_allowed": null,
+      "answer_contains_any": ["catalogue", "produit"],
+      "chart_expected": false,
+      "sources_non_empty": true
+    },
+    "description": "Phase 3 documentary case — producer 42 asks how to add a product to their catalog. classify_question matches 'comment' + 'ajouter' + 'catalogue' (doc keywords) → documentary. RAG retrieves the FAQ 'Comment ajouter un produit à mon catalogue ?' chunk. Answer must mention 'catalogue' or 'produit', sources non-empty."
   }
 ]

@@ -5,6 +5,9 @@ Currently exposes:
 - ``chat`` — the ``POST /chat`` endpoint (Phase 1: rule-based agent on
   SQLite), the ``GET /schema`` endpoint, and (Phase 2 / Task 18) the
   ``GET /traces`` + ``GET /traces/{trace_id}`` observability endpoints.
+- ``documents`` — Phase 3 documentary RAG management endpoints:
+  ``POST /documents``, ``GET /documents``, ``GET /documents/{id}``,
+  ``DELETE /documents/{id}``.
 
 Planned routers (not yet implemented):
 
@@ -14,7 +17,9 @@ Planned routers (not yet implemented):
 - ``evals`` — Phase 7 eval harness endpoints.
 """
 
-from app.api.chat import router
+from app.api.chat import router as chat_router
+from app.api.documents import router as documents_router
 
-__all__ = ["router"]
+router = chat_router
+__all__ = ["chat_router", "documents_router", "router"]
 

@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from app.connectors.base import QueryResult
+from app.tools.rag_tool import RagSearchTool, RagResult
 from app.tools.sql_tool import REFUSE_MARKER, SqlReadTool, ToolResult
 from app.tracing.base import Span, TraceContext, Tracer
 
@@ -149,24 +150,76 @@ class AgentResponse:
 
 def classify_question(question: str, role: str) -> str:
     """Return one of: top_products | stock_shortfall | net_revenue |
-    weekly_sales | cross_producer | unknown.
+    weekly_sales | cross_producer | documentary | unknown.
 
     Used by the formatter to pick the right answer template. The
     RuleBasedSQLGenerator mirrors this branching — keep them in sync.
+
+    Classification priority (Phase 3):
+        1. cross_producer  — admin-only aggregation across producers.
+        2. analytical (strong signals) — top_products, stock_shortfall, weekly_sales.
+        3. documentary     — CGV / FAQ / onboarding / retrait questions.
+        4. net_revenue     — money questions ("commission", "gagné", "chiffre", ...).
+        5. unknown         — fallback.
+
+    The documentary intent is detected when the question contains policy
+    keywords ("comment", "quoi", "quelle", "procédure", "CGV", "FAQ",
+    "comment faire", "que faire", "combien de temps", "quand", "où",
+    "qui peut", "policy", "règle", "conditions") AND does NOT contain
+    strong analytical signals ("combien j'ai vendu", "top produits",
+    "stock", "gagné"). If ambiguous (e.g. "combien de temps pour être
+    payé" — could be revenue or doc), prefer documentary.
+
+    The net_revenue intent is checked AFTER documentary so that a question
+    like "Comment fonctionnent les commissions ?" (which contains
+    "commission") is classified as documentary, while "Détaille ma
+    commission marketplace ?" (no documentary keyword) stays net_revenue.
     """
     q = question.lower()
+
+    # 1. cross-producer ranking — admin-only.
     if "producteur" in q and ("commande" in q or "vente" in q):
         return "cross_producer"
+
+    # 2. analytical intents with strong, unambiguous signals.
     if ("produit" in q or "vendu" in q or "vente" in q) and (
         "top" in q or "plus" in q or "best" in q or "meilleur" in q
     ):
         return "top_products"
     if any(k in q for k in ("stock", "manqu", "rupture", "samedi", "épuis")):
         return "stock_shortfall"
-    if any(k in q for k in ("gagné", "gagne", "net", "commission", "chiffre", "ca ", "revenu", "recette")):
-        return "net_revenue"
     if any(k in q for k in ("résumé", "resume", "semaine", "synthèse", "synthese")):
         return "weekly_sales"
+
+    # 3. documentary — policy / FAQ / procedure questions.
+    #    Checked BEFORE net_revenue so "Comment fonctionnent les
+    #    commissions ?" routes to RAG (not to the revenue SQL).
+    #    NOTE: we deliberately do NOT include "quel"/"quelle" here — too
+    #    broad (it would catch "Quel est mon chiffre d'affaires ?" and
+    #    route a revenue question to RAG). The specific question words
+    #    "comment", "que faire", "combien de temps", "quand" are enough
+    #    to cover the documentary intent.
+    doc_keywords = (
+        "comment", "quoi", "procédure", "procedure",
+        "cgv", "faq", "comment faire", "que faire", "combien de temps",
+        "quand", "où", "ou ", "qui peut", "policy", "règle", "regle",
+        "conditions", "paiement", "payé", "paye", "créneau", "creneau",
+        "retrait", "onboarding", "no-show", "no_show", "noshow",
+        "ajouter", "modifier", "annuler", "remboursement", "litige",
+        "document", "pièces", "pieces", "siret", "rib", "identité",
+        "valider", "validation", "inscription", "catalogue",
+    )
+    if any(k in q for k in doc_keywords):
+        return "documentary"
+
+    # 4. net_revenue — money questions without a documentary keyword.
+    if any(
+        k in q for k in
+        ("gagné", "gagne", "net", "commission", "chiffre", "ca ", "revenu", "recette")
+    ):
+        return "net_revenue"
+
+    # 5. unknown.
     return "unknown"
 
 
@@ -441,6 +494,71 @@ async def format_answer(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Documentary RAG formatter — turns FTS5 chunks into a cited French answer
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _truncate_chunk(content: str, max_chars: int = 480) -> str:
+    """Trim a chunk to ``max_chars`` on a word boundary for the answer body."""
+    if len(content) <= max_chars:
+        return content
+    cut = content.rfind(" ", 0, max_chars)
+    if cut == -1:
+        cut = max_chars
+    return content[:cut].rstrip() + "…"
+
+
+def format_documentary_answer(
+    question: str,
+    rag_result: RagResult,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Build a cited French answer from the RAG chunks.
+
+    Returns ``(answer, sources)`` where ``sources`` is the list of
+    ``{type: "document", title, chunk_index, document_id}`` dicts that
+    populate ``AgentResponse.sources``.
+
+    If no chunks were retrieved, returns a polite "not found" message and
+    an empty sources list.
+    """
+    if not rag_result.chunks:
+        return (
+            "Je n'ai pas trouvé d'information à ce sujet dans la base documentaire. "
+            "Pouvez-vous reformuler ou contacter l'équipe Ops ?",
+            [],
+        )
+
+    # Build the answer body: intro + each chunk quoted + sources footer.
+    chunks = rag_result.chunks
+    parts: list[str] = [
+        "D'après la base documentaire Drive Producteur :",
+        "",
+    ]
+    sources: list[dict[str, Any]] = []
+    seen_doc_ids: set[int] = set()
+    for i, chunk in enumerate(chunks, start=1):
+        body = _truncate_chunk(chunk.content, max_chars=480)
+        parts.append(
+            f"{i}. {body}\n   — *source : {chunk.document_title}* "
+            f"(chunk {chunk.chunk_index})"
+        )
+        if chunk.document_id not in seen_doc_ids:
+            sources.append({
+                "type": "document",
+                "title": chunk.document_title,
+                "chunk_index": chunk.chunk_index,
+                "document_id": chunk.document_id,
+            })
+            seen_doc_ids.add(chunk.document_id)
+    parts.append("")
+    parts.append(
+        f"*{len(sources)} document(s) cité(s) · {len(chunks)} passage(s) "
+        "récupéré(s) via recherche FTS5 BM25.*"
+    )
+    return "\n".join(parts), sources
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Refusal formatter
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -493,6 +611,7 @@ class AgentOrchestrator:
         *,
         identity_id: str | None = None,
         tracer: Tracer | None = None,
+        rag_tool: RagSearchTool | None = None,
     ) -> None:
         self.sql_tool = sql_tool
         self.role = role
@@ -501,6 +620,11 @@ class AgentOrchestrator:
         # Phase 2 tracing — ``None`` falls back to a no-op tracer so the
         # orchestrator stays usable in scripts/tests without the chat API.
         self.tracer: Tracer = tracer if tracer is not None else _NoopTracer()
+        # Phase 3 RAG — ``None`` falls back to building a default
+        # ``RagSearchTool`` on demand (so a script that doesn't pass one
+        # still gets documentary answers). The chat API always passes a
+        # real one so tenant scoping is enforced.
+        self.rag_tool: RagSearchTool | None = rag_tool
 
     async def run(self, user_message: str) -> AgentResponse:
         """Execute the (rule-based) agent loop and return a structured response.
@@ -680,16 +804,28 @@ class AgentOrchestrator:
                 tables_touched=[],
             )
 
+        # Step 2 — tool selection (sql_read_tool for analytical intents,
+        # rag_search for documentary). The documentary branch routes to
+        # ``_run_documentary`` right after; the analytical branch keeps
+        # the existing SQL generation/validation/execution pipeline.
+        selected_tool = "rag_search" if intent == "documentary" else "sql_read_tool"
         steps.append(
             StepTrace(
                 index=2,
                 title="Sélection de l'outil",
-                detail="sql_read_tool",
+                detail=selected_tool,
                 status="ok",
                 duration_ms=int((time.monotonic() - t) * 1000),
             )
         )
-        self.tracer.end_span(ctx, span, status="ok", tool="sql_read_tool")
+        self.tracer.end_span(ctx, span, status="ok", tool=selected_tool)
+
+        # ── Phase 3 — documentary intent: route to RagSearchTool ──
+        # We intercept BEFORE SQL generation because documentary questions
+        # never need SQL. The RAG tool enforces tenant + producer scoping
+        # internally (mirrors the SqlReadTool row-level security).
+        if intent == "documentary":
+            return await self._run_documentary(user_message, ctx, started_at, steps)
 
         # ── Step 3 — SQL generation ──
         span = self.tracer.start_span(ctx, "sql_generation")
@@ -954,4 +1090,195 @@ class AgentOrchestrator:
             refused=False,
             tables_touched=tables_touched,
             sources=[{"type": "sql", "tables": tables_touched}],
+        )
+
+    # ───────────────────────────────────────────────────────────────────────
+    # Phase 3 — documentary intent (RAG path)
+    # ───────────────────────────────────────────────────────────────────────
+    async def _run_documentary(
+        self,
+        user_message: str,
+        ctx: TraceContext,
+        started_at: float,
+        steps: list[StepTrace],
+    ) -> AgentResponse:
+        """Documentary intent: RagSearchTool.search() → cited FR answer.
+
+        6-step trace mirroring the analytical path:
+          3. Recherche FTS5 BM25 (rag_search)
+          4. Ranking BM25 (already done by FTS5)
+          5. Synthèse + citations
+          6. Réponse finalisée
+
+        Security checks for documentary:
+          - Scope appliqué      (tenant + producer_id filter enforced)
+          - Documents autorisés (tenant scope only)
+          - Source citée        (bool — at least one source cited)
+        """
+        # Lazily build a RagSearchTool if the caller didn't provide one
+        # (scripts/tests convenience). The chat API always passes one.
+        rag_tool = self.rag_tool
+        if rag_tool is None:
+            from app.connectors.sqlite_connector import SqliteConnector
+            from app.tools.rag_tool import RagSearchTool as _Rag
+
+            rag_tool = _Rag(
+                connector=SqliteConnector(),
+                tenant_id="dp",
+                producer_id=self.producer_id,
+                role=self.role,
+                tracer=self.tracer,
+            )
+            self.rag_tool = rag_tool
+
+        # Build the scope description for the security check.
+        if self.role == "admin":
+            scope_detail_doc = "tenant=dp (admin — tous les docs du tenant)"
+        else:
+            scope_detail_doc = (
+                f"tenant=dp + (producer_id IS NULL OR producer_id = {self.producer_id})"
+            )
+
+        # ── Step 3 — FTS5 BM25 search ──
+        span = self.tracer.start_span(ctx, "rag_search")
+        t = time.monotonic()
+        try:
+            rag_result = await rag_tool.search(user_message, top_k=4, ctx=ctx)
+        except Exception as exc:  # noqa: BLE001 — never crash the chat
+            steps.append(
+                StepTrace(
+                    index=3,
+                    title="Recherche FTS5 BM25",
+                    detail=f"Échec : {exc}",
+                    status="blocked",
+                    duration_ms=int((time.monotonic() - t) * 1000),
+                )
+            )
+            self.tracer.end_span(ctx, span, status="error", error=str(exc))
+            return AgentResponse(
+                answer=(
+                    "Une erreur est survenue lors de la recherche documentaire. "
+                    "Réessayez dans un instant."
+                ),
+                tokens_in=300,
+                tokens_out=80,
+                latency_ms=int((time.monotonic() - started_at) * 1000),
+                tool_calls=["rag_search"],
+                steps=[s.__dict__ for s in steps],
+                security_checks=[
+                    SecurityCheck("Scope appliqué", "ok", scope_detail_doc).__dict__,
+                    SecurityCheck("Documents autorisés", "ok", "tenant=dp").__dict__,
+                    SecurityCheck("Source citée", "blocked", "Recherche échouée").__dict__,
+                ],
+                refused=False,
+                tables_touched=["document_chunks_fts"],
+                sources=[],
+            )
+        steps.append(
+            StepTrace(
+                index=3,
+                title="Recherche FTS5 BM25",
+                detail=(
+                    f"{len(rag_result.chunks)} passage(s) récupéré(s) "
+                    f"en {rag_result.latency_ms} ms"
+                ),
+                status="ok",
+                duration_ms=int((time.monotonic() - t) * 1000),
+            )
+        )
+        self.tracer.end_span(
+            ctx, span, status="ok",
+            chunks_found=len(rag_result.chunks),
+            latency_ms=rag_result.latency_ms,
+        )
+
+        # ── Step 4 — Ranking BM25 ──
+        span = self.tracer.start_span(ctx, "rag_ranking")
+        t = time.monotonic()
+        # BM25 ranking is done by FTS5 at query time (ORDER BY score ASC).
+        # We just document it as a separate step so the inspector UI shows
+        # the ranking as an explicit phase.
+        steps.append(
+            StepTrace(
+                index=4,
+                title="Ranking BM25",
+                detail=(
+                    f"Top-{rag_result.top_k} trié par score BM25 ascendant "
+                    f"(meilleur = score le plus négatif)"
+                ),
+                status="ok",
+                duration_ms=int((time.monotonic() - t) * 1000),
+            )
+        )
+        self.tracer.end_span(ctx, span, status="ok", top_k=rag_result.top_k)
+
+        # ── Step 5 — Synthèse avec citations ──
+        span = self.tracer.start_span(ctx, "synthesis")
+        t = time.monotonic()
+        answer, sources = format_documentary_answer(user_message, rag_result)
+        steps.append(
+            StepTrace(
+                index=5,
+                title="Synthèse avec citations",
+                detail=(
+                    f"{len(sources)} document(s) cité(s)"
+                    if sources
+                    else "Aucun document cité (base vide ou sans match)"
+                ),
+                status="ok" if sources else "warning",
+                duration_ms=int((time.monotonic() - t) * 1000),
+            )
+        )
+        self.tracer.end_span(
+            ctx, span, status="ok" if sources else "warning",
+            sources_count=len(sources),
+        )
+
+        # ── Step 6 — Réponse finalisée ──
+        span = self.tracer.start_span(ctx, "answer_citations")
+        t = time.monotonic()
+        cited = bool(sources)
+        steps.append(
+            StepTrace(
+                index=6,
+                title="Réponse finalisée",
+                detail=(
+                    "Réponse + sources citées"
+                    if cited
+                    else "Réponse « no hit » — reformulation suggérée"
+                ),
+                status="ok" if cited else "warning",
+                duration_ms=int((time.monotonic() - t) * 1000),
+            )
+        )
+        self.tracer.end_span(ctx, span, status="ok", cited=cited)
+
+        # Security checks for documentary.
+        security_checks = [
+            SecurityCheck("Scope appliqué", "ok", scope_detail_doc),
+            SecurityCheck("Documents autorisés", "ok", "tenant=dp (FTS5 filter)"),
+            SecurityCheck(
+                "Source citée",
+                "ok" if cited else "warning",
+                f"{len(sources)} source(s)" if cited else "Aucune source — base vide",
+            ),
+        ]
+
+        tokens_in = 600
+        tokens_out = 320 if cited else 80
+
+        return AgentResponse(
+            answer=answer,
+            sql=None,                       # documentary intent → no SQL
+            scope_clause=None,              # scoping is internal to the RAG tool
+            chart=None,                     # documentary → no chart
+            tokens_in=tokens_in,
+            tokens_out=tokens_out,
+            latency_ms=int((time.monotonic() - started_at) * 1000),
+            tool_calls=["rag_search"],
+            steps=[s.__dict__ for s in steps],
+            security_checks=[s.__dict__ for s in security_checks],
+            refused=False,
+            tables_touched=["document_chunks_fts", "document_chunks", "documents"],
+            sources=sources,
         )

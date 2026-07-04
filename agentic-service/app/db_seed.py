@@ -36,6 +36,7 @@ from sqlalchemy import (
     Text,
     func,
     select,
+    text,
 )
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -166,6 +167,59 @@ payments = Table(
     Column("status", String, nullable=False),
     Column("captured_at", DateTime, nullable=True),
     Column("created_at", DateTime, nullable=False),
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Documentary RAG tables (Task 23 / Phase 3 — RAG layer)
+# ─────────────────────────────────────────────────────────────────────────────
+# Two physical tables plus one FTS5 virtual table.
+#
+# ``documents`` — one row per uploaded document (PDF, text, manual note).
+#   ``producer_id`` is NULL for tenant-wide documents (CGV, FAQ, etc.) or
+#   an int for producer-private documents.
+#
+# ``document_chunks`` — paragraph-sized chunks (200-400 chars) ready for
+#   full-text search. Each chunk carries the same ``tenant_id`` and
+#   ``producer_id`` as its parent document so the RAG tool can apply
+#   row-level scoping at search time without joining back to ``documents``.
+#
+# ``document_chunks_fts`` — SQLite FTS5 virtual table (BM25 ranking) that
+#   mirrors ``document_chunks``. We chose MANUAL sync (not triggers) so
+#   the ingest pipeline keeps full control of the FTS content and so the
+#   DELETE endpoint can remove the FTS rows explicitly (FTS5 external
+#   content tables are trickier to keep in sync than a manual mirror).
+#
+#   We chose FTS5 over pgvector / OpenAI embeddings on purpose:
+#   - No external API key needed (vs OpenAI embeddings).
+#   - No Postgres/Docker to run (in-process SQLite only).
+#   - Sufficient for a small corpus (< 100 chunks per tenant).
+#   - Embeddings-ready architecture: ``RagSearchTool.search()`` is the
+#     single point of swap — replace the FTS5 SELECT with a vector
+#     similarity query in Phase 6 without touching the orchestrator.
+documents = Table(
+    "documents",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("tenant_id", String, nullable=False, default="dp", index=True),
+    Column("title", String, nullable=False),
+    Column("source_type", String, nullable=False),  # "pdf" | "text" | "manual"
+    Column("source_filename", String, nullable=True),
+    Column("content_raw", Text, nullable=False),
+    Column("producer_id", Integer, nullable=True, index=True),  # NULL = tenant-wide
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+)
+
+document_chunks = Table(
+    "document_chunks",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("document_id", Integer, ForeignKey("documents.id"), nullable=False, index=True),
+    Column("chunk_index", Integer, nullable=False),
+    Column("content", Text, nullable=False),
+    Column("tenant_id", String, nullable=False, default="dp", index=True),
+    Column("producer_id", Integer, nullable=True, index=True),
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
 )
 
 
@@ -533,10 +587,29 @@ async def init_db() -> None:
     to call on every startup.
     """
     engine = get_engine()
-    # Drop + recreate (idempotent)
+    # Drop + recreate (idempotent). The FTS5 virtual table is NOT part of
+    # ``metadata`` (SQLAlchemy Core does not model virtual tables), so we
+    # drop + recreate it explicitly with raw SQL below.
     async with engine.begin() as conn:
+        # Drop the FTS5 virtual table first (if it exists) — it references
+        # ``document_chunks`` so it must go before ``metadata.drop_all``
+        # cascades the parent table.
+        await conn.execute(text("DROP TABLE IF EXISTS document_chunks_fts"))
         await conn.run_sync(metadata.drop_all)
         await conn.run_sync(metadata.create_all)
+        # Create the FTS5 virtual table. ``tokenize = 'porter unicode61'``
+        # gives us case-insensitive search + English-stemmer-for-French
+        # (good enough for the demo; a French stemmer would be a Phase 6
+        # improvement). The ``UNINDEXED`` columns (``document_id``,
+        # ``tenant_id``, ``producer_id``) are stored but not tokenised —
+        # we filter on them at query time.
+        await conn.execute(
+            text(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks_fts USING fts5("
+                "content, document_id UNINDEXED, tenant_id UNINDEXED, "
+                "producer_id UNINDEXED, tokenize = 'porter unicode61')"
+            )
+        )
     logger.info("SQLite tables created at %s", engine.url)
 
     # Seed
@@ -720,6 +793,28 @@ async def init_db() -> None:
             logger.info("Producer %s (%s): %d orders seeded", pid, name, n)
     logger.info("Database seeded — %d producers, %d orders total", len(_PRODUCERS), len(all_orders))
 
+    # ── Documentary RAG seed — 4 fictitious DP documents ──
+    # These power the documentary intent (CGV, FAQ, onboarding procedure,
+    # pickup policy). All four are tenant-wide (producer_id=NULL) so every
+    # producer sees them. They are FICTITIOUS, written for the demo.
+    for doc in _DP_DOCUMENTS:
+        await ingest_document(
+            tenant_id="dp",
+            title=doc["title"],
+            source_type="manual",
+            content=doc["content"],
+            producer_id=None,
+        )
+    async with engine.connect() as conn:
+        r = await conn.execute(select(func.count()).select_from(documents))
+        n_docs = r.scalar_one()
+        r = await conn.execute(select(func.count()).select_from(document_chunks))
+        n_chunks = r.scalar_one()
+    logger.info(
+        "RAG seed — %d documents, %d chunks (CGV, FAQ, Onboarding, Retrait)",
+        n_docs, n_chunks,
+    )
+
 
 async def dispose_engine() -> None:
     """Dispose the engine pool (called on app shutdown)."""
@@ -727,3 +822,267 @@ async def dispose_engine() -> None:
     if _engine is not None:
         await _engine.dispose()
     _engine = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Documentary RAG — chunking + ingest
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _chunk_text(content: str, target_size: int = 320, max_size: int = 480) -> list[str]:
+    """Split ``content`` into paragraph-sized chunks for FTS5 indexing.
+
+    Strategy:
+      1. Split on double newlines (paragraph boundaries).
+      2. Each paragraph becomes a candidate chunk.
+      3. If a paragraph is longer than ``max_size``, hard-split it at the
+         last whitespace before ``target_size`` (preserves word boundaries).
+      4. Discard empty chunks.
+
+    The 320-char target keeps chunks small enough to cite cleanly in an
+    LLM answer (Phase 6) yet big enough to carry a full clause of the CGV.
+    """
+    chunks: list[str] = []
+    for para in content.split("\n\n"):
+        para = para.strip()
+        if not para:
+            continue
+        if len(para) <= max_size:
+            chunks.append(para)
+            continue
+        # Hard-split long paragraphs at word boundaries.
+        cursor = 0
+        while cursor < len(para):
+            end = cursor + target_size
+            if end >= len(para):
+                chunks.append(para[cursor:].strip())
+                break
+            # Walk back to the previous whitespace.
+            while end > cursor and para[end] not in (" ", "\n"):
+                end -= 1
+            if end == cursor:  # single word longer than target_size
+                end = cursor + target_size
+            chunks.append(para[cursor:end].strip())
+            cursor = end
+    return [c for c in chunks if c]
+
+
+async def ingest_document(
+    tenant_id: str,
+    title: str,
+    source_type: str,
+    content: str,
+    producer_id: int | None = None,
+    source_filename: str | None = None,
+) -> int:
+    """Insert a document + its chunks, sync the FTS5 table, return doc id.
+
+    Called by:
+      - ``init_db()`` to seed the 4 fictitious DP documents.
+      - ``POST /api/documents`` to ingest an uploaded PDF or text file.
+
+    The FTS5 table is synced manually (not via triggers) — see the comment
+    on ``document_chunks_fts`` above for the rationale.
+    """
+    engine = get_engine()
+    now = datetime.utcnow()
+    chunks = _chunk_text(content)
+    async with engine.begin() as conn:
+        result = await conn.execute(
+            documents.insert().values(
+                tenant_id=tenant_id,
+                title=title,
+                source_type=source_type,
+                source_filename=source_filename,
+                content_raw=content,
+                producer_id=producer_id,
+                created_at=now,
+            ).returning(documents.c.id)
+        )
+        doc_id = result.scalar_one()
+        for idx, chunk in enumerate(chunks):
+            await conn.execute(
+                document_chunks.insert().values(
+                    document_id=doc_id,
+                    chunk_index=idx,
+                    content=chunk,
+                    tenant_id=tenant_id,
+                    producer_id=producer_id,
+                    created_at=now,
+                )
+            )
+            # Manual FTS5 sync.
+            await conn.execute(
+                text(
+                    "INSERT INTO document_chunks_fts "
+                    "(content, document_id, tenant_id, producer_id) "
+                    "VALUES (:content, :doc_id, :tenant_id, :producer_id)"
+                ),
+                {
+                    "content": chunk,
+                    "doc_id": doc_id,
+                    "tenant_id": tenant_id,
+                    "producer_id": producer_id,
+                },
+            )
+    logger.info(
+        "ingest_document — doc_id=%d title=%r chunks=%d tenant=%s producer=%s",
+        doc_id, title, len(chunks), tenant_id, producer_id,
+    )
+    return doc_id
+
+
+async def delete_document(doc_id: int) -> bool:
+    """Delete a document, its chunks, and its FTS5 rows. Returns True if deleted.
+
+    Order matters for FTS5: delete from the virtual table first (it has no
+    FK constraints), then ``document_chunks``, then ``documents``.
+    """
+    engine = get_engine()
+    async with engine.begin() as conn:
+        # Verify existence first (so we can return False cleanly).
+        existing = await conn.execute(
+            select(documents.c.id).where(documents.c.id == doc_id)
+        )
+        if existing.fetchone() is None:
+            return False
+        # 1. FTS5 virtual table (manual sync — no cascade).
+        await conn.execute(
+            text("DELETE FROM document_chunks_fts WHERE document_id = :doc_id"),
+            {"doc_id": doc_id},
+        )
+        # 2. document_chunks.
+        await conn.execute(
+            document_chunks.delete().where(document_chunks.c.document_id == doc_id)
+        )
+        # 3. documents.
+        await conn.execute(
+            documents.delete().where(documents.c.id == doc_id)
+        )
+    logger.info("delete_document — doc_id=%d deleted", doc_id)
+    return True
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Seed documents (fictitious, French) — Drive Producteur
+# ─────────────────────────────────────────────────────────────────────────────
+
+_DP_DOCUMENTS: list[dict[str, str]] = [
+    {
+        "title": "CGV Drive Producteur",
+        "content": """Conditions Générales de Vente — Drive Producteur (marketplace click & collect)
+
+Article 1 — Objet
+Les présentes Conditions Générales de Vente régissent les relations entre les producteurs partenaires de la marketplace Drive Producteur (ci-après « le Producteur ») et la société éditrice de la plateforme (ci-après « DP »). La marketplace met en relation directe les producteurs locaux et les clients finals via un système de commande en ligne et de retrait en point de vente.
+
+Article 2 — Inscription du producteur
+L'inscription d'un nouveau producteur est conditionnée à la validation de son dossier d'onboarding : SIRET en cours de validité, extrait Kbis ou équivalent, RIB au nom de la raison sociale, pièce d'identité du représentant légal et justificatif professionnel (numéro d'agrément, certification bio, etc.). DP se réserve un délai de 5 jours ouvrés pour valider ou refuser le dossier.
+
+Article 3 — Commission marketplace
+DP perçoit une commission de 12 % sur le montant HT de chaque commande validée. Cette commission couvre l'hébergement de la boutique en ligne, le paiement en ligne sécurisé, le support client de premier niveau et les outils de gestion des créneaux de retrait. La commission est prélevée à la source : le producteur perçoit directement le montant net (HT moins 12 %) sur son RIB.
+
+Article 4 — Paiement au producteur
+Le paiement des commandes validées est effectué sous 7 jours ouvrés après la confirmation de retrait par le client. Les paiements sont regroupés en un virement hebdomadaire chaque mardi. Un relevé détaillé des commandes et de la commission prélevée est disponible dans l'espace producteur. En cas de litige sur une commande, le paiement de la commande concernée est suspendu jusqu'à résolution.
+
+Article 5 — Créneaux de retrait (click & collect)
+Chaque producteur définit librement ses créneaux de retrait dans son espace producteur (onglet « Créneaux »). Les créneaux doivent être configurés au moins 48 heures à l'avance. Un créneau a une durée minimale de 30 minutes. Le producteur s'engage à être présent au point de vente pendant la totalité de la plage horaire ouverte au retrait.
+
+Article 6 — Annulation par le client
+Le client peut annuler sa commande gratuitement jusqu'à 24 heures avant le créneau de retrait. Au-delà, l'annulation est soumise à l'accord du producteur. Un client qui ne se présente pas au créneau de retrait (no-show) déclenche automatiquement la procédure décrite à l'article 7.
+
+Article 7 — No-show client
+En cas de non-présentation du client au créneau de retrait convenu, le producteur conserve la marchandise. La commande est marquée « no_show » dans l'espace producteur après 1 heure de retard. Le paiement est néanmoins versé au producteur (la commande a été préparée et le créneau bloqué). Le producteur peut proposer un nouveau créneau de retrait dans les 24 heures au client, sans obligation.
+
+Article 8 — Annulation par le producteur
+Le producteur peut annuler une commande en cas de rupture de stock, de problème qualité ou de force majeure. L'annulation doit être notifiée via l'espace producteur avant le créneau de retrait. Le client est intégralement remboursé. En cas d'annulations répétées (plus de 5 % des commandes sur un mois), DP peut suspendre temporairement le catalogue du producteur.
+
+Article 9 — Litiges
+Tout litige relatif à une commande (qualité, quantité, retard) doit être signalé via l'espace producteur dans un délai de 48 heures après le retrait. DP joue un rôle de médiateur entre le producteur et le client. À défaut de résolution amiable sous 15 jours, les parties peuvent saisir la juridiction compétente du siège social de DP.
+
+Article 10 — Modification des CGV
+DP se réserve le droit de modifier les présentes CGV. Les modifications entrent en vigueur 30 jours après leur notification aux producteurs par email. Les producteurs peuvent résilier leur partenariat sans frais dans ce délai de 30 jours s'ils n'acceptent pas les nouvelles conditions.""",
+    },
+    {
+        "title": "FAQ Producteurs",
+        "content": """FAQ Producteurs — Drive Producteur
+
+Q : Comment ajouter un produit à mon catalogue ?
+R : Rendez-vous dans l'espace producteur, onglet « Catalogue », puis cliquez sur « Ajouter un produit ». Renseignez le nom du produit, la catégorie (légumes, fruits, produits laitiers, viande, épicerie, boissons), l'unité de vente (kg, pièce, botte, litre, barquette), le prix TTC et la disponibilité. Pensez à ajouter une photo — les produits avec photo se vendent en moyenne 2,5 fois mieux. Le produit apparaît sur la marketplace dans les 5 minutes.
+
+Q : Comment fonctionnent les commissions ?
+R : DP perçoit une commission de 12 % sur le montant HT de chaque commande. La commission est prélevée à la source : vous percevez directement le montant net (HT moins 12 %) sur votre RIB. Aucune facturation séparée. Le détail des commissions est disponible dans l'espace producteur, onglet « Paiements ».
+
+Q : Que faire si un client ne vient pas récupérer sa commande ?
+R : Si un client ne se présente pas au créneau de retrait, la commande est automatiquement marquée « no_show » après 1 heure de retard. Vous conservez la marchandise et le paiement est néanmoins versé (la commande a été préparée et le créneau bloqué). Vous pouvez, sans obligation, proposer un nouveau créneau de retrait au client dans les 24 heures via l'espace producteur. Au-delà de 24 heures, la commande est définitivement clôturée.
+
+Q : Comment modifier mes créneaux de retrait ?
+R : Allez dans l'espace producteur, onglet « Créneaux ». Vous pouvez ajouter, modifier ou supprimer des créneaux. Les modifications doivent être faites au moins 48 heures à l'avance. Un créneau a une durée minimale de 30 minutes. Pensez à anticiper les périodes de forte affluence (week-ends, veilles de fêtes) en ouvrant plus de créneaux.
+
+Q : Quand suis-je payé ?
+R : Les paiements sont effectués sous 7 jours ouvrés après la confirmation de retrait par le client. Les virements sont regroupés hebdomadairement, chaque mardi. Vous recevez un email de notification à chaque virement avec le relevé détaillé des commandes.
+
+Q : Comment suspendre temporairement ma boutique ?
+R : Dans l'espace producteur, onglet « Paramètres », activez le mode « Pause boutique ». Tous vos produits deviennent indisponibles sur la marketplace mais restent visibles dans votre catalogue. Vous pouvez réactiver la boutique à tout moment.
+
+Q : Comment être mis en avant sur la marketplace ?
+R : DP met en avant les producteurs qui : (1) ont une photo de profil et une description de leur exploitation, (2) proposent au moins 8 produits avec photos, (3) respectent leurs créneaux de retrait (taux de no-show < 5 %), (4) ont un délai de réponse aux messages clients inférieur à 24 heures.""",
+    },
+    {
+        "title": "Procédure d'onboarding producteur",
+        "content": """Procédure d'onboarding producteur — Drive Producteur
+
+Cette procédure décrit les étapes de validation d'un nouveau producteur sur la marketplace Drive Producteur. Elle s'adresse à l'équipe Ops DP ainsi qu'aux producteurs candidats.
+
+Étape 1 — Création du compte
+Le producteur candidat crée son compte sur drive-producteur.fr/onboarding. Il renseigne : raison sociale, nom commercial (display_name), email de contact, téléphone, adresse du siège social. Un email de vérification est envoyé. Le producteur clique sur le lien de vérification pour activer son compte. Le compte est alors en statut « pending ».
+
+Étape 2 — Documents légaux obligatoires
+Le producteur téléverse les documents légaux suivants via son espace producteur, onglet « Documents » :
+  - SIRET en cours de validité (extrait SIRENE de moins de 3 mois).
+  - RIB au nom de la raison sociale (obligatoire pour les virements).
+  - Pièce d'identité du représentant légal (recto-verso).
+  - Justificatif professionnel : numéro d'agrément, certificat de qualification professionnelle, attestation de certification bio, ou Kbis de moins de 3 mois pour les SARL/EURL.
+Champs obligatoires : tous les champs du formulaire sont obligatoires. Aucune soumission partielle n'est acceptée.
+
+Étape 3 — Validation SIRENE
+L'équipe Ops DP vérifie le SIRET via l'API SIRENE de l'INSEE. Les points vérifiés : (a) le SIRET existe bien, (b) l'activité déclarée correspond à une production agricole ou artisanale compatible avec la marketplace, (c) l'établissement n'est pas en liquidation judiciaire, (d) l'adresse du siège correspond à l'adresse déclarée par le producteur. Cette étape prend en moyenne 2 jours ouvrés.
+
+Motifs de rejet courants à l'étape 3 :
+  - SIRET inexistant ou invalide.
+  - Activité non agricole (ex. restauration, commerce de gros).
+  - Établissement en liquidation ou redressement judiciaire.
+  - Adresse du siège incohérente avec le point de vente déclaré.
+
+Étape 4 — Configuration du catalogue
+Une fois le dossier validé (étapes 2 + 3), le producteur configure son catalogue : ajout des produits (nom, catégorie, unité, prix, photo), définition des créneaux de retrait, paramétrage du point de vente (adresse, horaires, coordonnées GPS). L'équipe Ops DP accompagne le producteur sur cette étape si nécessaire.
+
+Étape 5 — Activation
+Lorsque le catalogue contient au moins 5 produits et qu'au moins 3 créneaux de retrait sont configurés, l'équipe Ops DP active la boutique. Le producteur reçoit un email de confirmation. La boutique est visible sur la marketplace dans les 24 heures. Un suivi qualité est réalisé à J+7, J+30 et J+90 pour vérifier le bon démarrage.
+
+Délai total moyen : 5 jours ouvrés (dont 2 jours pour la validation SIRENE, 1 jour pour la vérification des documents, 2 jours pour la configuration du catalogue par le producteur).""",
+    },
+    {
+        "title": "Politique de retrait (click & collect)",
+        "content": """Politique de retrait — Drive Producteur (click & collect)
+
+Cette politique détaille les règles applicables aux retraits de commandes en point de vente.
+
+Créneaux de retrait
+Chaque producteur définit ses propres créneaux de retrait dans son espace producteur. Les créneaux sont configurés au moins 48 heures à l'avance. Un créneau a une durée minimale de 30 minutes. Le producteur s'engage à être présent au point de vente pendant toute la plage horaire ouverte. Les créneaux sont visibles par les clients lors de la commande.
+
+Retard client
+Le client est considéré en retard s'il se présente après l'heure de fin de son créneau. Une tolérance de 15 minutes est accordée. Au-delà, le producteur peut refuser la remise de la commande et la marquer comme « no_show ».
+
+No-show (non-présentation client)
+Si le client ne se présente pas dans l'heure qui suit la fin de son créneau, la commande est automatiquement marquée « no_show » dans l'espace producteur. La marchandise reste la propriété du producteur. Le paiement est néanmoins versé au producteur (la commande a été préparée et le créneau bloqué). Le producteur peut, sans obligation, proposer un nouveau créneau de retrait dans les 24 heures. Au-delà, la commande est définitivement clôturée.
+
+Modification de créneau par le client
+Le client peut modifier son créneau de retrait gratuitement jusqu'à 24 heures avant le créneau initialement choisi. La modification se fait via l'espace client. Au-delà de 24 heures, la modification n'est plus possible — le client doit annuler et recommander.
+
+Annulation par le client
+Annulation gratuite jusqu'à 24 heures avant le créneau. Au-delà, l'annulation est soumise à l'accord du producteur (notification via l'espace client). Si le producteur refuse l'annulation tardive, le client est facturé et la commande est conservée à disposition pendant 24 heures.
+
+Annulation par le producteur
+Le producteur peut annuler une commande en cas de rupture de stock, de problème qualité ou de force majeure. L'annulation doit être notifiée avant le créneau de retrait via l'espace producteur. Le client est intégralement remboursé. Des annulations répétées (> 5 % des commandes sur un mois) peuvent entraîner la suspension temporaire du catalogue producteur par DP.""",
+    },
+]

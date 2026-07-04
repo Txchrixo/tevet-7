@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/feather-icons";
 
 import { IdentitySwitcher } from "./identity-switcher";
+import { DocumentsPanel } from "./documents-panel";
 
 interface SidebarProps {
   /** Called when an example or action is triggered (used to close the mobile sheet). */
@@ -149,6 +150,11 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               })}
             </div>
           </section>
+
+          <Separator />
+
+          {/* RAG document corpus */}
+          <DocumentsPanel />
         </div>
       </ScrollArea>
     </div>

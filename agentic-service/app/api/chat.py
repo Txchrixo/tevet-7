@@ -48,6 +48,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.orchestrator import AgentOrchestrator
 from app.connectors.sqlite_connector import SqliteConnector
+from app.tools.rag_tool import RagSearchTool
 from app.tools.sql_tool import SqlReadTool
 from app.tracing import get_tracer
 
@@ -116,12 +117,22 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             scope_value=scope_value,
             role=req.role,
         )
+        # Phase 3 — build the RAG tool with the same identity context so
+        # documentary questions are scoped identically to analytical ones.
+        rag_tool = RagSearchTool(
+            connector=connector,
+            tenant_id="dp",
+            producer_id=req.producer_id,
+            role=req.role,
+            tracer=get_tracer(),
+        )
         orchestrator = AgentOrchestrator(
             sql_tool=sql_tool,
             role=req.role,
             producer_id=req.producer_id,
             identity_id=req.identity_id,
             tracer=get_tracer(),
+            rag_tool=rag_tool,
         )
         response = await orchestrator.run(req.message)
 

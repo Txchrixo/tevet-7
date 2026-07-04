@@ -7,11 +7,13 @@ import { Separator } from "@/components/ui/separator";
 import type { ChatMessage, TraceStatus } from "@/lib/types";
 import {
   AlertTriangle,
+  BookOpen,
   Check,
   Clock,
   Cpu,
   Database,
   Eye,
+  FileText,
   Shield,
   ShieldOff,
   X,
@@ -42,6 +44,10 @@ export function Inspector({ message, onClose }: InspectorProps) {
   const latencyDisplay = `${(totalMs / 1000).toFixed(2).replace(".", ",")} s`;
   const totalMsDisplay = `${totalMs} ms`;
 
+  // RAG mode = documentary response with cited sources. Distinguished from
+  // analytical (SQL) responses so the inspector reads as a distinct trace.
+  const isRag = !!r.sources && r.sources.length > 0;
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -67,6 +73,26 @@ export function Inspector({ message, onClose }: InspectorProps) {
                 <ShieldOff size={14} className="shrink-0" />
                 <span className="font-body">
                   Action refusée — scoping violation
+                </span>
+              </div>
+            ) : isRag ? (
+              <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs">
+                <FileText size={14} className="shrink-0 text-accent" />
+                <span className="font-body text-foreground">
+                  Réponse documentaire ·{" "}
+                  <span className="font-heading text-foreground tabular-nums">
+                    {r.sources?.length ?? 0}
+                  </span>{" "}
+                  source{(r.sources?.length ?? 0) > 1 ? "s" : ""} citée
+                  {(r.sources?.length ?? 0) > 1 ? "s" : ""} ·{" "}
+                  <span className="font-heading text-foreground tabular-nums">
+                    {totalMs}
+                  </span>{" "}
+                  ms ·{" "}
+                  <span className="font-heading text-foreground tabular-nums">
+                    {totalTokensDisplay}
+                  </span>{" "}
+                  tokens
                 </span>
               </div>
             ) : (
@@ -133,8 +159,8 @@ export function Inspector({ message, onClose }: InspectorProps) {
             </ol>
           </section>
 
-          {/* SQL */}
-          {r.sql && (
+          {/* SQL (analytical responses only) */}
+          {r.sql && !isRag && (
             <section>
               <SectionLabel icon={<Database size={12} />}>
                 SQL exécuté
@@ -147,6 +173,50 @@ export function Inspector({ message, onClose }: InspectorProps) {
                   defaultOpen
                 />
               </div>
+            </section>
+          )}
+
+          {/* Documents retrouvés (RAG responses only) */}
+          {isRag && r.sources && r.sources.length > 0 && (
+            <section>
+              <SectionLabel icon={<BookOpen size={12} />}>
+                Documents retrouvés
+              </SectionLabel>
+              <ul className="mt-2 space-y-1.5">
+                {r.sources.map((s, i) => (
+                  <li
+                    key={`${s.documentId}-${s.chunkIndex}-${i}`}
+                    className="flex items-start gap-2 rounded-md border border-border bg-background p-2.5"
+                  >
+                    <FileText size={14} className="mt-0.5 shrink-0 text-accent" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-medium text-foreground">
+                        {s.title}
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-muted-foreground">
+                        chunk{" "}
+                        <span className="font-heading tabular-nums">
+                          {s.chunkIndex}
+                        </span>{" "}
+                        · document_id{" "}
+                        <span className="font-heading tabular-nums">
+                          {s.documentId}
+                        </span>
+                      </div>
+                    </div>
+                    {typeof s.score === "number" && (
+                      <div className="shrink-0 text-right">
+                        <div className="font-heading text-sm tabular-nums text-foreground">
+                          {(s.score * 100).toFixed(0)}%
+                        </div>
+                        <div className="text-[9px] uppercase tracking-wide text-muted-foreground">
+                          score
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 

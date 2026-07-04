@@ -62,6 +62,37 @@ export interface AssistantResponse {
   securityChecks: SecurityCheck[];
   /** True when the agent refused to answer (scoping violation for a producer). */
   refused: boolean;
+  /**
+   * Documentary (RAG) citations. Populated when the agent answered by
+   * searching the indexed document corpus rather than generating SQL.
+   * Empty/undefined for analytical responses.
+   */
+  sources?: Source[];
+}
+
+/**
+ * A documentary citation returned alongside a RAG answer.
+ *
+ * `score` is optional — exposed only when the backend's retriever surfaces a
+ * similarity score for the chunk (cosine distance, reranker confidence, etc.).
+ */
+export interface Source {
+  type: "document";
+  title: string;
+  chunkIndex: number;
+  documentId: number;
+  /** Optional retrieval score in [0, 1]. Backend-dependent. */
+  score?: number;
+}
+
+/** A document indexed in the RAG corpus (CGV, FAQ, procédure, etc.). */
+export interface DocumentInfo {
+  id: number;
+  title: string;
+  sourceType: "pdf" | "text" | "manual";
+  createdAt: string;
+  chunksCount: number;
+  producerId: number | null;
 }
 
 export interface ChatMessage {

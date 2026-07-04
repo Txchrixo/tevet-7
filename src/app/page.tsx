@@ -27,6 +27,8 @@ export default function Home() {
   const inspectorOpen = useCopilotStore((s) => s.inspectorOpen);
   const setInspectorOpen = useCopilotStore((s) => s.setInspectorOpen);
   const sendExample = useCopilotStore((s) => s.sendExample);
+  const identity = useCopilotStore((s) => s.identity);
+  const loadDocuments = useCopilotStore((s) => s.loadDocuments);
 
   const [sidebarSheet, setSidebarSheet] = React.useState(false);
   const [inspectorSheet, setInspectorSheet] = React.useState(false);
@@ -42,6 +44,15 @@ export default function Home() {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, isStreaming]);
+
+  // Load the RAG document corpus on mount AND whenever the identity changes
+  // (producers are scoped by `producer_id`, admin sees everything). The store
+  // also re-fetches inside `setIdentity`, but this effect is the source of
+  // truth — it guarantees the panel is populated even on a hard refresh with
+  // the default identity, and survives any future change to the store.
+  React.useEffect(() => {
+    void loadDocuments();
+  }, [identity.id, loadDocuments]);
 
   return (
     <div className="flex min-h-screen flex-col bg-background">

@@ -1,7 +1,7 @@
 {
-  "total_cases": 30,
-  "evaluable_cases": 29,
-  "passed": 29,
+  "total_cases": 35,
+  "evaluable_cases": 34,
+  "passed": 34,
   "overall_pass_rate": 1.0,
   "sql_valid": {
     "pass": 22,
@@ -9,18 +9,18 @@
     "pct": 1.0
   },
   "scopes_respected": {
-    "pass": 29,
-    "total": 29,
+    "pass": 34,
+    "total": 34,
     "pct": 1.0
   },
   "intents_correct": {
-    "pass": 29,
-    "total": 29,
+    "pass": 34,
+    "total": 34,
     "pct": 1.0
   },
   "responses_well_formed": {
-    "pass": 22,
-    "total": 22,
+    "pass": 27,
+    "total": 27,
     "pct": 1.0
   },
   "expected_to_fail": {
@@ -63,6 +63,10 @@
       "total": 5
     },
     "security_edge_cases": {
+      "pass": 5,
+      "total": 5
+    },
+    "documentary": {
       "pass": 5,
       "total": 5
     }
@@ -852,6 +856,136 @@
         "answer_excerpt": "Je n'ai pas pu générer de requête SQL pour cette question. Pouvez-vous la reformuler en utilisant les mots-clés attendus (ventes, stock, juin, …) ?",
         "chart_present": false,
         "tables_touched": [],
+        "tables_in_sql": [],
+        "http_error": null
+      },
+      "retried": false
+    },
+    {
+      "id": "eval-031",
+      "category": "documentary",
+      "question": "Quelles pièces sont nécessaires pour valider un producteur ?",
+      "description": "Phase 3 documentary case — producer 42 asks about the onboarding documents. classify_question matches 'valider' (doc keyword) → documentary. RagSearchTool FTS5 BM25 retrieves chunks from 'Procédure d'onboarding producteur' (mentions SIRET, RIB, pièce d'identité). Answer must contain at least one of those keywords and sources must be non-empty.",
+      "expected_to_fail": false,
+      "passed": true,
+      "failure_reasons": [],
+      "actual": {
+        "intent": "documentary",
+        "refused": false,
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "D'après la base documentaire Drive Producteur :\n\n1. Étape 4 — Configuration du catalogue\nUne fois le dossier validé (étapes 2 + 3), le producteur configure son catalogue : ajout des produits (nom, catégorie, unité, prix, photo), définition des créneaux de retrait, paramétrage du point de vente (adre",
+        "chart_present": false,
+        "tables_touched": [
+          "document_chunks_fts",
+          "document_chunks",
+          "documents"
+        ],
+        "tables_in_sql": [],
+        "http_error": null
+      },
+      "retried": false
+    },
+    {
+      "id": "eval-032",
+      "category": "documentary",
+      "question": "Comment fonctionnent les commissions ?",
+      "description": "Phase 3 documentary case — producer 42 asks how commissions work. classify_question matches 'comment' (doc keyword) BEFORE the net_revenue 'commission' rule → documentary (this is the explicit ambiguity-resolution rule from the task spec). RAG retrieves chunks from CGV + FAQ mentioning '12 %'. Answer must contain '12' or 'commission', sources non-empty.",
+      "expected_to_fail": false,
+      "passed": true,
+      "failure_reasons": [],
+      "actual": {
+        "intent": "documentary",
+        "refused": false,
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "D'après la base documentaire Drive Producteur :\n\n1. Q : Comment fonctionnent les commissions ?\nR : DP perçoit une commission de 12 % sur le montant HT de chaque commande. La commission est prélevée à la source : vous percevez directement le montant net (HT moins 12 %) sur votre RIB. Aucune facturati",
+        "chart_present": false,
+        "tables_touched": [
+          "document_chunks_fts",
+          "document_chunks",
+          "documents"
+        ],
+        "tables_in_sql": [],
+        "http_error": null
+      },
+      "retried": false
+    },
+    {
+      "id": "eval-033",
+      "category": "documentary",
+      "question": "Que faire si un client ne vient pas récupérer sa commande ?",
+      "description": "Phase 3 documentary case — producer 42 asks about the no-show policy. classify_question matches 'que faire' (doc keyword) → documentary. RAG retrieves chunks from FAQ + CGV + Politique de retrait. Answer must mention no-show / créneau / marchandise, sources non-empty.",
+      "expected_to_fail": false,
+      "passed": true,
+      "failure_reasons": [],
+      "actual": {
+        "intent": "documentary",
+        "refused": false,
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "D'après la base documentaire Drive Producteur :\n\n1. Q : Que faire si un client ne vient pas récupérer sa commande ?\nR : Si un client ne se présente pas au créneau de retrait, la commande est automatiquement marquée « no_show » après 1 heure de retard. Vous conservez la marchandise et le paiement est",
+        "chart_present": false,
+        "tables_touched": [
+          "document_chunks_fts",
+          "document_chunks",
+          "documents"
+        ],
+        "tables_in_sql": [],
+        "http_error": null
+      },
+      "retried": false
+    },
+    {
+      "id": "eval-034",
+      "category": "documentary",
+      "question": "Quand suis-je payé ?",
+      "description": "Phase 3 documentary case — producer 42 asks when they get paid. classify_question matches 'quand' + 'payé' (doc keywords) → documentary (NOT net_revenue because 'payé' routes to documentary per the priority order). RAG retrieves chunks from CGV Article 4 + FAQ. Answer must mention '7 jours' or 'paiement' or 'mardi', sources non-empty.",
+      "expected_to_fail": false,
+      "passed": true,
+      "failure_reasons": [],
+      "actual": {
+        "intent": "documentary",
+        "refused": false,
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "D'après la base documentaire Drive Producteur :\n\n1. Q : Quand suis-je payé ?\nR : Les paiements sont effectués sous 7 jours ouvrés après la confirmation de retrait par le client. Les virements sont regroupés hebdomadairement, chaque mardi. Vous recevez un email de notification à chaque virement avec ",
+        "chart_present": false,
+        "tables_touched": [
+          "document_chunks_fts",
+          "document_chunks",
+          "documents"
+        ],
+        "tables_in_sql": [],
+        "http_error": null
+      },
+      "retried": false
+    },
+    {
+      "id": "eval-035",
+      "category": "documentary",
+      "question": "Comment ajouter un produit à mon catalogue ?",
+      "description": "Phase 3 documentary case — producer 42 asks how to add a product to their catalog. classify_question matches 'comment' + 'ajouter' + 'catalogue' (doc keywords) → documentary. RAG retrieves the FAQ 'Comment ajouter un produit à mon catalogue ?' chunk. Answer must mention 'catalogue' or 'produit', sources non-empty.",
+      "expected_to_fail": false,
+      "passed": true,
+      "failure_reasons": [],
+      "actual": {
+        "intent": "documentary",
+        "refused": false,
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "D'après la base documentaire Drive Producteur :\n\n1. Q : Comment ajouter un produit à mon catalogue ?\nR : Rendez-vous dans l'espace producteur, onglet « Catalogue », puis cliquez sur « Ajouter un produit ». Renseignez le nom du produit, la catégorie (légumes, fruits, produits laitiers, viande, épicer",
+        "chart_present": false,
+        "tables_touched": [
+          "document_chunks_fts",
+          "document_chunks",
+          "documents"
+        ],
         "tables_in_sql": [],
         "http_error": null
       },

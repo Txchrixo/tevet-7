@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Tevet-7 eval suite — 30-case acceptance-criteria scorer.
+"""Tevet-7 eval suite — 35-case acceptance-criteria scorer.
 
-Runs the 30 natural-language questions in ``dataset.json`` against the
+Runs the 35 natural-language questions in ``dataset.json`` against the
 Tevet-7 backend at ``http://localhost:8001/api/chat`` and scores:
 
   - % SQL valid          (sql_expected=true cases where SQL is present
@@ -14,8 +14,10 @@ Tevet-7 backend at ``http://localhost:8001/api/chat`` and scores:
                               matches the API contract)
 
 This is the interview argument n°2 (after the 8 security tests):
-"I have a 30-case eval suite that scores the agent on real acceptance
-criteria, not vibes."
+"I have a 35-case eval suite that scores the agent on real acceptance
+criteria, not vibes." The 5 documentary cases (Phase 3) extend the
+original 30 analytical/security cases — they assert sources non-empty,
+chart null, and answer-needle matches over the FTS5-retrieved chunks.
 
 Exit codes
 ----------
@@ -164,6 +166,7 @@ def run_assertions(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
     actual_scope = response.get("scope_clause") or ""
     actual_answer = response.get("answer") or ""
     actual_chart = response.get("chart")
+    actual_sources = response.get("sources") or []
 
     # 1. Intent match (extracted from steps[0].detail)
     if "intent" in expected and expected["intent"] is not None:
@@ -222,6 +225,15 @@ def run_assertions(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
     if expected.get("chart_expected"):
         if not actual_chart:
             reasons.append("Expected chart present, got null")
+
+    # 8. Chart must be NULL (Phase 3 documentary cases — no chart).
+    if expected.get("chart_null") and actual_chart is not None:
+        reasons.append(f"Expected chart=null, got: {type(actual_chart).__name__}")
+
+    # 9. Sources must be non-empty (Phase 3 documentary cases).
+    if expected.get("sources_non_empty"):
+        if not actual_sources:
+            reasons.append("Expected non-empty sources, got empty list")
 
     return reasons
 

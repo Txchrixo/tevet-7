@@ -1,13 +1,24 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 
-import { callBackend } from "./api";
+import {
+  callBackend,
+  deleteDocument,
+  listDocuments,
+  uploadDocument,
+  type DocumentUploadInput,
+} from "./api";
 import {
   DEFAULT_IDENTITY_ID,
   IDENTITIES,
   getMockResponse,
 } from "./mock-data";
-import type { AssistantResponse, ChatMessage, Identity } from "./types";
+import type {
+  AssistantResponse,
+  ChatMessage,
+  DocumentInfo,
+  Identity,
+} from "./types";
 
 let idCounter = 0;
 function makeId(prefix: string): string {
@@ -42,6 +53,13 @@ interface CopilotState {
   /** Health of the FastAPI backend connection — drives the footer indicator. */
   backendStatus: BackendStatus;
 
+  /** Indexed documents for the RAG corpus (CGV, FAQ, procédure, etc.). */
+  documents: DocumentInfo[];
+  /** True while `loadDocuments` is in flight (drives the skeleton). */
+  documentsLoading: boolean;
+  /** True while an upload or delete is in flight (disables the panel actions). */
+  documentMutating: boolean;
+
   setIdentity: (identityId: string) => void;
   sendExample: (questionId: string, label: string) => void;
   sendMessage: (text: string) => void;
@@ -49,6 +67,10 @@ interface CopilotState {
   toggleInspector: () => void;
   setInspectorOpen: (open: boolean) => void;
   resetConversation: () => void;
+
+  loadDocuments: () => Promise<void>;
+  addDocument: (input: DocumentUploadInput) => Promise<void>;
+  removeDocument: (id: number) => Promise<void>;
 }
 
 function identityById(id: string): Identity {
@@ -63,6 +85,9 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   isStreaming: false,
   inspectorOpen: false,
   backendStatus: "unknown",
+  documents: [],
+  documentsLoading: false,
+  documentMutating: false,
 
   setIdentity: (identityId) => {
     const identity = identityById(identityId);
@@ -76,6 +101,11 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       // Reset the backend status so the footer reflects the new conversation
       // session — it'll be re-evaluated on the next message.
       backendStatus: "unknown",
+      // Reset the document list — the new identity may have a different scope
+      // (producer #42 vs producer #99 vs admin full-access). loadDocuments()
+      // is re-triggered from the page-level effect that watches identity.
+      documents: [],
+      documentsLoading: true,
     });
     // Dismiss any lingering demo-mode notice when the scope changes.
     toast.dismiss(DEMO_TOAST_ID);
@@ -85,6 +115,10 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     toast.success(`Scope modifié : interrogation en tant que ${scope}`, {
       description: identity.farmName ?? identity.role,
     });
+    // Kick off the scoped fetch immediately — the page-level effect will
+    // also fire, but Zustand dedupes by replacing the in-flight promise
+    // (the latest documents list wins).
+    void get().loadDocuments();
   },
 
   sendExample: (_questionId, label) => {
@@ -112,6 +146,75 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       isStreaming: false,
       backendStatus: "unknown",
     }),
+
+  loadDocuments: async () => {
+    const identity = get().identity;
+    set({ documentsLoading: true });
+    try {
+      const documents = await listDocuments(identity);
+      set({ documents, documentsLoading: false });
+    } catch (err) {
+      console.warn(
+        "Documents backend unreachable, leaving panel empty",
+        err instanceof Error ? err.message : err,
+      );
+      set({ documents: [], documentsLoading: false });
+    }
+  },
+
+  addDocument: async (input) => {
+    if (get().documentMutating) return;
+    const identity = get().identity;
+    set({ documentMutating: true });
+    try {
+      const result = await uploadDocument(input, identity);
+      toast.success("Document indexé", {
+        description: `${result.title} · ${result.chunksCount} chunk${result.chunksCount > 1 ? "s" : ""}`,
+      });
+      await get().loadDocuments();
+    } catch (err) {
+      console.warn(
+        "Upload failed",
+        err instanceof Error ? err.message : err,
+      );
+      toast.error("Indexation échouée", {
+        description:
+          err instanceof Error
+            ? err.message
+            : "Le backend n'a pas pu indexer ce document.",
+      });
+    } finally {
+      set({ documentMutating: false });
+    }
+  },
+
+  removeDocument: async (id) => {
+    if (get().documentMutating) return;
+    const previous = get().documents;
+    // Optimistic delete — the list updates immediately, and we roll back if
+    // the backend rejects the call.
+    set({
+      documents: previous.filter((d) => d.id !== id),
+      documentMutating: true,
+    });
+    try {
+      await deleteDocument(id);
+      toast.success("Document supprimé");
+      await get().loadDocuments();
+    } catch (err) {
+      console.warn(
+        "Delete failed",
+        err instanceof Error ? err.message : err,
+      );
+      set({ documents: previous });
+      toast.error("Suppression échouée", {
+        description:
+          err instanceof Error ? err.message : "Le backend est injoignable.",
+      });
+    } finally {
+      set({ documentMutating: false });
+    }
+  },
 }));
 
 /**

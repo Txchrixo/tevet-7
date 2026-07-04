@@ -2,8 +2,10 @@ import type {
   AssistantResponse,
   ChartSpec,
   ChartType,
+  DocumentInfo,
   Identity,
   SecurityCheck,
+  Source,
   TraceStatus,
   TraceStep,
 } from "./types";
@@ -71,6 +73,43 @@ interface BackendResponse {
   security_checks: BackendSecurityCheck[];
   refused: boolean;
   tables_touched?: string[];
+  /** RAG citations — present only for documentary answers (Phase 3). */
+  sources?: BackendSource[];
+}
+
+interface BackendSource {
+  /**
+   * The backend emits two source kinds today: `"document"` (RAG citation —
+   * the shape described in the task contract) and `"sql"` (analytical
+   * provenance metadata, e.g. `{type: "sql", tables: [...]}`). We filter to
+   * `"document"` in `mapResponse` so the frontend never sees the sql-kind.
+   */
+  type: "document" | "sql" | string;
+  title?: string;
+  chunk_index?: number;
+  document_id?: number;
+  score?: number;
+  /** Present on `type: "sql"` sources — ignored by the frontend. */
+  tables?: string[];
+}
+
+interface BackendDocument {
+  id: number;
+  title: string;
+  source_type: "pdf" | "text" | "manual";
+  created_at: string;
+  chunks_count: number;
+  producer_id: number | null;
+}
+
+interface BackendDocumentListResponse {
+  documents: BackendDocument[];
+}
+
+interface BackendUploadResponse {
+  document_id: number;
+  title: string;
+  chunks_count: number;
 }
 
 // -- Mappers (snake_case → camelCase) --------------------------------------
@@ -121,6 +160,34 @@ function mapResponse(r: BackendResponse): AssistantResponse {
     steps: r.steps.map(mapStep),
     securityChecks: r.security_checks.map(mapSecurityCheck),
     refused: r.refused,
+    // Keep only documentary citations — the backend also emits `{type: "sql",
+    // tables: [...]}` entries on analytical responses (provenance metadata,
+    // not user-facing citations). Those are filtered out so the chat
+    // message's "Sources citées" block only ever shows RAG citations.
+    sources: r.sources
+      ?.filter((s) => s.type === "document")
+      .map(mapSource),
+  };
+}
+
+function mapSource(s: BackendSource): Source {
+  return {
+    type: "document",
+    title: s.title ?? "",
+    chunkIndex: s.chunk_index ?? 0,
+    documentId: s.document_id ?? 0,
+    score: s.score,
+  };
+}
+
+function mapDocument(d: BackendDocument): DocumentInfo {
+  return {
+    id: d.id,
+    title: d.title,
+    sourceType: d.source_type,
+    createdAt: d.created_at,
+    chunksCount: d.chunks_count,
+    producerId: d.producer_id,
   };
 }
 
@@ -187,6 +254,148 @@ export async function callBackend(
     }
     // Re-throw unchanged — the store handles the fallback.
     throw err;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Document corpus API — RAG (Phase 3)
+// ---------------------------------------------------------------------------
+//
+// All requests go through the relative `/api/documents` path. Next.js route
+// handlers proxy them server-side to `http://localhost:8001/api/documents`
+// (same pattern as the chat proxy) — the browser never talks to the FastAPI
+// service directly, so the prototype works on any port the Preview Panel
+// serves the app on.
+
+const DOCUMENTS_URL = "/api/documents";
+const DOCUMENTS_TIMEOUT_MS = 30_000;
+
+/** Upload input — either an attached PDF file or raw text content. */
+export type DocumentUploadInput =
+  | { kind: "file"; title: string; file: File }
+  | { kind: "text"; title: string; content: string };
+
+export interface DocumentUploadResult {
+  documentId: number;
+  title: string;
+  chunksCount: number;
+}
+
+/**
+ * List indexed documents.
+ *
+ * We deliberately do NOT scope the GET by `producer_id` from the frontend,
+ * even when the active identity is a producer. The seeded corpus (CGV, FAQ,
+ * Procédure, Politique de retrait) is tenant-level (`producer_id = null`) and
+ * is visible to every producer — the RAG retriever returns these chunks to
+ * producers, so the panel must show them too (otherwise the user would see
+ * "Source citée : FAQ Producteurs" in a chat answer without ever having seen
+ * the document listed).
+ *
+ * The `identity` parameter is kept on the signature for future use (e.g.
+ * surfacing a "your docs" filter chip) and to keep the call site symmetric
+ * with `uploadDocument`.
+ */
+export async function listDocuments(
+  _identity: Identity,
+): Promise<DocumentInfo[]> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    DOCUMENTS_TIMEOUT_MS,
+  );
+
+  try {
+    const res = await fetch(DOCUMENTS_URL, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(
+        `listDocuments → HTTP ${res.status} ${res.statusText}`,
+      );
+    }
+    const json = (await res.json()) as BackendDocumentListResponse;
+    return (json.documents ?? []).map(mapDocument);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Upload a document (PDF file or raw text) for indexing. The backend chunks
+ * the content, embeds it, and stores the chunks in the RAG vector store.
+ *
+ * Returns `{ documentId, title, chunksCount }` so the UI can show a toast
+ * like "Document indexé (12 chunks)".
+ */
+export async function uploadDocument(
+  input: DocumentUploadInput,
+  identity: Identity,
+): Promise<DocumentUploadResult> {
+  const fd = new FormData();
+  fd.append("title", input.title);
+  if (input.kind === "file") {
+    fd.append("source_type", "pdf");
+    fd.append("file", input.file, input.file.name || "upload.pdf");
+  } else {
+    fd.append("source_type", "text");
+    fd.append("content", input.content);
+  }
+  if (identity.producerId != null) {
+    fd.append("producer_id", String(identity.producerId));
+  }
+
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    DOCUMENTS_TIMEOUT_MS,
+  );
+
+  try {
+    const res = await fetch(DOCUMENTS_URL, {
+      method: "POST",
+      body: fd,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `uploadDocument → HTTP ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`,
+      );
+    }
+    const json = (await res.json()) as BackendUploadResponse;
+    return {
+      documentId: json.document_id,
+      title: json.title,
+      chunksCount: json.chunks_count,
+    };
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+/** Delete an indexed document by id. */
+export async function deleteDocument(id: number): Promise<void> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    DOCUMENTS_TIMEOUT_MS,
+  );
+
+  try {
+    const res = await fetch(`${DOCUMENTS_URL}/${id}`, {
+      method: "DELETE",
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(
+        `deleteDocument → HTTP ${res.status} ${res.statusText}`,
+      );
+    }
   } finally {
     window.clearTimeout(timeoutId);
   }

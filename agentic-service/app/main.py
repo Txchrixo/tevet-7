@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api.chat import router as chat_router
+from app.api.documents import router as documents_router
 from app.config import get_settings
 from app.db_seed import dispose_engine, init_db
 from app.tracing import get_tracer
@@ -106,7 +107,10 @@ def create_app() -> FastAPI:
     # Routers
     # Phase 1: the chat router serves real traffic (rule-based agent +
     # sqlglot scoping on SQLite).
+    # Phase 3: the documents router adds the RAG management surface
+    # (upload / list / detail / delete) used by the documentary intent.
     app.include_router(chat_router, prefix="/api", tags=["chat"])
+    app.include_router(documents_router, prefix="/api", tags=["documents"])
 
     # ── Health & info ────────────────────────────────────────────────────────
     @app.get("/health", tags=["meta"])
