@@ -4,19 +4,16 @@ import * as React from "react";
 import { motion } from "framer-motion";
 
 import { cn } from "@/lib/utils";
-import type { ChatMessage as ChatMessageT, Source } from "@/lib/types";
+import type { ChatMessage as ChatMessageT } from "@/lib/types";
 import {
   Check,
   Clock,
-  Cpu,
   Database,
-  FileText,
   ShieldOff,
   User,
 } from "@/components/ui/feather-icons";
 
 import { ChartDisplay } from "./chart-display";
-import { ForecastDisplay } from "./forecast-display";
 import { Markdown } from "./markdown";
 import { SqlBlock } from "./sql-block";
 import { BrandMark } from "./brand-mark";
@@ -62,15 +59,6 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
         .replace(/\s/g, "\u00A0")
     : "—";
   const tokensDisplay = totalTokens.toLocaleString("fr-FR").replace(/\s/g, "\u00A0");
-  // ML forecast responses are visually distinct from analytical (SQL) ones:
-  // a "PRÉDICTIONS ML" block replaces the SQL block, the footer badge flips
-  // to FORECAST_TOOL with a Cpu icon, and the micro-label reads
-  // "PRÉDICTION ML" instead of "Scope vérifié".
-  const isForecast =
-    !!response &&
-    response.toolCalls.includes("forecast_tool") &&
-    !!response.forecastPredictions &&
-    response.forecastPredictions.length > 0;
 
   return (
     <motion.div
@@ -114,21 +102,6 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
 
             <Markdown content={message.content} />
 
-            {response?.sources && response.sources.length > 0 && (
-              <div className="mt-3">
-                <SourcesBlock sources={response.sources} />
-              </div>
-            )}
-
-            {/* ML predictions — forecast_tool responses (Phase 5). Sits where
-                the SQL block would be on analytical answers; sql + chart are
-                null on this path so they never co-render. */}
-            {isForecast && response?.forecastPredictions && (
-              <div className="mt-3">
-                <ForecastDisplay predictions={response.forecastPredictions} />
-              </div>
-            )}
-
             {response?.refused ? null : (
               response?.sql && (
                 <div className="mt-3">
@@ -156,16 +129,6 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
                   <span className="text-muted-foreground/50">·</span>
                   scoping violation
                 </span>
-              ) : isForecast ? (
-                <span className="inline-flex items-center gap-1">
-                  <Cpu size={12} className="text-accent" />
-                  Prédiction ML
-                </span>
-              ) : response?.sources && response.sources.length > 0 ? (
-                <span className="inline-flex items-center gap-1">
-                  <FileText size={12} className="text-accent" />
-                  Sources citées
-                </span>
               ) : (
                 <span className="inline-flex items-center gap-1">
                   <Check size={12} className="text-accent" />
@@ -186,15 +149,8 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
                 s
               </span>
               {response && response.toolCalls.length > 0 && (
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1 rounded-md border bg-secondary px-1.5 py-0 text-[10px] uppercase tracking-wide",
-                    isForecast
-                      ? "border-accent/40 text-accent"
-                      : "border-border text-muted-foreground",
-                  )}
-                >
-                  {isForecast ? <Cpu size={10} /> : <Database size={10} />}
+                <span className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-1.5 py-0 text-[10px] text-muted-foreground">
+                  <Database size={10} />
                   {response.toolCalls[0]}
                 </span>
               )}
@@ -240,51 +196,5 @@ export function TypingIndicator() {
         </div>
       </div>
     </motion.div>
-  );
-}
-
-/**
- * "Sources citées" block shown beneath documentary (RAG) answers. Each chip
- * carries the document title (Manrope, foreground) and the chunk index
- * (Caudex, muted), separated by a feather FileText icon.
- */
-function SourcesBlock({ sources }: { sources: Source[] }) {
-  return (
-    <div className="rounded-md border border-border bg-muted/30 px-3 py-2.5">
-      <div className="mb-2 flex items-center gap-1.5 text-[11px] font-body font-medium uppercase tracking-wide text-muted-foreground">
-        <FileText size={12} className="text-muted-foreground" />
-        Sources citées
-      </div>
-      <ul className="space-y-1.5">
-        {sources.map((s, i) => (
-          <li
-            key={`${s.documentId}-${s.chunkIndex}-${i}`}
-            className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5"
-          >
-            <FileText
-              size={13}
-              className="shrink-0 text-accent"
-            />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-              {s.title}
-            </span>
-            <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
-              <span className="text-muted-foreground/60">chunk</span>{" "}
-              <span className="font-heading tabular-nums text-muted-foreground">
-                {s.chunkIndex}
-              </span>
-            </span>
-            {typeof s.score === "number" && (
-              <span className="shrink-0 inline-flex items-center rounded-sm border border-border bg-secondary px-1 text-[9px] uppercase tracking-wide text-muted-foreground">
-                <span className="font-heading tabular-nums">
-                  {(s.score * 100).toFixed(0)}
-                </span>
-                %
-              </span>
-            )}
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }

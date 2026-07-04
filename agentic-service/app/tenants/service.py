@@ -469,6 +469,12 @@ async def seed_demo_tenant() -> None:
                     (tenants.c.id == "dp") & (tenants.c.owner_user_id.is_(None))
                 ).values(owner_user_id=admin_id)
             )
+        # Mark the admin demo user as platform owner (Phase 6c).
+        async with engine.begin() as txn:
+            await txn.execute(
+                update(users).where(users.c.id == admin_id).values(is_platform_owner=True)
+            )
+        logger.info("seed_demo_tenant — admin@tevet7.dev marked as platform_owner")
 
     # 4) Create the memberships (idempotent). Marie gets is_active=True
     #    so the first demo login yields a fully-contextualised JWT.

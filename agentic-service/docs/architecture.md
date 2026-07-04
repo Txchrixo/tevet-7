@@ -1,6 +1,6 @@
-# Tevet-7 — Architecture
+# OpsPilot AI — Architecture
 
-> Reference architecture for the Tevet-7 agentic service. This document
+> Reference architecture for the OpsPilot AI agentic service. This document
 > is the canonical source the team should read to understand the system
 > before touching code.
 
@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-Tevet-7 is a **configurable, multi-tenant platform for enterprise AI
+OpsPilot AI is a **configurable, multi-tenant platform for enterprise AI
 agents**. Each tenant is an enterprise customer; each tenant can deploy one
 or more **agents** (e.g. Producer Copilot, Customer Copilot, Admin
 Copilot) that reason over the tenant's data through a controlled
@@ -36,7 +36,7 @@ flowchart TB
         NX[Next.js prototype<br/>Producer Copilot UI]
     end
 
-    subgraph Backend["Tevet-7 agentic-service (FastAPI)"]
+    subgraph Backend["OpsPilot agentic-service (FastAPI)"]
         API[FastAPI /chat<br/>JWT verify + quota]
         ORC[Agent Orchestrator<br/>LLM-in-a-loop]
         SQLTOOL[SqlReadTool<br/>sqlglot rewrite]
@@ -101,7 +101,7 @@ flowchart TB
 
 ## 3. Multi-tenant model
 
-Tevet-7 is **multi-tenant by design**, not retrofitted. Three layers of
+OpsPilot is **multi-tenant by design**, not retrofitted. Three layers of
 isolation:
 
 1. **Logical tenant identifier** (`tenant_id` like `dp`) carried in every
@@ -241,7 +241,7 @@ control-plane DB.
 | **3** | RAG: `document_search_tool` with pgvector.                | Producers can upload invoices/specs and ask about them. |
 | **4** | Human-in-the-loop queue for write actions.                | `cancel_order` / `update_stock` go through approval. |
 | **5** | Multi-tenant onboarding + Connector SDK.                  | New tenant = one config + one Connector subclass. |
-| **6** | LangGraph migration for complex agent graphs.             | Branching, parallel tool calls, sub-graphs. |
+| **6** | LangGraph migration for complex agent graphs.             | Branching, parallel tool calls, sub-agents. |
 | **7** | Eval harness + golden datasets per tenant.                | CI fails on agent regression; Langfuse evals dashboard. |
 | **8** | Production hardening: SSO, billing, audit export, SOC2.   | Generally available. |
 

@@ -57,6 +57,7 @@ def _row_to_user(row: Row) -> dict[str, Any]:
         "id": int(row.id),
         "email": row.email,
         "name": row.name,
+        "is_platform_owner": bool(getattr(row, "is_platform_owner", False)),
         "created_at": ca.isoformat() if ca is not None else None,
     }
 

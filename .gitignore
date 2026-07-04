@@ -52,34 +52,3 @@ prompt
 server.log
 # Skills directory
 /skills/
-
-# ─────────────────────────────────────────────────────────────
-# Internal dev artifacts — never push to GitHub
-# ─────────────────────────────────────────────────────────────
-# Worklog and agent context (internal scratchpad)
-worklog.md
-/agent-ctx/
-/.zscripts/*.log
-/.zscripts/*.pid
-/mini-service-*.log
-
-# Local downloads / uploads
-/download/
-/upload/
-/tool-results/
-
-# Local SQLite DBs (runtime)
-/db/*.db
-/db/*.db-journal
-
-# Local Python venv (for the agentic-service)
-/agentic-service/.venv/
-/agentic-service/venv/
-/agentic-service/__pycache__/
-/agentic-service/**/__pycache__/
-/agentic-service/*.egg-info/
-/agentic-service/.pytest_cache/
-
-# Local trained ML models (Phase 5)
-/agentic-service/models/*.pkl
-/agentic-service/models/*.joblib

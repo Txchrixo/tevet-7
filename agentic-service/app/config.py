@@ -104,6 +104,16 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="replace-me-with-openssl-rand-base64-32")
     jwt_algorithm: str = Field(default="HS256")
 
+    # ── Demo reset cron (Phase 6c) ────────────────────────────────────────────
+    demo_reset_enabled: bool = Field(
+        default=True,
+        description="Enable the demo tenant reset cron (every 24h).",
+    )
+    demo_reset_interval_seconds: int = Field(
+        default=86400,
+        description="Demo reset interval in seconds (default 24h).",
+    )
+
     # ── Quotas ───────────────────────────────────────────────────────────────
     token_quota_per_tenant_per_day: int = Field(
         default=200_000,

@@ -1,4 +1,4 @@
-# docker-compose.yml — Tevet-7 infrastructure (Phase 0)
+# docker-compose.yml — OpsPilot AI infrastructure (Phase 0)
 #
 # Spins up the two stateful services the agentic service depends on:
 #   1. PostgreSQL 16 with the pgvector extension (control plane + RAG store).
@@ -19,7 +19,7 @@ services:
   #
   # The pgvector/pgvector:pg16 image ships Postgres 16 with the `vector`
   # extension pre-installed. We use one DB instance for both:
-  #   - the Tevet-7 control plane (tenants, users, configs, audit logs)
+  #   - the OpsPilot control plane (tenants, users, configs, audit logs)
   #   - the Langfuse database (separate schema, owned by the langfuse user)
   #   - the RAG embeddings store (created in Phase 3)
   #
@@ -30,12 +30,12 @@ services:
   # ---------------------------------------------------------------------------
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: tevet7-postgres
+    container_name: opspilot-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: tevet7
-      POSTGRES_PASSWORD: tevet7_dev_password
-      POSTGRES_DB: tevet7
+      POSTGRES_USER: opspilot
+      POSTGRES_PASSWORD: opspilot_dev_password
+      POSTGRES_DB: opspilot
       # Recommended production tuning (commented out for dev simplicity):
       # POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C"
     ports:
@@ -43,13 +43,13 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tevet7 -d tevet7"]
+      test: ["CMD-SHELL", "pg_isready -U opspilot -d opspilot"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     networks:
-      - tevet7-net
+      - opspilot-net
 
   # ---------------------------------------------------------------------------
   # Langfuse — LLM observability
@@ -60,7 +60,7 @@ services:
   # ---------------------------------------------------------------------------
   langfuse:
     image: langfuse/langfuse:latest
-    container_name: tevet7-langfuse
+    container_name: opspilot-langfuse
     restart: unless-stopped
     depends_on:
       postgres:
@@ -68,7 +68,7 @@ services:
     environment:
       # Langfuse needs its own database. We create it on first boot via the
       # same Postgres instance, in a separate logical DB.
-      DATABASE_URL: "postgresql://tevet7:tevet7_dev_password@postgres:5432/langfuse"
+      DATABASE_URL: "postgresql://opspilot:opspilot_dev_password@postgres:5432/langfuse"
       # NEXTAUTH_SECRET is used to sign session cookies. Generate with:
       #   openssl rand -base64 32
       NEXTAUTH_SECRET: "change_me_nextauth_secret_please_use_openssl_rand"
@@ -84,7 +84,7 @@ services:
     ports:
       - "3001:3000"
     networks:
-      - tevet7-net
+      - opspilot-net
 
 # Persistent volume for Postgres data. Wipe with `docker compose down -v`.
 volumes:
@@ -94,5 +94,5 @@ volumes:
 # Shared network so the FastAPI app (running on the host) can reach both
 # services via localhost ports, and so Langfuse can reach Postgres by name.
 networks:
-  tevet7-net:
+  opspilot-net:
     driver: bridge

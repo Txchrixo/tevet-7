@@ -10,19 +10,88 @@ import { Zap } from "@/components/ui/feather-icons";
 
 import { EXAMPLE_QUESTIONS } from "@/lib/mock-data";
 import { useCopilotStore } from "@/lib/store";
+import { APP_NAME, APP_PHASE } from "@/lib/constants";
 
+import { AdminConsole } from "@/components/producer-copilot/admin-console";
 import { AuthScreen } from "@/components/producer-copilot/auth-screen";
 import { ChatInput } from "@/components/producer-copilot/chat-input";
 import { ChatMessage, TypingIndicator } from "@/components/producer-copilot/chat-message";
 import { Footer } from "@/components/producer-copilot/footer";
 import { Header } from "@/components/producer-copilot/header";
 import { Inspector } from "@/components/producer-copilot/inspector";
-import { OnboardingWizard } from "@/components/producer-copilot/onboarding-wizard";
-import { OpsConsole } from "@/components/producer-copilot/ops-console";
 import { Sidebar } from "@/components/producer-copilot/sidebar";
 import { BrandMark } from "@/components/producer-copilot/brand-mark";
+import { CreateWorkspace } from "@/components/producer-copilot/create-workspace";
 
 export default function Home() {
+  const adminView = useCopilotStore((s) => s.adminView);
+  const authMode = useCopilotStore((s) => s.authMode);
+  const bootstrap = useCopilotStore((s) => s.bootstrap);
+  const tenants = useCopilotStore((s) => s.tenants);
+
+  // Validate the stored JWT (if any) on first mount. Sets `authMode` to
+  // "authenticated" / "anonymous" / "demo" depending on the outcome.
+  React.useEffect(() => {
+    void bootstrap();
+  }, [bootstrap]);
+
+  // While we're checking the stored JWT, render a minimal placeholder so the
+  // AuthScreen doesn't flash before we know whether the user is logged in.
+  // The heptagon "breathes" (scale 0.8 → 1 → 0.8, infinite) — the only
+  // animation on this screen, kept minimal per the design system.
+  if (authMode === "loading") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background">
+        <motion.div
+          initial={{ scale: 0.8, opacity: 0.85 }}
+          animate={{ scale: [0.8, 1, 0.8], opacity: [0.85, 1, 0.85] }}
+          transition={{
+            duration: 1.8,
+            repeat: Infinity,
+            ease: "easeInOut",
+          }}
+        >
+          <BrandMark size={48} />
+        </motion.div>
+        <p className="mt-5 text-[11px] uppercase tracking-wide text-muted-foreground">
+          {APP_NAME} · chargement
+        </p>
+      </div>
+    );
+  }
+
+  // Anonymous → AuthScreen (no header / sidebar / inspector).
+  if (authMode === "anonymous") {
+    return <AuthScreen />;
+  }
+
+  // Authenticated but no tenants → CreateWorkspace (onboarding gate).
+  if (authMode === "authenticated" && tenants.length === 0) {
+    return <CreateWorkspace />;
+  }
+
+  // Admin / platform surfaces replace the chat layout entirely.
+  if (adminView === "tenant") {
+    return (
+      <div className="flex min-h-screen flex-col bg-background">
+        <AdminConsole mode="tenant" />
+        <Footer />
+      </div>
+    );
+  }
+  if (adminView === "platform") {
+    return (
+      <div className="flex min-h-screen flex-col bg-background">
+        <AdminConsole mode="platform" />
+        <Footer />
+      </div>
+    );
+  }
+
+  return <CopilotHome />;
+}
+
+function CopilotHome() {
   const messages = useCopilotStore((s) => s.messages);
   const isStreaming = useCopilotStore((s) => s.isStreaming);
   const selectedMessageId = useCopilotStore((s) => s.selectedMessageId);
@@ -30,50 +99,10 @@ export default function Home() {
   const inspectorOpen = useCopilotStore((s) => s.inspectorOpen);
   const setInspectorOpen = useCopilotStore((s) => s.setInspectorOpen);
   const sendExample = useCopilotStore((s) => s.sendExample);
-  const identity = useCopilotStore((s) => s.identity);
-  const loadDocuments = useCopilotStore((s) => s.loadDocuments);
-  const view = useCopilotStore((s) => s.view);
-
-  // Auth state — drives the top-level gate.
-  const token = useCopilotStore((s) => s.token);
-  const user = useCopilotStore((s) => s.user);
-  const demoFallback = useCopilotStore((s) => s.demoFallback);
-  const authLoading = useCopilotStore((s) => s.authLoading);
-  const loadAuthFromStorage = useCopilotStore((s) => s.loadAuthFromStorage);
-
-  // Onboarding state — drives the wizard gate (Phase 6b).
-  const onboardingStep = useCopilotStore((s) => s.onboardingStep);
-  const onboardingTenantId = useCopilotStore((s) => s.onboardingTenantId);
-  const onboardingStatus = useCopilotStore((s) => s.onboardingStatus);
-  const onboardingStatusLoading = useCopilotStore(
-    (s) => s.onboardingStatusLoading,
-  );
-  const activeTenant = useCopilotStore((s) => s.activeTenant);
 
   const [sidebarSheet, setSidebarSheet] = React.useState(false);
   const [inspectorSheet, setInspectorSheet] = React.useState(false);
   const isMobile = useIsMobile();
-
-  // Phase 6a: validate any persisted JWT on mount. `loadAuthFromStorage` is
-  // idempotent — no-op when there's no token in localStorage.
-  React.useEffect(() => {
-    void loadAuthFromStorage();
-  }, [loadAuthFromStorage]);
-
-  // Loading state while we validate the persisted JWT (or right after a
-  // signup/login). The AuthScreen also renders its own spinner during
-  // auth actions, but this top-level guard prevents a flash of the
-  // AuthScreen when a valid token is about to be rehydrated.
-  const [bootstrapped, setBootstrapped] = React.useState(false);
-  React.useEffect(() => {
-    // The first effect runs loadAuthFromStorage; we wait one tick so the
-    // store has a chance to flip `authLoading` to false. The guard is
-    // purely cosmetic — the gate below uses `token` as the source of truth.
-    if (!bootstrapped) {
-      const id = window.setTimeout(() => setBootstrapped(true), 50);
-      return () => window.clearTimeout(id);
-    }
-  }, [bootstrapped]);
 
   const selectedMessage = React.useMemo(
     () => messages.find((m) => m.id === selectedMessageId) ?? null,
@@ -86,94 +115,8 @@ export default function Home() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, isStreaming]);
 
-  // Load the RAG document corpus on mount AND whenever the identity changes
-  // (producers are scoped by `producer_id`, admin sees everything). The store
-  // also re-fetches inside `setIdentity`, but this effect is the source of
-  // truth — it guarantees the panel is populated even on a hard refresh with
-  // the default identity, and survives any future change to the store.
-  React.useEffect(() => {
-    void loadDocuments();
-  }, [identity.id, loadDocuments]);
-
-  // -- Auth gate ------------------------------------------------------------
-  //
-  //   1. While the persisted JWT is being validated → minimal loader.
-  //   2. If NOT authenticated AND NOT in demo fallback → AuthScreen.
-  //   3. If authenticated AND the active tenant is NOT onboarded AND the
-  //      user hasn't manually opened the wizard → render the wizard gate
-  //      (auto-start onboarding for the active tenant).
-  //   4. Otherwise (authenticated OR demo fallback) → 3-zone layout.
-  const isAuthenticated = !!token && !!user;
-  if (!bootstrapped && authLoading) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
-        <div className="flex size-12 items-center justify-center rounded-md border border-border bg-background text-accent">
-          <BrandMark size={28} />
-        </div>
-        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-          Tevet-7 <span className="text-muted-foreground/50">·</span> chargement…
-        </p>
-      </div>
-    );
-  }
-  if (!isAuthenticated && !demoFallback) {
-    return <AuthScreen />;
-  }
-
-  // -- Onboarding gate (Phase 6b) -------------------------------------------
-  //
-  //   When the user is authenticated + has an active tenant that is NOT yet
-  //   onboarded, the wizard takes over the screen. The wizard also takes
-  //   over when the user has manually started it from the header menu
-  //   (`onboardingStep > 0` overrides the status check so the "edit" flow
-  //   works for already-onboarded tenants too).
-  //
-  //   Demo tenants (is_demo=true) are always considered onboarded — the
-  //   store pre-populates `onboardingStatus.onboarded = true` for them so
-  //   existing demo users land straight in the chat.
-  const wizardTenantId =
-    onboardingTenantId ?? activeTenant?.tenant_id ?? null;
-  const shouldShowWizard =
-    isAuthenticated &&
-    wizardTenantId !== null &&
-    (onboardingStep > 0 ||
-      (onboardingStatus !== null && !onboardingStatus.onboarded));
-
-  if (shouldShowWizard && wizardTenantId) {
-    // If the wizard isn't open yet but the tenant needs onboarding, auto-
-    // start it (step 1). This happens on first login to a fresh tenant.
-    if (onboardingStep === 0) {
-      // Kick off the wizard synchronously via the store's setState — we
-      // don't have the `startOnboarding` action wired here, but the
-      // `shouldShowWizard` check is enough: the wizard renders step 1 by
-      // default because `onboardingStep` defaults to 0 → the wizard's
-      // step switch renders `step === 0` as the connect step. We bump it
-      // to 1 here so the progress indicator lights up.
-      useCopilotStore.setState({
-        onboardingStep: 1,
-        onboardingTenantId: wizardTenantId,
-      });
-    }
-    // While the status is being fetched (first paint after login), show a
-    // minimal loader so we don't flash the chat before the wizard.
-    if (onboardingStatusLoading && onboardingStep === 0) {
-      return (
-        <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
-          <div className="flex size-12 items-center justify-center rounded-md border border-border bg-background text-accent">
-            <BrandMark size={28} />
-          </div>
-          <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
-            Tevet-7 <span className="text-muted-foreground/50">·</span>{" "}
-            vérification du workspace…
-          </p>
-        </div>
-      );
-    }
-    return <OnboardingWizard tenantId={wizardTenantId} />;
-  }
-
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="flex h-screen flex-col bg-background">
       <Header
         onOpenSidebar={() => setSidebarSheet(true)}
         onOpenInspector={() => setInspectorSheet(true)}
@@ -185,49 +128,43 @@ export default function Home() {
           <Sidebar />
         </aside>
 
-        {/* Center: chat thread OR Ops Console (admin only) */}
+        {/* Center: chat thread */}
         <main className="flex min-w-0 flex-1 flex-col">
-          {identity.kind === "admin" && view === "ops" ? (
-            <OpsConsole />
-          ) : (
-            <>
-              <div ref={scrollRef} className="flex-1 overflow-y-auto">
-                <div className="mx-auto w-full max-w-3xl px-3 py-5 sm:px-4">
-                  {messages.length === 0 ? (
-                    <WelcomeState
-                      onPick={(id, label) => sendExample(id, label)}
-                    />
-                  ) : (
-                    <div className="space-y-5">
-                      <AnimatePresence initial={false}>
-                        {messages.map((m, i) => (
-                          <ChatMessage
-                            key={m.id}
-                            message={m}
-                            selected={m.id === selectedMessageId}
-                            onSelect={(id) => {
-                              selectMessage(id);
-                              if (isMobile) setInspectorSheet(true);
-                            }}
-                            isLast={i === messages.length - 1 && m.role === "assistant"}
-                          />
-                        ))}
-                      </AnimatePresence>
-                      {isStreaming && <TypingIndicator />}
-                    </div>
-                  )}
+          <div ref={scrollRef} className="flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-3xl px-3 py-5 sm:px-4">
+              {messages.length === 0 ? (
+                <WelcomeState
+                  onPick={(id, label) => sendExample(id, label)}
+                />
+              ) : (
+                <div className="space-y-5">
+                  <AnimatePresence initial={false}>
+                    {messages.map((m, i) => (
+                      <ChatMessage
+                        key={m.id}
+                        message={m}
+                        selected={m.id === selectedMessageId}
+                        onSelect={(id) => {
+                          selectMessage(id);
+                          if (isMobile) setInspectorSheet(true);
+                        }}
+                        isLast={i === messages.length - 1 && m.role === "assistant"}
+                      />
+                    ))}
+                  </AnimatePresence>
+                  {isStreaming && <TypingIndicator />}
                 </div>
-              </div>
+              )}
+            </div>
+          </div>
 
-              {/* Chat input docked at bottom of main */}
-              <div className="border-t border-border bg-background px-3 py-3 sm:px-4">
-                <ChatInput />
-                <p className="mt-1.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground">
-                  Prototype Phase 6a — réponses simulées
-                </p>
-              </div>
-            </>
-          )}
+          {/* Chat input docked at bottom of main */}
+          <div className="border-t border-border bg-background px-3 py-3 sm:px-4">
+            <ChatInput />
+            <p className="mt-1.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground">
+              Prototype {APP_PHASE} — réponses de l&apos;agent Tevet-7
+            </p>
+          </div>
         </main>
 
         {/* Desktop inspector */}
@@ -256,17 +193,35 @@ export default function Home() {
 
       <Footer />
 
-      {/* Mobile sidebar sheet */}
+      {/*
+        Mobile sidebar sheet — `gap-0` overrides the SheetContent default
+        `gap-4` (which would leave a 16px gap above the Sidebar and push its
+        bottom past the sheet viewport, breaking internal scroll). The
+        Sidebar renders its own user panel + ScrollArea; we don't add a
+        close button here because the Sheet already injects one at top-right
+        and the Sidebar's user panel must NOT carry one (per design-system
+        rule: only one close affordance per surface).
+      */}
       <Sheet open={sidebarSheet} onOpenChange={setSidebarSheet}>
-        <SheetContent side="left" className="w-[300px] p-0">
+        <SheetContent side="left" className="w-[300px] gap-0 p-0">
           <SheetTitle className="sr-only">Menu</SheetTitle>
           <Sidebar onNavigate={() => setSidebarSheet(false)} />
         </SheetContent>
       </Sheet>
 
-      {/* Mobile inspector sheet */}
+      {/*
+        Mobile inspector sheet — `hideClose` suppresses the Sheet's auto-X
+        because the Inspector renders its own close button (X) in its header
+        (top-right). Keeping both would create the duplicate close buttons
+        the user reported. `gap-0` ensures the Inspector fills the sheet
+        height (otherwise the default `gap-4` would offset it).
+      */}
       <Sheet open={inspectorSheet} onOpenChange={setInspectorSheet}>
-        <SheetContent side="right" className="w-full p-0 sm:max-w-md">
+        <SheetContent
+          side="right"
+          className="w-full gap-0 p-0 sm:max-w-md"
+          hideClose
+        >
           <SheetTitle className="sr-only">Trace de l&apos;agent</SheetTitle>
           <Inspector
             message={selectedMessage}
@@ -284,6 +239,15 @@ function WelcomeState({
   onPick: (questionId: string, label: string) => void;
 }) {
   const identity = useCopilotStore((s) => s.identity);
+  const user = useCopilotStore((s) => s.user);
+  const demoOverride = useCopilotStore((s) => s.demoIdentityOverride);
+  const isDemoSession = useCopilotStore((s) => s.isDemoSession);
+  const logout = useCopilotStore((s) => s.logout);
+
+  // When a demo identity override is active, use the override's name (not the
+  // authenticated user's name) so the welcome state reflects the switch.
+  const greetingName = (demoOverride ?? identity).name.split(" ")[0];
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -292,17 +256,13 @@ function WelcomeState({
       className="mx-auto max-w-2xl py-6"
     >
       <div className="flex flex-col items-center text-center">
-        <div className="flex size-14 items-center justify-center rounded-md border border-border bg-background text-accent">
-          <BrandMark size={32} />
-        </div>
-        <h1 className="mt-4 text-2xl sm:text-3xl">
-          Bonjour {identity.name.split(" ")[0]}
+        <h1 className="text-2xl sm:text-3xl">
+          Bonjour {greetingName}
         </h1>
         <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
-          Je suis votre{" "}
-          <span className="font-medium text-foreground">agent Tevet-7</span>.{" "}
-          Posez-moi une question sur vos ventes, votre stock ou vos
-          revenus — chaque réponse est sécurisée par un scope{" "}
+          <span className="font-medium text-foreground">Tevet-7</span> · Je suis
+          votre agent Tevet-7. Posez-moi une question sur vos ventes, votre
+          stock ou vos revenus — chaque réponse est sécurisée par un scope{" "}
           <code className="rounded bg-secondary px-1 py-0.5 font-mono text-[0.85em] text-accent">
             producer_id
           </code>
@@ -346,6 +306,26 @@ function WelcomeState({
         Astuce · essayez « Quels producteurs ont le plus de commandes ? » en
         producteur, puis basculez en Admin pour voir la différence de scope.
       </p>
+
+      {/* CTA for demo users to create their own tenant */}
+      {isDemoSession && (
+        <div className="mt-6 flex flex-col items-center gap-2 rounded-md border border-dashed border-border bg-secondary/20 p-4 text-center">
+          <p className="text-sm text-foreground">
+            Vous explorez la démo publique Tevet-7.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Créez votre propre workspace pour connecter vos données et
+            configurer votre agent.
+          </p>
+          <button
+            type="button"
+            onClick={() => logout()}
+            className="mt-1 rounded-md bg-primary px-4 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+          >
+            Créer mon propre tenant →
+          </button>
+        </div>
+      )}
     </motion.div>
   );
 }

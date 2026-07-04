@@ -3,82 +3,89 @@
 import * as React from "react";
 
 import { cn } from "@/lib/utils";
-import { useCopilotStore } from "@/lib/store";
-import { MessageSquare, ShieldCheck } from "@/components/ui/feather-icons";
+import { useCopilotStore, isTenantAdmin } from "@/lib/store";
+import { Sliders, Terminal } from "@/components/ui/feather-icons";
 
 /**
- * Segmented control — switches the admin between the Agent (chat) and
- * the Ops Console (approval queue). Admin-only: returns `null` for any
- * other identity so producers never see the toggle.
+ * Compact two-segment toggle: "Agent" (chat surface) ↔ "Ops Console" (admin
+ * surface). Reflects + drives `adminView` in the store:
+ *   - `adminView === "none"`     → "Agent" is active.
+ *   - `adminView === "tenant"`   → "Ops Console" is active (tenant admin).
+ *   - `adminView === "platform"` → "Ops Console" is active (platform owner).
  *
- * Label choice (Task 35 — Niveau 1 rebranding): we use "Agent" rather
- * than the old producer-specific label or a generic "Copilot". Tevet-7 is
- * a configurable AI agent PLATFORM — Drive Producteur is just the first
- * tenant. The chat surface is THE agent view of the platform, so
- * "Agent" is platform-neutral and reads naturally next to "Ops Console".
- * The internal store value stays "copilot" to avoid a schema rename
- * (the user never sees that string).
- *
- * The active segment uses the primary surface (filled), the inactive one
- * uses a ghost style. Both buttons keep the same height/width for a stable
- * transition. On narrow viewports the labels truncate to icons-only.
+ * For non-admin identities, "Ops Console" is disabled with a tooltip explaining
+ * why. Renders the Tevet-7 design system (bordered pill, no shadows, Feather
+ * icons only).
  */
 export function ViewToggle() {
   const identity = useCopilotStore((s) => s.identity);
-  const view = useCopilotStore((s) => s.view);
-  const setView = useCopilotStore((s) => s.setView);
+  const adminView = useCopilotStore((s) => s.adminView);
+  const setAdminView = useCopilotStore((s) => s.setAdminView);
 
-  // Hidden for producers — the Ops Console is admin-only.
-  if (identity.kind !== "admin") return null;
+  const isAdmin = isTenantAdmin(identity);
+  const onAgent = adminView === "none";
 
   return (
     <div
       role="tablist"
-      aria-label="Sélection de la vue"
-      className="inline-flex items-center gap-0.5 rounded-md border border-border bg-secondary/40 p-0.5"
+      aria-label="Surface"
+      className="hidden items-center rounded-md border border-border bg-background p-0.5 md:inline-flex"
     >
-      <ToggleSegment
-        active={view === "copilot"}
+      <ToggleButton
+        active={onAgent}
+        onClick={() => setAdminView("none")}
+        icon={<Terminal size={13} />}
         label="Agent"
-        icon={<MessageSquare size={14} />}
-        onClick={() => setView("copilot")}
       />
-      <ToggleSegment
-        active={view === "ops"}
+      <ToggleButton
+        active={!onAgent}
+        disabled={!isAdmin}
+        onClick={() => setAdminView("tenant")}
+        icon={<Sliders size={13} />}
         label="Ops Console"
-        icon={<ShieldCheck size={14} />}
-        onClick={() => setView("ops")}
+        title={
+          isAdmin
+            ? "Ouvrir la console ops"
+            : "Console ops réservée aux administrateurs du tenant"
+        }
       />
     </div>
   );
 }
 
-interface ToggleSegmentProps {
+function ToggleButton({
+  active,
+  disabled,
+  onClick,
+  icon,
+  label,
+  title,
+}: {
   active: boolean;
-  label: string;
-  icon: React.ReactNode;
+  disabled?: boolean;
   onClick: () => void;
-}
-
-function ToggleSegment({ active, label, icon, onClick }: ToggleSegmentProps) {
+  icon: React.ReactNode;
+  label: string;
+  title?: string;
+}) {
   return (
     <button
       type="button"
       role="tab"
       aria-selected={active}
+      disabled={disabled}
       onClick={onClick}
+      title={title}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-[calc(0.375rem-2px)] px-2.5 py-1 text-[11px] font-body uppercase tracking-wide transition-colors",
-        "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        "flex items-center gap-1.5 rounded-[5px] px-2.5 py-1 font-body text-[12px] font-medium transition-colors",
         active
-          ? "bg-primary text-primary-foreground"
-          : "text-muted-foreground hover:text-foreground hover:bg-secondary",
+          ? "bg-secondary text-foreground"
+          : "text-muted-foreground hover:text-foreground",
+        disabled && "cursor-not-allowed opacity-50 hover:text-muted-foreground",
       )}
     >
-      <span className={cn(active ? "text-primary-foreground" : "text-muted-foreground")}>
-        {icon}
-      </span>
-      <span className="hidden sm:inline">{label}</span>
+      <span className="shrink-0">{icon}</span>
+      {label}
     </button>
   );
 }

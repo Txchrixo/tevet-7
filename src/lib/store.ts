@@ -2,46 +2,50 @@ import { create } from "zustand";
 import { toast } from "sonner";
 
 import {
-  callBackend,
-  decideApproval,
-  deleteDocument,
-  getApprovalDetail,
-  listApprovals,
-  uploadDocument,
-  type ApprovalDecision,
-  type DocumentUploadInput,
-} from "./api";
-import {
-  activateTenant,
-  authHeader,
-  getMe,
-  login as loginApi,
-  signup as signupApi,
-  AuthApiError,
-} from "./auth-api";
-import {
-  completeOnboarding as completeOnboardingApi,
-  getOnboardingStatus,
-  OnboardingApiError,
-} from "./onboarding-api";
-import {
   DEFAULT_IDENTITY_ID,
   IDENTITIES,
-  getMockResponse,
+  getResponseForExample,
+  getResponseForMessage,
 } from "./mock-data";
+import {
+  DEMO_EMAIL,
+  DEMO_PASSWORD,
+  AuthApiError,
+  activateTenant,
+  createTenant as authCreateTenant,
+  getAuthToken,
+  getMe,
+  listMyTenants,
+  login as authLogin,
+  signup as authSignup,
+  setAuthToken,
+  setActiveTenantId,
+  getActiveTenantId,
+} from "./auth-api";
+import {
+  DEFAULT_TENANT_ID,
+  AdminApiError,
+  getPlatformStats,
+  getTenantConfig,
+  getTenantConversations,
+  getTenantStats,
+  getTenantUsers,
+  listAllTenants,
+  resetDemoTenant,
+} from "./admin-api";
 import type {
-  ApprovalDetail,
-  ApprovalSummary,
   AssistantResponse,
+  AuthUser,
   ChatMessage,
-  ConnectorType,
-  DocumentInfo,
+  Conversation,
   Identity,
-  OnboardingStatus,
-  RoleConfig,
-  SchemaDraft,
-  Tenant,
-  User,
+  PlatformStats,
+  PlatformTenant,
+  TenantConfig,
+  TenantMembership,
+  TenantStats,
+  TenantUser,
+  TraceStep,
 } from "./types";
 
 let idCounter = 0;
@@ -50,215 +54,52 @@ function makeId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${idCounter}`;
 }
 
-/**
- * Slugify a free-form name into a URL-safe tenant slug. Used as the default
- * `slug` when the create-tenant form is submitted without an explicit slug.
- */
-function slugify(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 40) || "workspace";
+export type AdminView = "none" | "tenant" | "platform";
+
+/** Auth mode — controls which surface is rendered (AuthScreen vs chat). */
+export type AuthMode = "loading" | "anonymous" | "authenticated" | "demo";
+
+interface AdminData {
+  /** The tenant currently displayed in the tenant admin view. */
+  tenantId: string;
+  users: TenantUser[];
+  config: TenantConfig | null;
+  conversations: Conversation[];
+  stats: TenantStats | null;
+  tenants: PlatformTenant[];
+  platformStats: PlatformStats | null;
+  /** Set when an admin API call fails — surfaces in the admin UI banner. */
+  error: string | null;
 }
 
-/** Minimum typing-indicator duration so the assistant reveal feels smooth. */
-const MIN_TYPING_MS = 400;
-/** Simulated latency window used only for the mock fallback path. */
-const MOCK_LATENCY_MIN_MS = 800;
-const MOCK_LATENCY_JITTER_MS = 350;
-/** Sonner toast id used for the demo-mode notice — prevents stacking. */
-const DEMO_TOAST_ID = "tevet7-demo-mode";
-
-/** localStorage key under which the JWT is persisted across reloads. */
-export const AUTH_TOKEN_STORAGE_KEY = "tevet7.auth.token";
-
-/**
- * The two top-level surfaces the admin can switch between. Producers only ever
- * see "copilot" — the ViewToggle is admin-only and `setIdentity` forces the
- * view back to copilot whenever a producer is selected.
- */
-export type CopilotView = "copilot" | "ops";
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-export type BackendStatus = "connected" | "demo" | "unknown";
-
-// ---------------------------------------------------------------------------
-// Onboarding wizard (Phase 6b)
-// ---------------------------------------------------------------------------
-
-/**
- * The wizard's working data. Lives in the store so it survives step
- * navigation (back/forward) without a re-fetch. Cleared on
- * `exitOnboarding` / `finishOnboarding`.
- */
-export interface OnboardingData {
-  /** Which connector the user picked in step 1. */
-  connectorType: ConnectorType | null;
-  /** PostgreSQL URL (only meaningful when `connectorType === "postgres"`). */
-  connectionUrl: string;
-  /** CSV file (only meaningful when `connectorType === "csv"`). Held in
-   * memory only — re-sent on each subsequent connect/detect call. */
-  csvFile: File | null;
-  /** Result of the last successful connection test (step 1). */
-  connectionTest: { ok: boolean; tables_count: number } | null;
-  /** Schema draft returned by /onboarding/detect-schema (step 2). */
-  schemaDraft: SchemaDraft | null;
-  /** Roles configured in step 3. */
-  rolesConfig: RoleConfig[];
-}
-
-const INITIAL_ONBOARDING_DATA: OnboardingData = {
-  connectorType: null,
-  connectionUrl: "",
-  csvFile: null,
-  connectionTest: null,
-  schemaDraft: null,
-  rolesConfig: [],
+const emptyAdminData: AdminData = {
+  tenantId: DEFAULT_TENANT_ID,
+  users: [],
+  config: null,
+  conversations: [],
+  stats: null,
+  tenants: [],
+  platformStats: null,
+  error: null,
 };
 
-// ---------------------------------------------------------------------------
-// Auth helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Decode the payload of a JWT **without verifying the signature**.
- *
- * The signature is verified server-side; here we only read the claims so the
- * UI can derive the active identity (role, producer_id, tenant_id) from the
- * token without an extra round-trip. Returns null on any parse error.
- */
-function decodeJwt(token: string): {
-  sub?: string | number;
-  email?: string;
-  tenant_id?: string;
-  role?: string;
-  producer_id?: number;
-  exp?: number;
-} | null {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    // base64url → base64 → JSON
-    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const json = atob(base64);
-    return JSON.parse(json) as {
-      sub?: string | number;
-      email?: string;
-      tenant_id?: string;
-      role?: string;
-      producer_id?: number;
-      exp?: number;
-    };
-  } catch {
-    return null;
-  }
-}
-
-/** Read the persisted JWT from localStorage (browser-only, no-op on SSR). */
-function readTokenFromStorage(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-/** Persist or clear the JWT in localStorage. */
-function writeTokenToStorage(token: string | null): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (token) {
-      window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
-    } else {
-      window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
-    }
-  } catch {
-    // localStorage can throw in private-mode Safari — fail silently.
-  }
-}
-
-/** Build a chat-layer `Identity` from the auth state (JWT + user + tenant). */
-function deriveIdentityFromAuth(state: CopilotState): Identity | null {
-  if (!state.user || !state.token) return null;
-  const claims = decodeJwt(state.token);
-  const role = claims?.role ?? "producer";
-  const producerId = claims?.producer_id ?? null;
-  const tenantId = claims?.tenant_id ?? null;
-  const tenant =
-    state.tenants.find((t) => t.tenant_id === tenantId) ??
-    state.activeTenant ??
-    null;
-  const isProducer = role === "producer" && producerId != null;
-
-  const name = state.user.name || state.user.email;
-  const initials =
-    name
-      .split(/[\s@.]+/)
-      .filter(Boolean)
-      .map((s) => s[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2) || "?";
-
-  return {
-    id: isProducer
-      ? `producer-${producerId}`
-      : role === "admin"
-        ? `admin-${state.user.id}`
-        : `user-${state.user.id}`,
-    kind: isProducer ? "producer" : "admin",
-    name,
-    producerNumber: producerId != null ? `#${producerId}` : null,
-    producerId,
-    farmName: tenant?.name ?? null,
-    role: isProducer ? "Producteur" : "Équipe Ops",
-    initials,
-    accent: "accent",
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Store interface
-// ---------------------------------------------------------------------------
-
 interface CopilotState {
-  // -- Auth (Phase 6a) ------------------------------------------------------
-  /** The authenticated user. Null = NOT authenticated (demo mode). */
-  user: User | null;
-  /** The JWT. Null = NOT authenticated. Persisted in localStorage. */
-  token: string | null;
-  /** The user's tenant memberships (loaded via /api/auth/me). */
-  tenants: Tenant[];
-  /** The currently active tenant (matches the tenant_id claim in the JWT). */
-  activeTenant: Tenant | null;
-  /** True while login/signup/loadAuthFromStorage is in flight. */
+  // --- Auth ---
+  authMode: AuthMode;
+  user: AuthUser | null;
+  tenants: TenantMembership[];
+  activeTenant: TenantMembership | null;
   authLoading: boolean;
-  /** Last auth error message — surfaced in the AuthScreen. */
-  authError: string | null;
-  /**
-   * True when the "Essayer la démo" path failed because the backend was
-   * unreachable, and we fell back to mock identities. The UI surfaces a
-   * "Mode démo (backend hors ligne)" note when this is set.
-   */
-  demoFallback: boolean;
+  /** True when the session is a public demo. Shows the
+   * "DÉMO PUBLIQUE" badge + blocks destructive actions. */
+  isDemoSession: boolean;
 
-  // -- Identity (chat-layer) ------------------------------------------------
-  /**
-   * The active chat identity. When authenticated, this is DERIVED from the
-   * JWT + active tenant. When NOT authenticated, this falls back to the
-   * selected mock identity (marie/pierre/admin) via `identityId`.
-   */
+  // --- Chat identity + messages ---
   identityId: string;
   identity: Identity;
-
-  // -- Chat -----------------------------------------------------------------
+  /** Demo identity override (Marie/Pierre/Admin) — when set, chat calls send
+   * body identity instead of JWT so the user can switch without re-login. */
+  demoIdentityOverride: Identity | null;
   messages: ChatMessage[];
   /** Id of the assistant message currently being inspected in the right panel. */
   selectedMessageId: string | null;
@@ -266,101 +107,15 @@ interface CopilotState {
   isStreaming: boolean;
   /** Whether the inspector panel is open on desktop. */
   inspectorOpen: boolean;
-  /** Health of the FastAPI backend connection — drives the footer indicator. */
-  backendStatus: BackendStatus;
 
-  /** Indexed documents for the RAG corpus (CGV, FAQ, procédure, etc.). */
-  documents: DocumentInfo[];
-  /** True while `loadDocuments` is in flight (drives the skeleton). */
-  documentsLoading: boolean;
-  /** True while an upload or delete is in flight (disables the panel actions). */
-  documentMutating: boolean;
+  // --- Admin console ---
+  adminView: AdminView;
+  adminLoading: boolean;
+  adminData: AdminData;
 
-  /** Active top-level surface — `ops` is admin-only (forced to `copilot` for producers). */
-  view: CopilotView;
-  /** Approval queue rows for the Ops Console (admin identity only). */
-  approvals: ApprovalSummary[];
-  /** True while `loadApprovals` is in flight. */
-  approvalsLoading: boolean;
-  /** Id of the approval currently selected in the Ops Console list. */
-  selectedApprovalId: number | null;
-  /** Full detail (approval + onboarding dossier) for the selected row. */
-  selectedApprovalDetail: ApprovalDetail | null;
-  /** True while a decision POST is in flight (disables the action buttons). */
-  decisionInFlight: boolean;
-
-  // -- Onboarding wizard (Phase 6b) -----------------------------------------
-  /**
-   * The wizard step the user is currently on:
-   *   - 0 = not started (the gate has not decided to show the wizard)
-   *   - 1 = Connect data
-   *   - 2 = Detect schema
-   *   - 3 = Define roles
-   *   - 4 = Ready
-   *
-   * When `onboardingStep > 0`, the page renders the wizard instead of the
-   * chat — even if the active tenant's backend status says it's already
-   * onboarded. This lets the user re-open the wizard from the header menu
-   * ("Configurer le workspace") to edit the configuration.
-   */
-  onboardingStep: number;
-  /** The tenant the wizard is operating on. Null = no wizard in flight. */
-  onboardingTenantId: string | null;
-  /** Working copy of the wizard's data — survives step navigation. */
-  onboardingData: OnboardingData;
-  /** Cached onboarding status for the active tenant (drives the gate). */
-  onboardingStatus: OnboardingStatus | null;
-  /** True while a wizard API call (connect/detect/save/complete) is in flight. */
-  onboardingLoading: boolean;
-  /** Last wizard error message — surfaced inline in the wizard. */
-  onboardingError: string | null;
-  /** True while GET /onboarding/status is in flight (drives the gate loader). */
-  onboardingStatusLoading: boolean;
-
-  // -- Auth actions ---------------------------------------------------------
-  /**
-   * Log in with email + password. On success: persists the JWT to
-   * localStorage, fetches the user's tenants, and re-derives the chat
-   * identity from the JWT claims.
-   *
-   * Throws an `AuthApiError` on failure — the caller (AuthScreen) is
-   * responsible for surfacing the error.
-   */
-  login: (email: string, password: string) => Promise<void>;
-  /**
-   * Sign up with email + password + name. Same flow as `login` after the
-   * account is created (the backend returns a JWT immediately).
-   */
-  signup: (
-    email: string,
-    password: string,
-    name: string,
-  ) => Promise<void>;
-  /** Clear auth state + localStorage. The chat identity reverts to mock. */
-  logout: () => void;
-  /**
-   * Activate a different tenant. Calls /api/tenants/{id}/activate, gets a
-   * new JWT, persists it, and re-derives the identity from the new claims.
-   */
-  setActiveTenant: (tenantId: string) => Promise<void>;
-  /**
-   * On app mount: read the JWT from localStorage, validate it via /api/auth/me,
-   * and (if valid) populate the auth state. On failure: clear the token and
-   * stay in demo mode.
-   */
-  loadAuthFromStorage: () => Promise<void>;
-  /** Clear the last auth error (used when the AuthScreen closes/re-renders). */
-  clearAuthError: () => void;
-  /**
-   * Skip authentication and use the mock identities (Marie / Pierre / Admin)
-   * directly. Used by the AuthScreen's "Essayer la démo" button when the
-   * backend is unreachable — falls back to the Phase 0 mock path so the
-   * demo still works without forcing a signup.
-   */
-  enterDemoMode: () => void;
-
-  // -- Identity / chat actions ----------------------------------------------
+  // --- Identity / chat actions ---
   setIdentity: (identityId: string) => void;
+  setDemoIdentityOverride: (identityId: string | null) => void;
   sendExample: (questionId: string, label: string) => void;
   sendMessage: (text: string) => void;
   selectMessage: (messageId: string | null) => void;
@@ -368,56 +123,28 @@ interface CopilotState {
   setInspectorOpen: (open: boolean) => void;
   resetConversation: () => void;
 
-  loadDocuments: () => Promise<void>;
-  addDocument: (input: DocumentUploadInput) => Promise<void>;
-  removeDocument: (id: number) => Promise<void>;
+  // --- Auth actions ---
+  bootstrap: () => Promise<void>;
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  signup: (
+    email: string,
+    password: string,
+    name: string,
+  ) => Promise<{ ok: true } | { ok: false; error: string }>;
+  tryDemoLogin: () => Promise<void>;
+  enterDemoMode: () => void;
+  logout: () => void;
+  switchTenant: (tenantId: string) => Promise<void>;
+  createTenant: (name: string, slug: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 
-  setView: (view: CopilotView) => void;
-  loadApprovals: () => Promise<void>;
-  selectApproval: (id: number | null) => Promise<void>;
-  decide: (
-    id: number,
-    decision: ApprovalDecision,
-    reason: string,
-  ) => Promise<void>;
-
-  // -- Onboarding actions (Phase 6b) ----------------------------------------
-  /**
-   * Create a new tenant (workspace) for the authenticated user. Used by the
-   * AuthScreen's "Créer votre workspace" flow after a fresh signup. The
-   * backend creates the tenant + the user's first membership (role=admin)
-   * and returns a refreshed JWT with the new tenant_id claim.
-   *
-   * On success: persists the new JWT, refreshes the tenant list, and starts
-   * the onboarding wizard for the new tenant.
-   */
-  createTenant: (name: string, slug: string) => Promise<Tenant>;
-  /**
-   * Open the onboarding wizard for the given tenant. Resets the wizard's
-   * working copy to a clean state and sets `onboardingStep=1`.
-   */
-  startOnboarding: (tenantId: string) => void;
-  /** Close the wizard without completing it (cancel button). */
-  exitOnboarding: () => void;
-  /** Move the wizard to the given step (1-4). */
-  setOnboardingStep: (step: number) => void;
-  /** Patch the wizard's working data (partial merge). */
-  updateOnboardingData: (partial: Partial<OnboardingData>) => void;
-  /** Clear the last wizard error (used when the user re-tries). */
-  clearOnboardingError: () => void;
-  /**
-   * Mark the active tenant as onboarded and close the wizard. Calls the
-   * backend `/onboarding/complete` endpoint, refreshes the tenant list +
-   * status, and resets the wizard state. The chat becomes visible again.
-   */
-  finishOnboarding: () => Promise<void>;
-  /**
-   * Fetch the onboarding status for the active tenant. Used by the page
-   * gate on mount and after tenant switches. A 404 / network error is
-   * treated as "already onboarded" so the demo flow isn't broken while the
-   * backend onboarding API lands in parallel.
-   */
-  loadOnboardingStatus: (tenantId: string) => Promise<void>;
+  // --- Admin actions ---
+  setAdminView: (view: AdminView) => void;
+  loadTenantAdmin: (tenantId?: string) => Promise<void>;
+  loadPlatformAdmin: () => Promise<void>;
+  resetDemo: () => Promise<void>;
 }
 
 function identityById(id: string): Identity {
@@ -425,428 +152,481 @@ function identityById(id: string): Identity {
 }
 
 /**
- * Recompute the chat-layer `identity` from the current auth state.
- *
- * - Authenticated → derive from JWT claims + active tenant.
- * - NOT authenticated → fall back to the mock identity selected via
- *   `identityId` (Marie / Pierre / Admin).
- *
- * Returns the partial state to merge (or an empty object if the identity is
- * unchanged — we let zustand dedupe).
+ * Heuristic — the platform owner is the DP Admin identity. The real backend
+ * `/api/auth/me` response carries `is_platform_owner: true` for that account,
+ * but the local mock identities do not have a backend yet so we use the
+ * identity `kind` as the source of truth.
  */
-function recomputeIdentity(state: CopilotState): Partial<CopilotState> {
-  const derived = deriveIdentityFromAuth(state);
-  const identity = derived ?? identityById(state.identityId);
-  // If the identity id changes (e.g. on login), reset the chat session so
-  // messages from the previous identity don't leak across contexts.
-  const previous = state.identity;
-  const shouldResetChat =
-    derived !== null &&
-    previous !== null &&
-    (derived.id !== previous.id || derived.kind !== previous.kind);
-  if (shouldResetChat) {
-    return {
-      identity,
-      messages: [],
-      selectedMessageId: null,
-      isStreaming: false,
-      inspectorOpen: false,
-      backendStatus: "unknown",
-      documents: [],
-      documentsLoading: true,
-      approvals: [],
-      selectedApprovalId: null,
-      selectedApprovalDetail: null,
-      view: "copilot",
-    };
+export function isPlatformOwner(identity: Identity): boolean {
+  return identity.kind === "admin";
+}
+
+/** Tenant admins — also the DP Admin identity in the demo mock model. */
+export function isTenantAdmin(identity: Identity): boolean {
+  return identity.kind === "admin";
+}
+
+function describeAdminError(err: unknown): string {
+  if (err instanceof AdminApiError) {
+    if (err.status === 401 || err.status === 403) {
+      return "Accès refusé — permissions insuffisantes pour la console admin.";
+    }
+    return err.message;
   }
-  return { identity };
+  if (err instanceof Error) return err.message;
+  return "Erreur inconnue";
+}
+
+/** Returns "MD" for "Marie Dubois" etc. — used to derive initials from a real user name. */
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/**
+ * Derives a chat-side `Identity` from the authenticated user + their active
+ * tenant membership. Used so the existing chat UI (which reads `identity.kind`
+ * and `identity.producerId`) keeps working when the user is logged in via the
+ * real backend.
+ */
+function identityFromAuthUser(
+  user: AuthUser,
+  tenant: TenantMembership | null,
+): Identity {
+  const isAdmin = tenant?.role === "admin";
+  const producerId = tenant?.producer_id ?? null;
+  return {
+    id: `user-${user.id}`,
+    kind: isAdmin ? "admin" : "producer",
+    name: user.name,
+    producerNumber: producerId != null ? `#${producerId}` : null,
+    producerId,
+    farmName: null,
+    role: isAdmin ? "Équipe Ops" : "Producteur",
+    initials: initialsFromName(user.name),
+    accent: "accent",
+  };
+}
+
+/**
+ * Adapts the backend `/api/chat` envelope (snake_case) to the frontend's
+ * `AssistantResponse` (camelCase). Unknown / missing fields fall back to safe
+ * defaults so the inspector never crashes.
+ *
+ * Field conversions:
+ *   - `scope_clause`  → `scopeClause`
+ *   - `tokens_in`     → `tokensIn`
+ *   - `tokens_out`    → `tokensOut`
+ *   - `latency_ms`    → `latencyMs`
+ *   - `tool_calls`    → `toolCalls`
+ *   - `security_checks` → `securityChecks` (fields are already camelCase)
+ *   - `steps[].duration_ms` → `steps[].durationMs`
+ */
+function adaptBackendResponse(raw: unknown): AssistantResponse {
+  const r =
+    (typeof raw === "object" && raw !== null ? raw : {}) as Record<
+      string,
+      unknown
+    >;
+  const rawSteps = Array.isArray(r.steps) ? (r.steps as Record<string, unknown>[]) : [];
+  const steps: TraceStep[] = rawSteps.map((s) => ({
+    index: typeof s.index === "number" ? s.index : 0,
+    title: typeof s.title === "string" ? s.title : "",
+    detail: typeof s.detail === "string" ? s.detail : "",
+    status: (s.status === "ok" || s.status === "warning" || s.status === "blocked"
+      ? s.status
+      : "ok") as TraceStep["status"],
+    durationMs: typeof s.duration_ms === "number" ? s.duration_ms : 0,
+  }));
+  const rawChecks = Array.isArray(r.security_checks)
+    ? (r.security_checks as Record<string, unknown>[])
+    : [];
+  const securityChecks: AssistantResponse["securityChecks"] = rawChecks.map((c) => ({
+    label: typeof c.label === "string" ? c.label : "",
+    status: (c.status === "ok" || c.status === "warning" || c.status === "blocked"
+      ? c.status
+      : "ok") as AssistantResponse["securityChecks"][number]["status"],
+    detail: typeof c.detail === "string" ? c.detail : undefined,
+  }));
+  const toolCalls = Array.isArray(r.tool_calls)
+    ? (r.tool_calls as string[])
+    : [];
+  return {
+    answer: typeof r.answer === "string" ? r.answer : "Réponse vide.",
+    sql: typeof r.sql === "string" ? r.sql : null,
+    scopeClause:
+      typeof r.scope_clause === "string" ? r.scope_clause : null,
+    chart:
+      (r.chart as AssistantResponse["chart"] | null | undefined) ?? undefined,
+    tokensIn: typeof r.tokens_in === "number" ? r.tokens_in : 0,
+    tokensOut: typeof r.tokens_out === "number" ? r.tokens_out : 0,
+    latencyMs: typeof r.latency_ms === "number" ? r.latency_ms : 0,
+    toolCalls,
+    steps,
+    securityChecks,
+    refused: Boolean(r.refused),
+  };
+}
+
+/** Calls `POST /api/chat` with the message + JWT, returns an `AssistantResponse`.
+ *
+ * Demo override: when `demoIdentityOverride` is set (Marie/Pierre/Admin switcher
+ * on the demo tenant), sends body identity instead of JWT so the user can switch
+ * without re-login. The backend's dual-mode fallback handles the scoping.
+ */
+async function callBackendChat(message: string): Promise<AssistantResponse> {
+  const token = getAuthToken();
+  const override = useCopilotStore.getState().demoIdentityOverride;
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  // When a demo identity override is active, send body identity (no JWT) so
+  // the backend uses the override's producer_id/role instead of the JWT's.
+  const useJwt = token && !override;
+  if (useJwt) headers["authorization"] = `Bearer ${token}`;
+
+  const body: Record<string, unknown> = { message };
+  if (override) {
+    body.identity_id = override.id;
+    body.producer_id = override.producerId;
+    body.role = override.kind;
+  }
+
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+  const text = await res.text();
+  let parsed: unknown = null;
+  if (text.length > 0) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+  }
+  if (!res.ok) {
+    const message =
+      typeof parsed === "object" && parsed && "detail" in parsed
+        ? String((parsed as { detail: unknown }).detail)
+        : typeof parsed === "object" && parsed && "message" in parsed
+          ? String((parsed as { message: unknown }).message)
+          : `Chat backend ${res.status} ${res.statusText}`;
+    throw new Error(message);
+  }
+  return adaptBackendResponse(parsed);
 }
 
 export const useCopilotStore = create<CopilotState>((set, get) => ({
-  // -- Auth -----------------------------------------------------------------
+  authMode: "loading",
   user: null,
-  token: null,
   tenants: [],
   activeTenant: null,
   authLoading: false,
-  authError: null,
-  demoFallback: false,
+  isDemoSession: false,
 
-  // -- Identity / chat ------------------------------------------------------
   identityId: DEFAULT_IDENTITY_ID,
   identity: identityById(DEFAULT_IDENTITY_ID),
+  demoIdentityOverride: null,
   messages: [],
   selectedMessageId: null,
   isStreaming: false,
   inspectorOpen: false,
-  backendStatus: "unknown",
-  documents: [],
-  documentsLoading: false,
-  documentMutating: false,
 
-  view: "copilot",
-  approvals: [],
-  approvalsLoading: false,
-  selectedApprovalId: null,
-  selectedApprovalDetail: null,
-  decisionInFlight: false,
+  adminView: "none",
+  adminLoading: false,
+  adminData: emptyAdminData,
 
-  // -- Onboarding (Phase 6b) ------------------------------------------------
-  onboardingStep: 0,
-  onboardingTenantId: null,
-  onboardingData: INITIAL_ONBOARDING_DATA,
-  onboardingStatus: null,
-  onboardingLoading: false,
-  onboardingError: null,
-  onboardingStatusLoading: false,
-
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   // Auth actions
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
-  login: async (email, password) => {
-    if (get().authLoading) return;
-    set({ authLoading: true, authError: null, demoFallback: false });
+  /**
+   * Called on app start. If we have a stored JWT, validate it via `/api/auth/me`
+   * and load the user's tenants. If the JWT is invalid or absent, switch to
+   * `anonymous` so the AuthScreen renders. Network failures fall back to
+   * `anonymous` (the user can still click "Essayer la démo").
+   */
+  bootstrap: async () => {
+    const token = getAuthToken();
+    if (!token) {
+      set({ authMode: "anonymous" });
+      return;
+    }
     try {
-      const { user, token } = await loginApi(email, password);
-      writeTokenToStorage(token);
-      // Set the token + user immediately so deriveIdentityFromAuth can run.
-      set({ user, token });
-      // Fetch the user's tenant memberships (best-effort — a freshly created
-      // user may legitimately have zero tenants).
-      let tenants: Tenant[] = [];
-      try {
-        const me = await getMe(token);
-        tenants = me.memberships;
-        // Use the user record from /me if it's more authoritative.
-        set({ user: me.user, tenants });
-      } catch (err) {
-        console.warn(
-          "getMe failed after login — proceeding without tenant list",
-          err instanceof Error ? err.message : err,
-        );
-      }
-      // Resolve the active tenant from the JWT's tenant_id claim.
-      const claims = decodeJwt(token);
-      const tenantId = claims?.tenant_id ?? null;
-      const activeTenant =
-        tenants.find((t) => t.tenant_id === tenantId) ?? null;
-      set({ activeTenant, authLoading: false });
-      // Recompute the chat identity from the new auth state.
-      set(recomputeIdentity(get()));
-      // Check onboarding status for the active tenant — the page gate reads
-      // this to decide whether to render the wizard or the chat. Demo
-      // tenants (is_demo=true) are always considered onboarded.
-      if (activeTenant) {
-        if (activeTenant.is_demo) {
-          set({
-            onboardingStatus: {
-              onboarded: true,
-              connector_type: "sqlite_demo",
-              schema_tables_count: 0,
-              roles_count: 0,
-            },
-          });
-        } else {
-          void get().loadOnboardingStatus(activeTenant.tenant_id);
-        }
-      }
-      toast.success(`Connecté en tant que ${user.name || user.email}`, {
-        description: activeTenant
-          ? `${activeTenant.name} · ${activeTenant.role}`
-          : "Aucun tenant actif",
+      const me = await getMe();
+      const tenants = me.memberships ?? [];
+      const activeTenant = pickActiveTenant(tenants);
+      set({
+        authMode: "authenticated",
+        isDemoSession: false,
+        user: me.user,
+        tenants,
+        activeTenant,
+        identity: identityFromAuthUser(me.user, activeTenant),
       });
     } catch (err) {
+      // Stale or invalid JWT — clear it and show the auth screen.
+      setAuthToken(null);
+      setActiveTenantId(null);
+      set({ authMode: "anonymous", user: null, tenants: [], activeTenant: null });
+      if (err instanceof AuthApiError && !err.unreachable) {
+        // 401 / 403 etc. — silently clear. Other errors (502) are also silent
+        // so the user just sees the auth screen.
+      }
+    }
+  },
+
+  /**
+   * Real backend login. Stores the JWT, loads `/api/auth/me` + `/api/tenants/mine`,
+   * activates the first tenant if none is active, then switches to `authenticated`.
+   *
+   * Returns `{ ok: false, error }` on failure so the AuthScreen can show an
+   * inline error message. Network failures (backend unreachable) are surfaced
+   * as `error` so the caller can decide whether to fall back to demo mode.
+   */
+  login: async (email, password) => {
+    set({ authLoading: true });
+    try {
+      const { user, token } = await authLogin(email, password);
+      setAuthToken(token);
+      // Fetch memberships + tenants.
+      const me = await getMe();
+      const tenants = me.memberships ?? [];
+      const activeTenant = pickActiveTenant(tenants);
+      if (activeTenant) setActiveTenantId(activeTenant.tenant_id);
+      set({
+        authMode: "authenticated",
+        isDemoSession: false,
+        authLoading: false,
+        user,
+        tenants,
+        activeTenant,
+        identity: identityFromAuthUser(user, activeTenant),
+        messages: [],
+        selectedMessageId: null,
+        isStreaming: false,
+        inspectorOpen: false,
+        adminView: "none",
+      });
+      return { ok: true as const };
+    } catch (err) {
+      set({ authLoading: false });
       const message =
         err instanceof AuthApiError
-          ? err.message
+          ? err.unreachable
+            ? "Backend Tevet-7 injoignable."
+            : err.status === 401
+              ? "Email ou mot de passe invalide."
+              : err.message
           : err instanceof Error
             ? err.message
-            : "Échec de la connexion";
-      set({ authLoading: false, authError: message });
-      throw err;
+            : "Erreur inconnue";
+      return { ok: false as const, error: message };
     }
   },
 
   signup: async (email, password, name) => {
-    if (get().authLoading) return;
-    set({ authLoading: true, authError: null, demoFallback: false });
+    set({ authLoading: true });
     try {
-      const { user, token } = await signupApi(email, password, name);
-      writeTokenToStorage(token);
-      set({ user, token });
-      // A freshly created user has zero tenants — try getMe anyway (the
-      // backend may seed a demo membership).
-      let tenants: Tenant[] = [];
-      try {
-        const me = await getMe(token);
-        tenants = me.memberships;
-        set({ user: me.user, tenants });
-      } catch (err) {
-        console.warn(
-          "getMe failed after signup — proceeding without tenant list",
-          err instanceof Error ? err.message : err,
-        );
-      }
-      const claims = decodeJwt(token);
-      const tenantId = claims?.tenant_id ?? null;
-      const activeTenant =
-        tenants.find((t) => t.tenant_id === tenantId) ?? null;
-      set({ activeTenant, authLoading: false });
-      set(recomputeIdentity(get()));
-      // Check onboarding status — a freshly created user with no tenants
-      // leaves the status null (the AuthScreen will prompt to create one).
-      if (activeTenant) {
-        if (activeTenant.is_demo) {
-          set({
-            onboardingStatus: {
-              onboarded: true,
-              connector_type: "sqlite_demo",
-              schema_tables_count: 0,
-              roles_count: 0,
-            },
-          });
-        } else {
-          void get().loadOnboardingStatus(activeTenant.tenant_id);
-        }
-      } else {
-        // No active tenant → reset the onboarding status so the AuthScreen
-        // can prompt to create a workspace.
-        set({ onboardingStatus: null });
-      }
-      if (tenants.length === 0) {
-        toast.success(`Compte créé — bienvenue ${user.name || user.email}`, {
-          description:
-            "Aucun tenant. Utilisez la démo ou créez un tenant (Phase 6b).",
-        });
-      } else {
-        toast.success(`Compte créé — bienvenue ${user.name || user.email}`, {
-          description: activeTenant
-            ? `${activeTenant.name} · ${activeTenant.role}`
-            : "Tenant actif",
-        });
-      }
+      const { user, token } = await authSignup(email, password, name);
+      setAuthToken(token);
+      // New user has no memberships yet — they'll create a tenant next.
+      set({
+        authMode: "authenticated",
+        isDemoSession: false,
+        authLoading: false,
+        user,
+        tenants: [],
+        activeTenant: null,
+        identity: identityFromAuthUser(user, null),
+        messages: [],
+        selectedMessageId: null,
+        isStreaming: false,
+        inspectorOpen: false,
+        adminView: "none",
+      });
+      return { ok: true as const };
     } catch (err) {
+      set({ authLoading: false });
       const message =
         err instanceof AuthApiError
-          ? err.message
+          ? err.unreachable
+            ? "Backend Tevet-7 injoignable."
+            : err.message
           : err instanceof Error
             ? err.message
-            : "Échec de l'inscription";
-      set({ authLoading: false, authError: message });
-      throw err;
+            : "Erreur inconnue";
+      return { ok: false as const, error: message };
     }
+  },
+
+  /**
+   * Used by the "Essayer la démo" button. Tries the real backend login with
+   * `marie@tevet7.dev` / `tevet7demo`; if the backend is unreachable, falls
+   * back to `enterDemoMode()` with a muted toast.
+   */
+  tryDemoLogin: async () => {
+    set({ authLoading: true });
+    try {
+      const result = await get().login(DEMO_EMAIL, DEMO_PASSWORD);
+      if (result.ok) {
+        set({ isDemoSession: true });
+        toast.success("Connecté en tant que marie@tevet7.dev", {
+          description: "Données réelles du tenant Drive Producteur.",
+        });
+        return;
+      }
+      // Login failed for a non-network reason (401, etc.) — surface the error
+      // and fall back to demo mode so the user still sees the prototype.
+      set({ authLoading: false, isDemoSession: true });
+      get().enterDemoMode();
+      toast("Mode démo (backend hors ligne)", {
+        description: result.error,
+      });
+    } catch (err) {
+      set({ authLoading: false });
+      get().enterDemoMode();
+      const reason =
+        err instanceof AuthApiError && err.unreachable
+          ? "Backend injoignable"
+          : err instanceof Error
+            ? err.message
+            : "Erreur inconnue";
+      toast("Mode démo (backend hors ligne)", {
+        description: reason,
+      });
+    }
+  },
+
+  /**
+   * Skips the backend entirely — runs the prototype against the mock data
+   * layer. Used when the user explicitly chooses the demo path or when the
+   * backend is unreachable.
+   */
+  enterDemoMode: () => {
+    setAuthToken(null);
+    setActiveTenantId(null);
+    set({
+      authMode: "demo",
+      authLoading: false,
+      user: null,
+      tenants: [],
+      activeTenant: null,
+      identityId: DEFAULT_IDENTITY_ID,
+      identity: identityById(DEFAULT_IDENTITY_ID),
+      messages: [],
+      selectedMessageId: null,
+      isStreaming: false,
+      inspectorOpen: false,
+      adminView: "none",
+    });
   },
 
   logout: () => {
-    writeTokenToStorage(null);
+    setAuthToken(null);
+    setActiveTenantId(null);
     set({
+      authMode: "anonymous",
+      authLoading: false,
+      isDemoSession: false,
       user: null,
-      token: null,
       tenants: [],
       activeTenant: null,
-      authError: null,
-      demoFallback: false,
-      // Reset the chat session so messages from the authenticated identity
-      // don't leak into the demo session.
+      identityId: DEFAULT_IDENTITY_ID,
+      identity: identityById(DEFAULT_IDENTITY_ID),
       messages: [],
       selectedMessageId: null,
       isStreaming: false,
       inspectorOpen: false,
-      backendStatus: "unknown",
-      documents: [],
-      approvals: [],
-      selectedApprovalId: null,
-      selectedApprovalDetail: null,
-      view: "copilot",
-      identityId: DEFAULT_IDENTITY_ID,
-      identity: identityById(DEFAULT_IDENTITY_ID),
-      // Reset the onboarding wizard — a logged-out user can't be onboarding.
-      onboardingStep: 0,
-      onboardingTenantId: null,
-      onboardingData: { ...INITIAL_ONBOARDING_DATA },
-      onboardingStatus: null,
-      onboardingError: null,
-      onboardingLoading: false,
-      onboardingStatusLoading: false,
-    });
-    toast.success("Déconnecté", {
-      description: "Vous êtes en mode démo (identités mock).",
+      adminView: "none",
     });
   },
 
-  setActiveTenant: async (tenantId) => {
-    const token = get().token;
+  /**
+   * Switches the active tenant. Calls `POST /api/tenants/{id}/activate` to get
+   * a fresh JWT scoped to the new tenant, then re-derives the chat identity.
+   */
+  switchTenant: async (tenantId) => {
+    const token = getAuthToken();
     if (!token) return;
-    set({ authLoading: true, authError: null });
     try {
-      const { token: newToken } = await activateTenant(tenantId, token);
-      writeTokenToStorage(newToken);
-      const activeTenant =
-        get().tenants.find((t) => t.tenant_id === tenantId) ?? null;
-      // Reset the onboarding wizard — switching tenant invalidates any
-      // in-progress wizard state (it was for a different tenant).
+      const { membership, token: newToken } = await activateTenant(tenantId);
+      setAuthToken(newToken);
+      setActiveTenantId(membership.tenant_id);
+      const tenants = get().tenants.map((t) =>
+        t.tenant_id === membership.tenant_id
+          ? { ...t, is_active: true }
+          : { ...t, is_active: false },
+      );
+      const activeTenant = tenants.find((t) => t.tenant_id === membership.tenant_id) ?? null;
+      const user = get().user;
       set({
-        token: newToken,
+        tenants,
         activeTenant,
-        authLoading: false,
-        onboardingStep: 0,
-        onboardingTenantId: null,
-        onboardingData: { ...INITIAL_ONBOARDING_DATA },
-        onboardingError: null,
-        onboardingLoading: false,
+        identity: user ? identityFromAuthUser(user, activeTenant) : get().identity,
+        messages: [],
+        selectedMessageId: null,
+        isStreaming: false,
+        inspectorOpen: false,
+        adminView: "none",
       });
-      set(recomputeIdentity(get()));
-      // Check onboarding status for the new active tenant — the page gate
-      // reads this to decide whether to render the wizard or the chat.
-      if (activeTenant) {
-        if (activeTenant.is_demo) {
-          set({
-            onboardingStatus: {
-              onboarded: true,
-              connector_type: "sqlite_demo",
-              schema_tables_count: 0,
-              roles_count: 0,
-            },
-          });
-        } else {
-          void get().loadOnboardingStatus(activeTenant.tenant_id);
-        }
-      } else {
-        set({ onboardingStatus: null });
-      }
-      toast.success("Tenant activé", {
-        description: activeTenant?.name ?? tenantId,
-      });
+      toast.success(`Tenant activé : ${activeTenant?.name ?? tenantId}`);
     } catch (err) {
       const message =
         err instanceof AuthApiError
-          ? err.message
+          ? err.unreachable
+            ? "Backend injoignable"
+            : err.message
           : err instanceof Error
             ? err.message
-            : "Échec de l'activation du tenant";
-      set({ authLoading: false, authError: message });
-      toast.error("Activation échouée", { description: message });
+            : "Erreur inconnue";
+      toast.error("Impossible de changer de tenant", { description: message });
     }
   },
 
-  loadAuthFromStorage: async () => {
-    const token = readTokenFromStorage();
-    if (!token) {
-      // No persisted token — stay in demo mode (the AuthScreen is shown).
-      return;
-    }
-    set({ authLoading: true, authError: null });
+  createTenant: async (name, slug) => {
     try {
-      const me = await getMe(token);
-      const claims = decodeJwt(token);
-      const tenantId = claims?.tenant_id ?? null;
-      const activeTenant =
-        me.memberships.find((t) => t.tenant_id === tenantId) ?? null;
+      const { tenant, token: newToken } = await authCreateTenant(name, slug);
+      setAuthToken(newToken);
+      setActiveTenantId(tenant.tenant_id);
+      const tenants = [...get().tenants, { ...tenant, is_active: true }];
+      const activeTenant = tenants.find((t) => t.tenant_id === tenant.tenant_id) ?? null;
+      const user = get().user;
       set({
-        user: me.user,
-        token,
-        tenants: me.memberships,
+        tenants,
         activeTenant,
-        authLoading: false,
+        identity: user ? identityFromAuthUser(user, activeTenant) : get().identity,
+        messages: [],
+        selectedMessageId: null,
+        isStreaming: false,
+        inspectorOpen: false,
+        adminView: "none",
       });
-      set(recomputeIdentity(get()));
-      // Check onboarding status for the active tenant — drives the page gate.
-      if (activeTenant) {
-        if (activeTenant.is_demo) {
-          set({
-            onboardingStatus: {
-              onboarded: true,
-              connector_type: "sqlite_demo",
-              schema_tables_count: 0,
-              roles_count: 0,
-            },
-          });
-        } else {
-          void get().loadOnboardingStatus(activeTenant.tenant_id);
-        }
-      } else {
-        set({ onboardingStatus: null });
-      }
+      toast.success(`Workspace créé : ${name}`);
+      return { ok: true as const };
     } catch (err) {
-      // The token is invalid/expired OR the backend is down. We can't tell
-      // the difference from the error type alone — clear the token to be
-      // safe (a backend-outage during demo just re-prompts the AuthScreen,
-      // which has a "Essayer la démo" fallback).
-      console.warn(
-        "loadAuthFromStorage failed — clearing persisted token",
-        err instanceof Error ? err.message : err,
-      );
-      writeTokenToStorage(null);
-      set({
-        user: null,
-        token: null,
-        tenants: [],
-        activeTenant: null,
-        authLoading: false,
-        // If the backend was reachable enough to return a 401, this is a real
-        // "token expired" — surface it. If it was a 502/network error, the
-        // AuthScreen "Essayer la démo" path will retry the backend.
-        authError:
-          err instanceof AuthApiError && err.status === 401
-            ? "Session expirée — reconnectez-vous."
-            : null,
-      });
+      const message =
+        err instanceof AuthApiError
+          ? err.unreachable
+            ? "Backend injoignable"
+            : err.message
+          : err instanceof Error
+            ? err.message
+            : "Erreur inconnue";
+      return { ok: false as const, error: message };
     }
   },
 
-  clearAuthError: () => set({ authError: null }),
-
-  enterDemoMode: () => {
-    // Skip auth — use the mock identities directly. The token stays null so
-    // the chat API falls back to the body-identity path (Phase 0 behaviour).
-    set({
-      demoFallback: true,
-      authError: null,
-      authLoading: false,
-      identityId: DEFAULT_IDENTITY_ID,
-      identity: identityById(DEFAULT_IDENTITY_ID),
-      messages: [],
-      selectedMessageId: null,
-      isStreaming: false,
-      inspectorOpen: false,
-      backendStatus: "unknown",
-      documents: [],
-      approvals: [],
-      selectedApprovalId: null,
-      selectedApprovalDetail: null,
-      view: "copilot",
-    });
-    toast("Mode démo (backend hors ligne)", {
-      id: DEMO_TOAST_ID,
-      description:
-        "Le service Tevet-7 est injoignable — réponses simulées depuis le mock local.",
-    });
-  },
-
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   // Identity / chat actions
-  // -----------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
   setIdentity: (identityId) => {
-    // When authenticated, the identity is derived from the JWT — switching
-    // to a mock identity would break the auth context. We no-op + toast.
-    if (get().token) {
-      toast.error("Identité verrouillée", {
-        description:
-          "Vous êtes connecté — déconnectez-vous pour changer d'identité.",
-      });
-      return;
-    }
     const identity = identityById(identityId);
-    // The Ops Console is admin-only — switching to a producer identity forces
-    // the view back to copilot. When switching TO admin we keep the current
-    // view unchanged (per spec: "don't force ops"), defaulting to copilot if
-    // this is the first time the admin identity is selected.
-    const nextView: CopilotView = identity.kind === "admin"
-      ? get().view
-      : "copilot";
     set({
       identityId,
       identity,
@@ -854,46 +634,63 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       selectedMessageId: null,
       isStreaming: false,
       inspectorOpen: false,
-      // Reset the backend status so the footer reflects the new conversation
-      // session — it'll be re-evaluated on the next message.
-      backendStatus: "unknown",
-      // Reset the document list — the new identity may have a different scope
-      // (producer #42 vs producer #99 vs admin full-access). loadDocuments()
-      // is re-triggered from the page-level effect that watches identity.
-      documents: [],
-      documentsLoading: true,
-      // Reset the Ops Console state — the new identity may not be allowed to
-      // see approvals at all, and even if it is the queue must be re-fetched.
-      view: nextView,
-      approvals: [],
-      approvalsLoading: false,
-      selectedApprovalId: null,
-      selectedApprovalDetail: null,
+      // Non-admins cannot stay in an admin view — bounce back to the agent.
+      adminView: identity.kind === "admin" ? get().adminView : "none",
     });
-    // Dismiss any lingering demo-mode notice when the scope changes.
-    toast.dismiss(DEMO_TOAST_ID);
     const scope = identity.producerNumber
       ? `Producer ${identity.producerNumber}`
       : "Admin (full access)";
     toast.success(`Scope modifié : interrogation en tant que ${scope}`, {
       description: identity.farmName ?? identity.role,
     });
-    // Kick off the scoped fetch immediately — the page-level effect will
-    // also fire, but Zustand dedupes by replacing the in-flight promise
-    // (the latest documents list wins).
-    void get().loadDocuments();
   },
 
-  sendExample: (_questionId, label) => {
-    // The label IS the user message — the backend / mock layer routes based
-    // on its content, so the question id is no longer needed at this layer.
-    void runAssistant(get, set, label);
+  setDemoIdentityOverride: (identityId) => {
+    if (identityId === null) {
+      set({ demoIdentityOverride: null });
+      return;
+    }
+    const identity = identityById(identityId);
+    set({
+      demoIdentityOverride: identity,
+      identity,
+      identityId,
+      messages: [],
+      selectedMessageId: null,
+      isStreaming: false,
+      inspectorOpen: false,
+      adminView: identity.kind === "admin" ? get().adminView : "none",
+    });
+    const scope = identity.producerNumber
+      ? `Producer ${identity.producerNumber}`
+      : "Admin (full access)";
+    toast.success(`Identité démo : ${scope}`, {
+      description: identity.farmName ?? identity.role,
+    });
+  },
+
+  sendExample: (questionId, label) => {
+    // Backend path — when authenticated, the example question is sent as a
+    // plain message and the agent answers from the real DB.
+    if (get().authMode === "authenticated") {
+      void runBackendAssistant(get, set, label);
+      return;
+    }
+    runAssistant(get, set, label, () =>
+      getResponseForExample(get().identity, questionId),
+    );
   },
 
   sendMessage: (text) => {
     const trimmed = text.trim();
     if (!trimmed || get().isStreaming) return;
-    void runAssistant(get, set, trimmed);
+    if (get().authMode === "authenticated") {
+      void runBackendAssistant(get, set, trimmed);
+      return;
+    }
+    runAssistant(get, set, trimmed, () =>
+      getResponseForMessage(get().identity, trimmed),
+    );
   },
 
   selectMessage: (messageId) => {
@@ -903,445 +700,135 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
   setInspectorOpen: (open) => set({ inspectorOpen: open }),
   resetConversation: () =>
-    set({
-      messages: [],
-      selectedMessageId: null,
-      isStreaming: false,
-      backendStatus: "unknown",
-    }),
+    set({ messages: [], selectedMessageId: null, isStreaming: false }),
 
-  loadDocuments: async () => {
-    const identity = get().identity;
-    set({ documentsLoading: true });
-    try {
-      const documents = await listDocuments(identity);
-      set({ documents, documentsLoading: false });
-    } catch (err) {
-      console.warn(
-        "Documents backend unreachable, leaving panel empty",
-        err instanceof Error ? err.message : err,
-      );
-      set({ documents: [], documentsLoading: false });
+  // -------------------------------------------------------------------------
+  // Admin actions
+  // -------------------------------------------------------------------------
+
+  setAdminView: (view) => {
+    if (view !== "none") {
+      const identity = get().identity;
+      if (identity.kind !== "admin") {
+        toast.error("Console admin réservée aux administrateurs.");
+        return;
+      }
+    }
+    set({ adminView: view });
+    if (view === "tenant") {
+      void get().loadTenantAdmin();
+    } else if (view === "platform") {
+      void get().loadPlatformAdmin();
     }
   },
 
-  addDocument: async (input) => {
-    if (get().documentMutating) return;
-    const identity = get().identity;
-    set({ documentMutating: true });
-    try {
-      const result = await uploadDocument(input, identity);
-      toast.success("Document indexé", {
-        description: `${result.title} · ${result.chunksCount} chunk${result.chunksCount > 1 ? "s" : ""}`,
-      });
-      await get().loadDocuments();
-    } catch (err) {
-      console.warn(
-        "Upload failed",
-        err instanceof Error ? err.message : err,
-      );
-      toast.error("Indexation échouée", {
-        description:
-          err instanceof Error
-            ? err.message
-            : "Le backend n'a pas pu indexer ce document.",
-      });
-    } finally {
-      set({ documentMutating: false });
-    }
-  },
-
-  removeDocument: async (id) => {
-    if (get().documentMutating) return;
-    const previous = get().documents;
-    // Optimistic delete — the list updates immediately, and we roll back if
-    // the backend rejects the call.
+  loadTenantAdmin: async (tenantId) => {
+    const tid = tenantId ?? get().adminData.tenantId ?? DEFAULT_TENANT_ID;
     set({
-      documents: previous.filter((d) => d.id !== id),
-      documentMutating: true,
+      adminLoading: true,
+      adminData: { ...get().adminData, tenantId: tid, error: null },
     });
     try {
-      await deleteDocument(id);
-      toast.success("Document supprimé");
-      await get().loadDocuments();
-    } catch (err) {
-      console.warn(
-        "Delete failed",
-        err instanceof Error ? err.message : err,
-      );
-      set({ documents: previous });
-      toast.error("Suppression échouée", {
-        description:
-          err instanceof Error ? err.message : "Le backend est injoignable.",
-      });
-    } finally {
-      set({ documentMutating: false });
-    }
-  },
-
-  // -----------------------------------------------------------------------
-  // Ops Console — approval queue (admin-only)
-  // -----------------------------------------------------------------------
-
-  setView: (view) => {
-    const identity = get().identity;
-    // Defensive: producers can never enter the ops view. The ViewToggle is
-    // hidden for them, but this guard also catches any client-side race.
-    const next: CopilotView =
-      view === "ops" && identity.kind !== "admin" ? "copilot" : view;
-    set({ view: next });
-    // Per spec — loading the approvals happens when the view switches to ops.
-    if (next === "ops") {
-      void get().loadApprovals();
-    }
-  },
-
-  loadApprovals: async () => {
-    const identity = get().identity;
-    if (identity.kind !== "admin") {
-      // Hard guard — even if a producer somehow calls this, do not hit the
-      // admin-only endpoint. The backend would reject anyway, but we avoid
-      // the network round-trip and the noisy 403.
-      set({ approvals: [], approvalsLoading: false });
-      return;
-    }
-    set({ approvalsLoading: true });
-    try {
-      const approvals = await listApprovals(identity);
-      set({ approvals, approvalsLoading: false });
-    } catch (err) {
-      console.warn(
-        "Approvals backend unreachable, leaving queue empty",
-        err instanceof Error ? err.message : err,
-      );
-      set({ approvals: [], approvalsLoading: false });
-      toast.error("Ops Console injoignable", {
-        description:
-          err instanceof Error
-            ? err.message
-            : "Le backend Tevet-7 est injoignable.",
-      });
-    }
-  },
-
-  selectApproval: async (id) => {
-    if (id === null) {
-      set({ selectedApprovalId: null, selectedApprovalDetail: null });
-      return;
-    }
-    set({ selectedApprovalId: id, selectedApprovalDetail: null });
-    try {
-      const detail = await getApprovalDetail(id);
-      // Guard against races: only commit if the user hasn't selected another
-      // row while this fetch was in flight.
-      if (get().selectedApprovalId === id) {
-        set({ selectedApprovalDetail: detail });
-      }
-    } catch (err) {
-      console.warn(
-        "Approval detail fetch failed",
-        err instanceof Error ? err.message : err,
-      );
-      if (get().selectedApprovalId === id) {
-        set({ selectedApprovalDetail: null });
-      }
-      toast.error("Dossier injoignable", {
-        description:
-          err instanceof Error ? err.message : "Backend Tevet-7 injoignable.",
-      });
-    }
-  },
-
-  decide: async (id, decision, reason) => {
-    if (get().decisionInFlight) return;
-    const identity = get().identity;
-    if (identity.kind !== "admin") return;
-    set({ decisionInFlight: true });
-    try {
-      const detail = await decideApproval(
-        id,
-        decision,
-        reason,
-        identity.id,
-      );
-      toast.success("Décision enregistrée", {
-        description: `${detail.approval.legal_name} · ${
-          decision === "approve"
-            ? "Approuvé"
-            : decision === "reject"
-              ? "Rejeté"
-              : "Outrepassé"
-        }`,
-      });
-      // Update the selected detail in place + refresh the list so the row
-      // moves to the "decided" group with its new status badge.
+      const [users, config, conversations, stats] = await Promise.all([
+        getTenantUsers(tid),
+        getTenantConfig(tid).catch(() => null),
+        getTenantConversations(tid),
+        getTenantStats(tid).catch(() => null),
+      ]);
       set({
-        selectedApprovalDetail: detail,
-        decisionInFlight: false,
-      });
-      await get().loadApprovals();
-    } catch (err) {
-      console.warn(
-        "Decide failed",
-        err instanceof Error ? err.message : err,
-      );
-      set({ decisionInFlight: false });
-      toast.error("Décision échouée", {
-        description:
-          err instanceof Error ? err.message : "Backend Tevet-7 injoignable.",
-      });
-    }
-  },
-
-  // -----------------------------------------------------------------------
-  // Onboarding wizard actions (Phase 6b)
-  // -----------------------------------------------------------------------
-
-  createTenant: async (name, slug) => {
-    const token = get().token;
-    if (!token) {
-      throw new Error("Non authentifié — impossible de créer un tenant.");
-    }
-    set({ authLoading: true, authError: null });
-    try {
-      // POST /api/tenants → the backend creates the tenant + the user's
-      // first membership (role=admin) and returns a refreshed JWT with the
-      // new tenant_id claim.
-      const res = await fetch("/api/tenants", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-          ...authHeader(token),
-        },
-        body: JSON.stringify({
-          name: name.trim(),
-          slug: slug.trim() || slugify(name),
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        let detail = `HTTP ${res.status} ${res.statusText}`;
-        try {
-          const j = JSON.parse(text) as {
-            error?: string;
-            detail?: string;
-            message?: string;
-          };
-          detail = j.error ?? j.detail ?? j.message ?? detail;
-        } catch {
-          /* keep fallback */
-        }
-        throw new Error(detail);
-      }
-      // Backend response shape:
-      //   {tenant: {id, name, slug, is_demo, created_at, owner_user_id},
-      //    membership: {tenant_id, role, producer_id, is_active},
-      //    token: "..."}
-      //
-      // The tenant object uses `id` (not `tenant_id`); we normalise to the
-      // frontend's `Tenant` shape so the rest of the store can treat all
-      // tenants uniformly.
-      const json = (await res.json()) as {
-        tenant: {
-          id: string;
-          name: string;
-          slug: string;
-          is_demo: boolean;
-        };
-        membership: {
-          tenant_id: string;
-          role: string;
-          producer_id: number | null;
-          is_active: boolean;
-        };
-        token: string;
-      };
-      const newTenant: Tenant = {
-        tenant_id: json.tenant.id,
-        name: json.tenant.name,
-        slug: json.tenant.slug,
-        role: json.membership?.role ?? "admin",
-        is_demo: json.tenant.is_demo,
-      };
-      // Persist the new JWT (it carries the new tenant_id claim).
-      writeTokenToStorage(json.token);
-      set({ token: json.token, activeTenant: newTenant, authLoading: false });
-      // Refresh the tenant list so the header switcher shows the new tenant.
-      try {
-        const me = await getMe(json.token);
-        // Ensure the freshly created tenant is in the list (the backend may
-        // or may not include it in the /me response depending on whether
-        // the membership was committed before the JWT was issued).
-        const hasNew = me.memberships.some(
-          (t) => t.tenant_id === newTenant.tenant_id,
-        );
-        const tenants = hasNew
-          ? me.memberships
-          : [newTenant, ...me.memberships];
-        set({ tenants, user: me.user });
-      } catch (err) {
-        console.warn(
-          "getMe failed after createTenant — proceeding without refresh",
-          err instanceof Error ? err.message : err,
-        );
-        set({ tenants: [newTenant, ...get().tenants] });
-      }
-      set(recomputeIdentity(get()));
-      // A freshly created tenant is NOT onboarded — pre-populate the status
-      // so the page gate renders the wizard immediately.
-      set({
-        onboardingStatus: {
-          onboarded: false,
-          connector_type: null,
-          schema_tables_count: 0,
-          roles_count: 0,
+        adminLoading: false,
+        adminData: {
+          ...get().adminData,
+          tenantId: tid,
+          users,
+          config,
+          conversations,
+          stats,
+          error: null,
         },
       });
-      toast.success("Workspace créé", {
-        description: `${newTenant.name} · ${newTenant.slug}`,
-      });
-      return newTenant;
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Création du tenant échouée";
-      set({ authLoading: false, authError: message });
-      throw new Error(message);
-    }
-  },
-
-  startOnboarding: (tenantId) => {
-    set({
-      onboardingStep: 1,
-      onboardingTenantId: tenantId,
-      onboardingData: { ...INITIAL_ONBOARDING_DATA },
-      onboardingError: null,
-      onboardingLoading: false,
-    });
-  },
-
-  exitOnboarding: () => {
-    set({
-      onboardingStep: 0,
-      onboardingTenantId: null,
-      onboardingData: { ...INITIAL_ONBOARDING_DATA },
-      onboardingError: null,
-      onboardingLoading: false,
-    });
-  },
-
-  setOnboardingStep: (step) => {
-    const clamped = Math.max(1, Math.min(4, step));
-    set({ onboardingStep: clamped, onboardingError: null });
-  },
-
-  updateOnboardingData: (partial) => {
-    set({
-      onboardingData: { ...get().onboardingData, ...partial },
-    });
-  },
-
-  clearOnboardingError: () => set({ onboardingError: null }),
-
-  finishOnboarding: async () => {
-    const tenantId = get().onboardingTenantId ?? get().activeTenant?.tenant_id;
-    if (!tenantId) {
-      toast.error("Aucun tenant actif à finaliser");
-      return;
-    }
-    set({ onboardingLoading: true, onboardingError: null });
-    try {
-      const result = await completeOnboardingApi(tenantId);
-      // Refresh the cached status — the tenant is now onboarded.
       set({
-        onboardingStatus: {
-          onboarded: true,
-          connector_type: get().onboardingData.connectorType,
-          schema_tables_count:
-            get().onboardingData.schemaDraft?.tables.filter((t) => t.selected)
-              .length ?? 0,
-          roles_count: get().onboardingData.rolesConfig.length,
-        },
-        onboardingLoading: false,
-        onboardingStep: 0,
-        onboardingTenantId: null,
-        onboardingData: { ...INITIAL_ONBOARDING_DATA },
-        // If the backend returned a refreshed tenant record, update the
-        // active tenant + membership list. Most backend implementations
-        // only return `{onboarded: true, tenant_id: "..."}` (no full
-        // tenant), so we fall back to the existing record when `tenant`
-        // is null — the local copy is already correct.
-        activeTenant: result.tenant ?? get().activeTenant,
-        tenants: result.tenant
-          ? get().tenants.map((t) =>
-              t.tenant_id === result.tenant!.tenant_id ? result.tenant! : t,
-            )
-          : get().tenants,
+        adminLoading: false,
+        adminData: { ...get().adminData, error: describeAdminError(err) },
       });
-      set(recomputeIdentity(get()));
-      toast.success("Workspace configuré", {
-        description: "Votre agent Tevet-7 est prêt.",
-      });
-    } catch (err) {
-      const message =
-        err instanceof OnboardingApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : "Finalisation échouée";
-      set({ onboardingLoading: false, onboardingError: message });
-      toast.error("Finalisation échouée", { description: message });
     }
   },
 
-  loadOnboardingStatus: async (tenantId) => {
-    set({ onboardingStatusLoading: true });
+  loadPlatformAdmin: async () => {
+    set({ adminLoading: true, adminData: { ...get().adminData, error: null } });
     try {
-      const status = await getOnboardingStatus(tenantId);
-      set({ onboardingStatus: status, onboardingStatusLoading: false });
-    } catch (err) {
-      // Fall back to "onboarded: true" so the demo flow isn't broken.
-      console.warn(
-        "loadOnboardingStatus failed — treating tenant as onboarded",
-        err instanceof Error ? err.message : err,
-      );
+      const [tenants, platformStats] = await Promise.all([
+        listAllTenants(),
+        getPlatformStats().catch(() => null),
+      ]);
       set({
-        onboardingStatus: {
-          onboarded: true,
-          connector_type: null,
-          schema_tables_count: 0,
-          roles_count: 0,
+        adminLoading: false,
+        adminData: {
+          ...get().adminData,
+          tenants,
+          platformStats,
+          error: null,
         },
-        onboardingStatusLoading: false,
+      });
+    } catch (err) {
+      set({
+        adminLoading: false,
+        adminData: { ...get().adminData, error: describeAdminError(err) },
+      });
+    }
+  },
+
+  resetDemo: async () => {
+    set({ adminLoading: true });
+    try {
+      const result = await resetDemoTenant();
+      toast.success("Démo réinitialisée", {
+        description: `${result.orders_reseeded} commandes · ${result.docs_reseeded} documents reseedés.`,
+      });
+      await get().loadPlatformAdmin();
+    } catch (err) {
+      set({ adminLoading: false });
+      toast.error("Réinitialisation impossible", {
+        description: describeAdminError(err),
       });
     }
   },
 }));
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 /**
- * Shared helper that pushes the user message, shows the typing indicator,
- * then reveals the assistant response.
- *
- * Flow:
- *   1. Append the user message + set `isStreaming=true`.
- *   2. Race the real backend call (`callBackend`) against a minimum 400 ms
- *      typing delay — `Promise.all` ensures the indicator stays visible for
- *      at least 400 ms even when the backend is fast.
- *   3. On success: build the assistant message from the real backend
- *      response, set `backendStatus="connected"`.
- *   4. On failure (network / non-2xx / parse / timeout): log a warning,
- *      set `backendStatus="demo"`, show a muted "Mode démo" toast, then
- *      fall back to `getMockResponse` with the existing simulated latency
- *      so the prototype keeps working with the backend offline.
+ * Picks the tenant to activate after login: the cached `activeTenantId` if the
+ * user is still a member, else the first `is_active` membership, else the
+ * first membership. Returns null if the user has no memberships.
  */
-async function runAssistant(
+function pickActiveTenant(tenants: TenantMembership[]): TenantMembership | null {
+  if (tenants.length === 0) return null;
+  const cachedId = getActiveTenantId();
+  if (cachedId) {
+    const cached = tenants.find((t) => t.tenant_id === cachedId);
+    if (cached) return cached;
+  }
+  const active = tenants.find((t) => t.is_active);
+  if (active) return active;
+  return tenants[0];
+}
+
+/**
+ * Shared helper that pushes the user message, simulates the "thinking" delay,
+ * then reveals the assistant response. Responses are computed up-front from
+ * the mock layer so they stay deterministic per identity + question.
+ */
+function runAssistant(
   get: () => CopilotState,
   set: (partial: Partial<CopilotState>) => void,
   userText: string,
+  computeResponse: () => AssistantResponse,
 ) {
   if (get().isStreaming) return;
-
-  const identity = get().identity;
 
   const userMessage: ChatMessage = {
     id: makeId("u"),
@@ -1356,53 +843,103 @@ async function runAssistant(
     selectedMessageId: null,
   });
 
-  let response: AssistantResponse;
+  // Simulate model latency before revealing the answer.
+  const delay = 800 + Math.random() * 350;
+  window.setTimeout(() => {
+    const response = computeResponse();
+    const assistantMessage: ChatMessage = {
+      id: makeId("a"),
+      role: "assistant",
+      content: response.answer,
+      response,
+      createdAt: Date.now(),
+      streaming: false,
+    };
+    // If the inspector is already open, live-update it with the new trace.
+    // Otherwise leave it closed — the user can click the answer to inspect.
+    const inspectorWasOpen = get().inspectorOpen;
+    set({
+      messages: [...get().messages, assistantMessage],
+      isStreaming: false,
+      selectedMessageId: inspectorWasOpen ? assistantMessage.id : null,
+    });
+  }, delay);
+}
+
+/**
+ * Backend-backed assistant run. Pushes the user message immediately, shows the
+ * typing indicator, calls `/api/chat` with the JWT, then pushes the assistant
+ * message with the real envelope (SQL, chart, steps, security_checks).
+ *
+ * Network / HTTP errors are surfaced as a synthetic assistant message so the
+ * chat thread doesn't break.
+ */
+async function runBackendAssistant(
+  get: () => CopilotState,
+  set: (partial: Partial<CopilotState>) => void,
+  userText: string,
+) {
+  if (get().isStreaming) return;
+
+  const userMessage: ChatMessage = {
+    id: makeId("u"),
+    role: "user",
+    content: userText,
+    createdAt: Date.now(),
+  };
+
+  set({
+    messages: [...get().messages, userMessage],
+    isStreaming: true,
+    selectedMessageId: null,
+  });
 
   try {
-    // Race the backend call against a minimum typing-indicator duration.
-    const [backendResponse] = await Promise.all([
-      callBackend(userText, identity),
-      sleep(MIN_TYPING_MS),
-    ]);
-    response = backendResponse;
-    set({ backendStatus: "connected" });
-    // A successful backend call implicitly clears any prior demo notice.
-    toast.dismiss(DEMO_TOAST_ID);
-  } catch (err) {
-    console.warn(
-      "Backend unreachable, using mock fallback",
-      err instanceof Error ? err.message : err,
-    );
-    set({ backendStatus: "demo" });
-    // Muted, on-brand toast — NOT a warning color. Uses sonner's neutral
-    // styling (popover bg + muted-foreground text via the Toaster config).
-    toast("Mode démo (backend hors ligne)", {
-      id: DEMO_TOAST_ID,
-      description:
-        "Le service Tevet-7 est injoignable — réponses simulées depuis le mock local.",
+    const response = await callBackendChat(userText);
+    const assistantMessage: ChatMessage = {
+      id: makeId("a"),
+      role: "assistant",
+      content: response.answer,
+      response,
+      createdAt: Date.now(),
+      streaming: false,
+    };
+    const inspectorWasOpen = get().inspectorOpen;
+    set({
+      messages: [...get().messages, assistantMessage],
+      isStreaming: false,
+      selectedMessageId: inspectorWasOpen ? assistantMessage.id : null,
     });
-    // Keep the existing simulated latency for the mock fallback so the
-    // typing indicator feels natural alongside the real path.
-    const mockDelay =
-      MOCK_LATENCY_MIN_MS + Math.random() * MOCK_LATENCY_JITTER_MS;
-    await sleep(mockDelay);
-    response = getMockResponse(userText, identity);
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Erreur inconnue";
+    const failureResponse: AssistantResponse = {
+      answer:
+        "⚠️ Le service agent n'a pas pu répondre.\n\n" +
+        `Détail : ${message}\n\n` +
+        "Réessayez dans un instant. Si le problème persiste, basculez en mode démo via le menu utilisateur.",
+      sql: null,
+      scopeClause: null,
+      tokensIn: 0,
+      tokensOut: 0,
+      latencyMs: 0,
+      toolCalls: [],
+      steps: [],
+      securityChecks: [],
+      refused: true,
+    };
+    const assistantMessage: ChatMessage = {
+      id: makeId("a"),
+      role: "assistant",
+      content: failureResponse.answer,
+      response: failureResponse,
+      createdAt: Date.now(),
+      streaming: false,
+    };
+    set({
+      messages: [...get().messages, assistantMessage],
+      isStreaming: false,
+    });
+    toast.error("Échec de l'agent", { description: message });
   }
-
-  const assistantMessage: ChatMessage = {
-    id: makeId("a"),
-    role: "assistant",
-    content: response.answer,
-    response,
-    createdAt: Date.now(),
-    streaming: false,
-  };
-  // If the inspector is already open, live-update it with the new trace.
-  // Otherwise leave it closed — the user can click the answer to inspect.
-  const inspectorWasOpen = get().inspectorOpen;
-  set({
-    messages: [...get().messages, assistantMessage],
-    isStreaming: false,
-    selectedMessageId: inspectorWasOpen ? assistantMessage.id : null,
-  });
 }

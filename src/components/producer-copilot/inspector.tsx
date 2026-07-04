@@ -7,24 +7,43 @@ import { Separator } from "@/components/ui/separator";
 import type { ChatMessage, TraceStatus } from "@/lib/types";
 import {
   AlertTriangle,
-  BookOpen,
   Check,
   Clock,
   Cpu,
   Database,
   Eye,
-  FileText,
   Shield,
   ShieldOff,
   X,
 } from "@/components/ui/feather-icons";
 
 import { SqlBlock } from "./sql-block";
-import { ForecastDisplay } from "./forecast-display";
 
 interface InspectorProps {
   message: ChatMessage | null;
   onClose: () => void;
+}
+
+/**
+ * Inspector close button — single X rendered in the inspector header
+ * (top-right). This is the ONLY in-panel close affordance: the desktop
+ * header's eye-toggle opens/closes from outside, but once you're inside
+ * the inspector you also need a way to dismiss it without reaching for the
+ * header. On mobile, the inspector lives in a Sheet whose own X is
+ * suppressed (see `hideClose` in page.tsx) so this button is the sole
+ * close path there too.
+ */
+function InspectorCloseButton({ onClose }: { onClose: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClose}
+      aria-label="Fermer l'inspecteur"
+      className="flex size-6 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:border-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+    >
+      <X size={13} />
+    </button>
+  );
 }
 
 export function Inspector({ message, onClose }: InspectorProps) {
@@ -45,35 +64,16 @@ export function Inspector({ message, onClose }: InspectorProps) {
   const latencyDisplay = `${(totalMs / 1000).toFixed(2).replace(".", ",")} s`;
   const totalMsDisplay = `${totalMs} ms`;
 
-  // RAG mode = documentary response with cited sources. Distinguished from
-  // analytical (SQL) responses so the inspector reads as a distinct trace.
-  const isRag = !!r.sources && r.sources.length > 0;
-  // Forecast mode = ML stock-shortage prediction via `forecast_tool`
-  // (Phase 5). Distinct from both analytical (SQL) and documentary (RAG):
-  // the trace shows feature engineering / prédiction ML / classement steps,
-  // a "PRÉDICTIONS ML" block replaces the SQL block, and the security checks
-  // include "Modèle ML valide" + "Features disponibles".
-  const isForecast =
-    r.toolCalls.includes("forecast_tool") &&
-    !!r.forecastPredictions &&
-    r.forecastPredictions.length > 0;
-
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h3 className="text-[11px] font-body font-medium uppercase tracking-wide text-muted-foreground">
           Trace de l&apos;agent
         </h3>
-        <button
-          onClick={onClose}
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          aria-label="Fermer l'inspecteur"
-        >
-          <X size={16} />
-        </button>
+        <InspectorCloseButton onClose={onClose} />
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-6 p-4">
           {/* Status summary */}
           <section>
@@ -83,46 +83,6 @@ export function Inspector({ message, onClose }: InspectorProps) {
                 <ShieldOff size={14} className="shrink-0" />
                 <span className="font-body">
                   Action refusée — scoping violation
-                </span>
-              </div>
-            ) : isRag ? (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs">
-                <FileText size={14} className="shrink-0 text-accent" />
-                <span className="font-body text-foreground">
-                  Réponse documentaire ·{" "}
-                  <span className="font-heading text-foreground tabular-nums">
-                    {r.sources?.length ?? 0}
-                  </span>{" "}
-                  source{(r.sources?.length ?? 0) > 1 ? "s" : ""} citée
-                  {(r.sources?.length ?? 0) > 1 ? "s" : ""} ·{" "}
-                  <span className="font-heading text-foreground tabular-nums">
-                    {totalMs}
-                  </span>{" "}
-                  ms ·{" "}
-                  <span className="font-heading text-foreground tabular-nums">
-                    {totalTokensDisplay}
-                  </span>{" "}
-                  tokens
-                </span>
-              </div>
-            ) : isForecast ? (
-              <div className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs">
-                <Cpu size={14} className="shrink-0 text-accent" />
-                <span className="font-body text-foreground">
-                  Prédiction ML ·{" "}
-                  <span className="font-heading text-foreground tabular-nums">
-                    {r.forecastPredictions?.length ?? 0}
-                  </span>{" "}
-                  produit{(r.forecastPredictions?.length ?? 0) > 1 ? "s" : ""} à
-                  risque ·{" "}
-                  <span className="font-heading text-foreground tabular-nums">
-                    {totalMs}
-                  </span>{" "}
-                  ms ·{" "}
-                  <span className="font-heading text-foreground tabular-nums">
-                    {totalTokensDisplay}
-                  </span>{" "}
-                  tokens
                 </span>
               </div>
             ) : (
@@ -189,9 +149,8 @@ export function Inspector({ message, onClose }: InspectorProps) {
             </ol>
           </section>
 
-          {/* SQL (analytical responses only — never co-renders with forecast
-              since the forecast_tool returns sql: null) */}
-          {r.sql && !isRag && !isForecast && (
+          {/* SQL */}
+          {r.sql && (
             <section>
               <SectionLabel icon={<Database size={12} />}>
                 SQL exécuté
@@ -204,73 +163,6 @@ export function Inspector({ message, onClose }: InspectorProps) {
                   defaultOpen
                 />
               </div>
-            </section>
-          )}
-
-          {/* PRÉDICTIONS ML (forecast_tool responses only — Phase 5). Same
-              block as in the chat message: probability bars per product,
-              model card footer. Rendered with the `compact` variant so it
-              fits the inspector's narrower column without duplicating the
-              section header. */}
-          {isForecast && r.forecastPredictions && r.forecastPredictions.length > 0 && (
-            <section>
-              <SectionLabel icon={<Cpu size={12} />}>
-                Prédictions ML
-              </SectionLabel>
-              <div className="mt-2">
-                <ForecastDisplay
-                  predictions={r.forecastPredictions}
-                  compact
-                />
-              </div>
-              <p className="mt-2 text-[10px] text-muted-foreground">
-                Modèle RandomForest · 100 arbres · entraîné sur 90 jours
-                d&apos;historique
-              </p>
-            </section>
-          )}
-
-          {/* Documents retrouvés (RAG responses only) */}
-          {isRag && r.sources && r.sources.length > 0 && (
-            <section>
-              <SectionLabel icon={<BookOpen size={12} />}>
-                Documents retrouvés
-              </SectionLabel>
-              <ul className="mt-2 space-y-1.5">
-                {r.sources.map((s, i) => (
-                  <li
-                    key={`${s.documentId}-${s.chunkIndex}-${i}`}
-                    className="flex items-start gap-2 rounded-md border border-border bg-background p-2.5"
-                  >
-                    <FileText size={14} className="mt-0.5 shrink-0 text-accent" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-xs font-medium text-foreground">
-                        {s.title}
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-muted-foreground">
-                        chunk{" "}
-                        <span className="font-heading tabular-nums">
-                          {s.chunkIndex}
-                        </span>{" "}
-                        · document_id{" "}
-                        <span className="font-heading tabular-nums">
-                          {s.documentId}
-                        </span>
-                      </div>
-                    </div>
-                    {typeof s.score === "number" && (
-                      <div className="shrink-0 text-right">
-                        <div className="font-heading text-sm tabular-nums text-foreground">
-                          {(s.score * 100).toFixed(0)}%
-                        </div>
-                        <div className="text-[9px] uppercase tracking-wide text-muted-foreground">
-                          score
-                        </div>
-                      </div>
-                    )}
-                  </li>
-                ))}
-              </ul>
             </section>
           )}
 
@@ -327,18 +219,12 @@ export function Inspector({ message, onClose }: InspectorProps) {
 
 function EmptyInspector({ onClose }: { onClose: () => void }) {
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <h3 className="text-[11px] font-body font-medium uppercase tracking-wide text-muted-foreground">
           Trace de l&apos;agent
         </h3>
-        <button
-          onClick={onClose}
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          aria-label="Fermer l'inspecteur"
-        >
-          <X size={16} />
-        </button>
+        <InspectorCloseButton onClose={onClose} />
       </div>
       <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
         <div className="flex size-12 items-center justify-center rounded-md border border-border bg-background text-muted-foreground">

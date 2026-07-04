@@ -1,8 +1,8 @@
-# Tevet-7 — Agentic Service
+# OpsPilot AI — Agentic Service
 
 > Configurable enterprise AI agent platform. First tenant: **Drive Producteur**.
 
-Tevet-7 is a multi-tenant platform for building, deploying, and observing
+OpsPilot AI is a multi-tenant platform for building, deploying, and observing
 enterprise-grade LLM agents that can reason over tenant data **safely**.
 
 Each tenant (an enterprise customer) gets:
@@ -30,7 +30,7 @@ questions about their own sales, stock, and orders — and only their own.
 | LLM              | **OpenAI** (gpt-4o / gpt-4o-mini)                  | Default provider; pluggable later |
 | Observability    | **Langfuse** (self-hosted)                         | Traces, prompts, evals, cost tracking per tenant |
 | SQL rewriting    | **sqlglot**                                        | Parse + validate + rewrite LLM-generated SQL (security) |
-| Frontend         | Next.js prototype (separate repo / folder)         | Maintained alongside this service |
+| Frontend         | Next.js prototype (separate repo / folder)         | Owned by the frontend agent |
 
 ---
 
@@ -104,7 +104,7 @@ uvicorn app.main:app --reload --port 8000
 
 ```bash
 curl http://localhost:8000/health
-# {"status":"ok","service":"tevet-7","version":"0.1.0"}
+# {"status":"ok","service":"opspilot-ai","version":"0.1.0"}
 ```
 
 ### Key environment variables

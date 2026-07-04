@@ -6,7 +6,7 @@ import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 export const metadata: Metadata = {
   title: "Tevet-7 — Configurable AI Agent Platform",
   description:
-    "Tevet-7 — plateforme d'agents IA configurable. Premier tenant : Drive Producteur (marketplace circuit court). Agent SQL scopé par tenant avec row-level security visible, file d'approbation humaine (Ops Console) et recherche documentaire (RAG)."
+    "Tevet-7 — plateforme d'agents IA configurable. Premier tenant : Drive Producteur. Chaque question est sécurisée par un scope tenant.",
 };
 
 export default function RootLayout({

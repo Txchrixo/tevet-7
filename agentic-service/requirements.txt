@@ -1,4 +1,4 @@
-# requirements.txt — Tevet-7 agentic service
+# requirements.txt — OpsPilot AI agentic service
 #
 # Pinned versions for reproducible builds. Bump intentionally.
 # Grouped by concern. Dev/test deps are at the bottom.
@@ -39,7 +39,6 @@ pypdf==5.1.0                       # PDF text extraction for document_search_too
 scikit-learn==1.6.0
 pandas==2.2.3
 numpy==2.2.1
-joblib==1.5.3                       # model persistence for the Phase 5 forecast_tool
 
 # ── Auth ────────────────────────────────────────────────────────────────────
 PyJWT==2.10.1                      # JWT verification for /chat (tenant + role claims)

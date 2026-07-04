@@ -120,12 +120,6 @@ export function IdentitySwitcher() {
             </DropdownMenuItem>
           );
         })}
-        <DropdownMenuSeparator />
-        <div className="px-2 py-1.5">
-          <span className="inline-flex items-center rounded-md border border-border px-2 py-0.5 text-[10px] font-body uppercase tracking-wide text-muted-foreground">
-            Tenant · Drive Producteur
-          </span>
-        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );

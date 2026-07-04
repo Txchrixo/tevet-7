@@ -17,8 +17,32 @@ interface BrandMarkProps {
   className?: string;
 }
 
-/** The icon mark only — heptagon outline + top-vertex node. */
+/**
+ * The icon mark only — heptagon outline + top-vertex node.
+ *
+ * Uses a `useEffect` + `useState` "mounted" guard so the SVG (which reads
+ * CSS variables `--accent` / `--foreground` that resolve differently once
+ * the theme provider has applied the dark theme) only renders after the
+ * client has hydrated. Before mount we emit a same-sized empty span — this
+ * guarantees the server-rendered HTML and the first client render produce
+ * the same markup, so React can reconcile without a hydration warning.
+ */
 export function BrandMark({ size = 28, className }: BrandMarkProps) {
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <span
+        aria-hidden="true"
+        className={cn("inline-block", className)}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
   // Regular heptagon, circumradius 9, center (12,12), top vertex up.
   const points = [
     [12.0, 3.0],

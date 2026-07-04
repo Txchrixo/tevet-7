@@ -16,6 +16,7 @@ import {
 import type { ChartSpec } from "@/lib/types";
 
 // Map series color keys (from the mock data) to the Tevet-7 palette.
+// Also accepts raw hex strings (e.g. "#A8C090") returned by the live backend.
 const COLOR_MAP: Record<string, string> = {
   accent: "#A8C090",
   primary: "#5A6B4A",
@@ -25,7 +26,11 @@ const COLOR_MAP: Record<string, string> = {
 };
 
 function colorFor(name: string | undefined, fallback: string): string {
-  return (name && COLOR_MAP[name]) || fallback;
+  if (!name) return fallback;
+  if (COLOR_MAP[name]) return COLOR_MAP[name];
+  // Pass-through for hex colors returned by the backend (e.g. "#A8C090").
+  if (name.startsWith("#")) return name;
+  return fallback;
 }
 
 const AXIS_TICK = {

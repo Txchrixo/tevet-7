@@ -226,3 +226,44 @@ async def me_endpoint(
     """
     memberships = await list_user_memberships(current_user["id"])
     return {"user": current_user, "memberships": memberships}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /api/auth/demo-token — Phase 6d: public demo access (no credentials)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@router.post("/auth/demo-token")
+async def demo_token_endpoint() -> dict[str, Any]:
+    """Issue a demo JWT without credentials.
+
+    Logs in as marie@tevet7.dev (producer #42 on the 'dp' demo tenant).
+    The JWT includes ``is_demo=True`` so the frontend can show the
+    "DÉMO PUBLIQUE" badge and block destructive actions.
+
+    This endpoint is publicly accessible — no Authorization header required.
+    Rate limiting should be added in production.
+    """
+    tracer, ctx, span = _start_auth_span("auth_demo_token")
+    t0 = time.monotonic()
+    try:
+        # Login as the demo marie user (no password check — public demo).
+        user, token = await login("marie@tevet7.dev", "tevet7demo")
+        await _end_auth_trace(
+            tracer, ctx, span, t0, status_="ok",
+            extra={"user_id": user["id"], "demo": True, "issued_token": True},
+        )
+        return {
+            "user": {**user, "is_demo": True},
+            "token": token,
+            "is_demo": True,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("demo_token_endpoint failed")
+        await _end_auth_trace(
+            tracer, ctx, span, t0, status_="error", error=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"demo backend unavailable: {exc}",
+        ) from exc

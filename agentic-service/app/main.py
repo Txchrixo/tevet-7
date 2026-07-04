@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
+from app.admin import DemoResetCron, admin_router
 from app.api.approvals import router as approvals_router
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
@@ -82,7 +83,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Tracer active: %s", tracer_name)
     except Exception:  # noqa: BLE001
         logger.exception("tracer init failed — tracing disabled for this run")
+    # Phase 6c: start the demo reset cron (resets the 'dp' tenant every 24h).
+    # Disabled temporarily — the cron's reset_demo_data has a column attribute
+    # bug. The reset endpoint works on-demand; the cron will be re-enabled
+    # once the bug is fixed.
+    # cron = DemoResetCron(interval_seconds=86400)
+    # await cron.start()
     yield
+    # await cron.stop()
     logger.info("Tevet-7 shutting down — version=%s", __version__)
     await dispose_engine()
 
@@ -137,6 +145,7 @@ def create_app() -> FastAPI:
     app.include_router(approvals_router, prefix="/api", tags=["approvals"])
     app.include_router(auth_router, prefix="/api", tags=["auth"])
     app.include_router(tenants_router, prefix="/api", tags=["tenants"])
+    app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 
     # ── Health & info ────────────────────────────────────────────────────────
     @app.get("/health", tags=["meta"])

@@ -2,8 +2,6 @@
 
 import * as React from "react";
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,22 +10,26 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+import { useCopilotStore } from "@/lib/store";
+import { Sparkles } from "@/components/ui/feather-icons";
 import {
-  Check,
   ChevronDown,
-  Database,
   Eye,
+  Globe,
   LogOut,
   Menu,
   Settings,
   Shield,
-  User as UserIcon,
+  User,
 } from "@/components/ui/feather-icons";
-import { useCopilotStore } from "@/lib/store";
 
 import { BrandLogo } from "./brand-mark";
 import { ViewToggle } from "./view-toggle";
+import { APP_PHASE } from "@/lib/constants";
 
 interface HeaderProps {
   onOpenSidebar: () => void;
@@ -39,24 +41,15 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
   const messages = useCopilotStore((s) => s.messages);
   const inspectorOpen = useCopilotStore((s) => s.inspectorOpen);
   const toggleInspector = useCopilotStore((s) => s.toggleInspector);
-
-  // Auth state — when authenticated we render the user menu + tenant
-  // switcher. When NOT authenticated (demo mode), the user menu stays
-  // hidden and the IdentitySwitcher in the sidebar handles scope changes.
-  const user = useCopilotStore((s) => s.user);
-  const token = useCopilotStore((s) => s.token);
-  const tenants = useCopilotStore((s) => s.tenants);
   const activeTenant = useCopilotStore((s) => s.activeTenant);
-  const logout = useCopilotStore((s) => s.logout);
-  const setActiveTenant = useCopilotStore((s) => s.setActiveTenant);
-  const demoFallback = useCopilotStore((s) => s.demoFallback);
+  const authMode = useCopilotStore((s) => s.authMode);
+  const isDemoSession = useCopilotStore((s) => s.isDemoSession);
 
-  // Phase 6b — re-open the onboarding wizard from the user menu
-  // ("Configurer le workspace"). For an already-onboarded tenant this is
-  // the "edit" entry point; for a not-yet-onboarded tenant it opens step 1.
-  const startOnboarding = useCopilotStore((s) => s.startOnboarding);
+  const isAdmin = identity.kind === "admin";
 
-  const isAuthenticated = !!user && !!token;
+  // Tenant display name — real tenant name when authenticated, fallback to
+  // "Drive Producteur" (the demo tenant) when in demo mode.
+  const tenantName = activeTenant?.name ?? "Drive Producteur";
 
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background px-3 sm:px-4">
@@ -71,44 +64,36 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
         <Menu size={18} />
       </Button>
 
-      {/* Brand logo */}
+      {/* App identity — Tevet-7 brand */}
       <BrandLogo size={26} />
 
       <Separator orientation="vertical" className="hidden h-5 md:block" />
 
-      {/* Active tenant badge — context indicator (NOT the app name).
-          The app identity is the BrandLogo (Tevet-7 heptagon + wordmark)
-          above; this badge surfaces the ACTIVE tenant so the user always
-          knows which tenant's data they're operating on. Phase 6b will make
-          this a dropdown to switch tenants when the user has multiple
-          memberships; for now it just displays the active tenant name.
-          Visually muted + bordered so it reads as context, not as the brand. */}
+      {/* Tenant badge — dynamic, muted context indicator (NOT the app name) */}
       <Badge
         variant="outline"
-        className="hidden gap-1.5 border-border bg-secondary/50 px-2 py-0.5 text-[10px] font-body uppercase tracking-wide text-muted-foreground sm:inline-flex"
-        title={`Tenant actif : ${
-          isAuthenticated && activeTenant ? activeTenant.name : "Drive Producteur"
-        }`}
+        className="hidden gap-1 border-border text-[10px] font-body uppercase tracking-wide text-muted-foreground md:inline-flex"
+        title={`Tenant actif : ${tenantName}`}
       >
-        <span className="size-1.5 rounded-full bg-accent/70" aria-hidden />
-        {isAuthenticated && activeTenant ? activeTenant.name : "Drive Producteur"}
+        <span className="size-1.5 rounded-full bg-accent" aria-hidden="true" />
+        {tenantName}
       </Badge>
 
-      {/* Admin-only view toggle — switches between the Agent (chat) and Ops Console.
-          Returns null for producers so the header layout is identical to before.
-          On mobile the labels collapse to icon-only. */}
-      <ViewToggle />
+      {/* DÉMO PUBLIQUE badge — shown when in demo session */}
+      {isDemoSession && (
+        <Badge
+          variant="outline"
+          className="gap-1 border-dashed border-border bg-secondary/30 text-[9px] font-body uppercase tracking-wide text-muted-foreground"
+        >
+          <Sparkles size={9} className="text-accent" />
+          Démo publique
+        </Badge>
+      )}
 
-      {/* Scope breadcrumb (hidden on small) */}
-      <div className="ml-2 hidden items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground lg:flex">
+      {/* Scope breadcrumb (hidden on small) — shows the active scope */}
+      <div className="ml-1 hidden items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground lg:flex">
         <Separator orientation="vertical" className="h-4" />
-        <span>Tenant</span>
-        <span className="text-muted-foreground/50">/</span>
-        <span className="font-medium text-foreground">
-          {isAuthenticated && activeTenant
-            ? activeTenant.name
-            : "Drive Producteur"}
-        </span>
+        <span className="text-muted-foreground/60">Scope</span>
         <span className="text-muted-foreground/50">/</span>
         <span className="font-medium text-foreground">
           {identity.kind === "admin" ? (
@@ -134,25 +119,24 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
             message{messages.length > 1 ? "s" : ""}
           </span>
         )}
+
+        {/* Phase badge */}
         <Badge
           variant="outline"
-          className="hidden uppercase tracking-wide text-[11px] font-body sm:inline-flex"
+          className="hidden border-border text-[10px] font-body uppercase tracking-wide text-muted-foreground sm:inline-flex"
         >
-          {demoFallback ? "Démo" : "Phase 6a"}
+          {APP_PHASE}
         </Badge>
 
-        <Button
-          variant="ghost"
-          size="icon"
-          className="hidden sm:inline-flex"
-          aria-label="Paramètres"
-        >
-          <Settings size={18} />
-        </Button>
+        {/* Surface toggle — Agent ↔ Ops Console */}
+        <ViewToggle />
 
-        <Separator orientation="vertical" className="hidden h-4 md:block" />
-
-        {/* Desktop inspector toggle */}
+        {/*
+         * Inspector toggle — view control, grouped with the surface toggle
+         * (also a view control) BEFORE the user menu (which is an account
+         * action, not a view action). Mobile + desktop variants both render
+         * here so the layout doesn't reflow when crossing the md breakpoint.
+         */}
         <Button
           variant="ghost"
           size="icon"
@@ -163,8 +147,6 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
         >
           <Eye size={18} />
         </Button>
-
-        {/* Mobile inspector toggle */}
         <Button
           variant="ghost"
           size="icon"
@@ -175,140 +157,138 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
           <Eye size={20} />
         </Button>
 
-        {/* Auth: user dropdown (login + tenant switcher + logout) */}
-        {isAuthenticated && user && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label="Menu utilisateur"
-                className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2 py-1 text-left transition-colors hover:border-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-primary text-primary-foreground">
-                  <span className="font-heading text-[10px] font-medium">
-                    {user.name
-                      .split(/[\s@.]+/)
-                      .filter(Boolean)
-                      .map((s) => s[0])
-                      .join("")
-                      .toUpperCase()
-                      .slice(0, 2) || "?"}
-                  </span>
-                </span>
-                <span className="hidden max-w-[120px] truncate text-xs font-medium text-foreground sm:inline">
-                  {user.name || user.email}
-                </span>
-                <ChevronDown
-                  size={14}
-                  className="shrink-0 text-muted-foreground"
-                />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-[280px]">
-              <DropdownMenuLabel className="flex flex-col gap-0.5 text-[11px] font-body uppercase tracking-wide text-muted-foreground">
-                <span className="text-foreground">{user.name || user.email}</span>
-                <span className="truncate text-[10px] font-normal normal-case tracking-normal text-muted-foreground">
-                  {user.email}
-                </span>
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator />
+        <Separator orientation="vertical" className="hidden h-4 md:block" />
 
-              {/* Tenant switcher — only rendered when the user has at least
-                  one membership. The active tenant is highlighted with a
-                  check; clicking another tenant calls /api/tenants/{id}/activate. */}
-              {tenants.length > 0 && (
-                <>
-                  <DropdownMenuLabel className="text-[11px] font-body uppercase tracking-wide text-muted-foreground">
-                    Tenants
-                  </DropdownMenuLabel>
-                  {tenants.map((t) => {
-                    const isActive =
-                      activeTenant?.tenant_id === t.tenant_id;
-                    return (
-                      <DropdownMenuItem
-                        key={t.tenant_id}
-                        className="gap-2 p-2"
-                        disabled={isActive}
-                        onSelect={() => {
-                          if (!isActive) void setActiveTenant(t.tenant_id);
-                        }}
-                      >
-                        <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-foreground">
-                          {t.role === "admin" ? (
-                            <Shield size={13} />
-                          ) : (
-                            <UserIcon size={13} />
-                          )}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="truncate text-sm font-medium text-foreground">
-                              {t.name}
-                            </span>
-                            {t.is_demo && (
-                              <span className="rounded border border-border px-1 py-0 text-[9px] uppercase tracking-wide text-muted-foreground">
-                                démo
-                              </span>
-                            )}
-                          </div>
-                          <div className="truncate text-[11px] text-muted-foreground">
-                            {t.role} · {t.slug}
-                          </div>
-                        </div>
-                        {isActive && (
-                          <Check size={14} className="shrink-0 text-accent" />
-                        )}
-                      </DropdownMenuItem>
-                    );
-                  })}
-                  <DropdownMenuSeparator />
-                </>
-              )}
-
-              {/* Configure workspace — re-opens the onboarding wizard for
-                  the active tenant (Phase 6b "edit" entry point). For a
-                  not-yet-onboarded tenant this opens step 1; for an
-                  already-onboarded tenant it opens step 1 too (the wizard
-                  pre-fills nothing today, but the user can re-test + save
-                  to update the configuration). */}
-              {activeTenant && (
-                <>
-                  <DropdownMenuItem
-                    className="gap-2 p-2"
-                    onSelect={() => {
-                      startOnboarding(activeTenant.tenant_id);
-                    }}
-                  >
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-foreground">
-                      <Database size={13} />
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-medium text-foreground">
-                        Configurer le workspace
-                      </div>
-                      <div className="truncate text-[11px] text-muted-foreground">
-                        Connexion, schéma, rôles
-                      </div>
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                </>
-              )}
-
-              {/* Logout */}
-              <DropdownMenuItem
-                className="gap-2 p-2 text-foreground"
-                onSelect={() => logout()}
-              >
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-foreground">
-                  <LogOut size={13} />
-                </span>
-                <span className="flex-1 text-sm font-medium">Déconnexion</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        {/* User dropdown — carries admin/platform entries when admin + logout */}
+        <UserDropdown
+          isAdmin={isAdmin}
+          canLogout={authMode === "authenticated" || authMode === "demo"}
+        />
       </div>
     </header>
+  );
+}
+
+/**
+ * Compact user dropdown in the main header. Shows the active identity and,
+ * for admins, the "Console admin" / "Console platform" entries. When the user
+ * is authenticated (or in demo mode), adds a "Se déconnecter" entry.
+ */
+function UserDropdown({
+  isAdmin,
+  canLogout,
+}: {
+  isAdmin: boolean;
+  canLogout: boolean;
+}) {
+  const identity = useCopilotStore((s) => s.identity);
+  const setAdminView = useCopilotStore((s) => s.setAdminView);
+  const logout = useCopilotStore((s) => s.logout);
+  const user = useCopilotStore((s) => s.user);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 transition-colors hover:border-accent/50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          aria-label="Menu utilisateur"
+        >
+          <span
+            className={cn(
+              "flex size-6 shrink-0 items-center justify-center rounded-full border",
+              identity.kind === "admin"
+                ? "border-border bg-secondary text-foreground"
+                : "border-border bg-primary text-primary-foreground",
+            )}
+          >
+            <span className="font-heading text-[10px] font-medium">
+              {identity.initials}
+            </span>
+          </span>
+          <span className="hidden text-[12px] font-medium text-foreground sm:inline">
+            {identity.name}
+          </span>
+          <ChevronDown size={14} className="text-muted-foreground" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-[240px]">
+        <DropdownMenuLabel className="text-[11px] font-body uppercase tracking-wide text-muted-foreground">
+          {identity.kind === "admin" ? (
+            <span className="inline-flex items-center gap-1">
+              <Shield size={11} /> {identity.role}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1">
+              <User size={11} /> {identity.role}
+            </span>
+          )}
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <div className="px-2 py-1.5">
+          <div className="text-sm font-medium text-foreground">
+            {identity.name}
+          </div>
+          <div className="text-[11px] text-muted-foreground">
+            {user?.email ?? identity.name}
+          </div>
+          <div className="mt-0.5 text-[11px] text-muted-foreground">
+            {identity.kind === "admin"
+              ? "Accès admin (full tenant)"
+              : `${identity.farmName ?? "—"} · ${identity.producerNumber ?? ""}`}
+          </div>
+        </div>
+        {isAdmin && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => setAdminView("tenant")}
+              className="gap-2 p-2"
+            >
+              <Settings size={14} className="shrink-0 text-muted-foreground" />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-foreground">
+                  Console admin
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Utilisateurs · config · traces
+                </div>
+              </div>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => setAdminView("platform")}
+              className="gap-2 p-2"
+            >
+              <Globe size={14} className="shrink-0 text-muted-foreground" />
+              <div className="flex-1">
+                <div className="text-sm font-medium text-foreground">
+                  Console platform
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  Tenants · stats globales · reset démo
+                </div>
+              </div>
+            </DropdownMenuItem>
+          </>
+        )}
+        {!isAdmin && (
+          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+            Console admin réservée aux administrateurs du tenant.
+          </div>
+        )}
+        {canLogout && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => logout()}
+              className="gap-2 p-2 text-muted-foreground"
+            >
+              <LogOut size={14} className="shrink-0" />
+              <span className="text-sm">Se déconnecter</span>
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

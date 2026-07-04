@@ -32,7 +32,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from jose import JWTError
 
 from app.auth.jwt import verify_token
@@ -72,6 +72,12 @@ class TenantContext:
     role: str | None
     producer_id: int | None
     is_demo: bool = False
+    is_platform_owner: bool = False
+
+    @property
+    def is_admin(self) -> bool:
+        """True if the user has the admin role on this tenant."""
+        return self.role == "admin"
 
 
 def _extract_bearer_token(request: Request) -> str | None:
@@ -234,3 +240,34 @@ def try_get_tenant_context(request: Request) -> TenantContext | None:
         producer_id=int(raw_pid) if raw_pid is not None else None,
         is_demo=bool(claims.get("is_demo", False)),
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 6c admin dependencies (aliases + role guards)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Alias: admin routes use the name ``UserContext`` for the dict returned by
+# ``get_current_user``. Keep the alias so both names work.
+UserContext = dict
+
+
+async def require_platform_owner(user: dict = Depends(get_current_user)) -> dict:
+    """403 unless the user is a platform owner."""
+    if not user.get("is_platform_owner", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Platform-owner role required.",
+        )
+    return user
+
+
+async def require_tenant_admin(
+    ctx: TenantContext = Depends(get_tenant_context),
+) -> TenantContext:
+    """403 unless the user is an admin on this tenant (or a platform owner)."""
+    if not (ctx.is_admin or ctx.is_platform_owner):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Admin role required on tenant '{ctx.tenant_id}'.",
+        )
+    return ctx

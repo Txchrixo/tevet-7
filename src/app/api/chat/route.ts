@@ -1,104 +1,51 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Server-side proxy to the Tevet-7 FastAPI backend.
+ * Tevet-7 chat proxy.
  *
- * Why this exists
- * ----------------
- * The browser cannot reach the FastAPI service (port 8001) directly:
- *   - The Caddy gateway (port 81) only forwards requests carrying
- *     `?XTransformPort=8001`, but the Preview Panel serves the app on
- *     port 3000 (Next.js direct), so gateway rewrites never happen.
- *   - Next.js receives `/api/chat?XTransformPort=8001` and returns 404,
- *     which the frontend interprets as "backend offline" and falls back
- *     to the mock layer.
+ * Forwards `POST /api/chat` from the Next.js frontend to the FastAPI chat
+ * endpoint at `http://localhost:8001/api/chat`. The backend reads the
+ * caller identity from the JWT (Authorization: Bearer) and returns the
+ * full agent envelope (answer, sql, scope_clause, chart, steps,
+ * security_checks, tokens, latency, refused, …).
  *
- * This route handler fixes that by proxying server-side. The browser
- * calls the relative `/api/chat` (same origin, always reachable), and
- * Next.js forwards the request to `http://localhost:8001/api/chat` from
- * the server — no CORS, no gateway dependency, works on any port the
- * Preview Panel uses.
+ * The browser frontend always uses the relative path `/api/chat`; this
+ * route handler performs the cross-origin hop to localhost:8001.
  */
 
-const BACKEND_ORIGIN = "http://localhost:8001";
-const BACKEND_TIMEOUT_MS = 12_000;
+const BACKEND_TARGET = "http://localhost:8001/api/chat";
 
 export async function POST(req: NextRequest) {
-  const body = await req.text();
-  // Forward the Authorization header so the FastAPI service can switch to
-  // JWT-based context (Phase 6a dual mode). When the header is absent, the
-  // backend falls back to the body-identity path (`identity_id`, `role`,
-  // `producer_id`) — the original Phase 0 behaviour.
+  const headers = new Headers();
   const auth = req.headers.get("authorization");
+  if (auth) headers.set("authorization", auth);
+  headers.set("content-type", "application/json");
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
+  const body = await req.text();
 
   try {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    };
-    if (auth) headers["Authorization"] = auth;
-
-    const backendRes = await fetch(`${BACKEND_ORIGIN}/api/chat`, {
+    const upstream = await fetch(BACKEND_TARGET, {
       method: "POST",
       headers,
-      body,
-      signal: controller.signal,
-      // Server-side fetch: no CORS, credentials, or browser origin.
+      body: body.length > 0 ? body : undefined,
     });
-
-    const text = await backendRes.text();
-
-    if (!backendRes.ok) {
-      return new NextResponse(text, {
-        status: backendRes.status,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
+    const text = await upstream.text();
+    const respHeaders = new Headers();
+    const upCt = upstream.headers.get("content-type");
+    if (upCt) respHeaders.set("content-type", upCt);
     return new NextResponse(text, {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-      },
+      status: upstream.status,
+      headers: respHeaders,
     });
   } catch (err) {
     const message =
-      err instanceof DOMException && err.name === "AbortError"
-        ? `Backend timed out after ${BACKEND_TIMEOUT_MS} ms`
-        : err instanceof Error
-          ? err.message
-          : "Unknown proxy error";
-
+      err instanceof Error ? err.message : "Chat backend unreachable";
     return NextResponse.json(
-      { error: "backend_unreachable", detail: message },
-      { status: 502 },
-    );
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-export async function GET() {
-  // Health probe — the frontend can use this to check if the backend is up
-  // without sending a chat message.
-  try {
-    const backendRes = await fetch(`${BACKEND_ORIGIN}/health`, {
-      signal: AbortSignal.timeout(3_000),
-    });
-    if (backendRes.ok) {
-      return NextResponse.json({ status: "ok", backend: "connected" });
-    }
-    return NextResponse.json(
-      { status: "error", backend: "unhealthy" },
-      { status: 502 },
-    );
-  } catch {
-    return NextResponse.json(
-      { status: "error", backend: "unreachable" },
+      {
+        error: "chat_backend_unreachable",
+        message,
+        backend: BACKEND_TARGET,
+      },
       { status: 502 },
     );
   }

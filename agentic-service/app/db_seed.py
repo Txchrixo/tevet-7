@@ -404,6 +404,7 @@ users = Table(
     Column("email", String, nullable=False, unique=True, index=True),
     Column("name", String, nullable=False),
     Column("password_hash", String, nullable=False),
+    Column("is_platform_owner", Boolean, nullable=False, default=False),
     Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
 )
 

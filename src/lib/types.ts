@@ -1,4 +1,4 @@
-// Core domain types for the Tevet-7 platform (configurable AI agent platform).
+// Core domain types for the Tevet-7 agent platform.
 
 export type IdentityKind = "producer" | "admin";
 
@@ -47,24 +47,6 @@ export interface SecurityCheck {
   detail?: string;
 }
 
-/**
- * A single ML stock-shortage prediction, returned by the `forecast_tool`
- * (Phase 5). One entry per product the agent ran through the trained
- * RandomForest model — `probability` is the model's confidence that the
- * product will run out of stock within the forecast horizon.
- */
-export interface ForecastPrediction {
-  product_name: string;
-  /** Model confidence in [0, 1] that the product will run out of stock. */
-  probability: number;
-  /** Current stock level (units) used as a feature. */
-  stock_available: number;
-  /** Units sold over the trailing 7 days — features + context. */
-  sales_7d: number;
-  /** Short human-readable label for the most influential feature. */
-  top_factor: string;
-}
-
 export interface AssistantResponse {
   answer: string;
   /** SQL displayed in the message and inspector. Null for refusals. */
@@ -80,45 +62,6 @@ export interface AssistantResponse {
   securityChecks: SecurityCheck[];
   /** True when the agent refused to answer (scoping violation for a producer). */
   refused: boolean;
-  /**
-   * Documentary (RAG) citations. Populated when the agent answered by
-   * searching the indexed document corpus rather than generating SQL.
-   * Empty/undefined for analytical responses.
-   */
-  sources?: Source[];
-  /**
-   * ML stock-shortage predictions (Phase 5). Populated only when the agent
-   * routed the question through the `forecast_tool` instead of the
-   * `sql_read_tool` — i.e. "Quel stock va me manquer samedi ?". Empty for
-   * analytical + documentary responses. Renders a distinct "PRÉDICTIONS ML"
-   * block beneath the answer text.
-   */
-  forecastPredictions?: ForecastPrediction[];
-}
-
-/**
- * A documentary citation returned alongside a RAG answer.
- *
- * `score` is optional — exposed only when the backend's retriever surfaces a
- * similarity score for the chunk (cosine distance, reranker confidence, etc.).
- */
-export interface Source {
-  type: "document";
-  title: string;
-  chunkIndex: number;
-  documentId: number;
-  /** Optional retrieval score in [0, 1]. Backend-dependent. */
-  score?: number;
-}
-
-/** A document indexed in the RAG corpus (CGV, FAQ, procédure, etc.). */
-export interface DocumentInfo {
-  id: number;
-  title: string;
-  sourceType: "pdf" | "text" | "manual";
-  createdAt: string;
-  chunksCount: number;
-  producerId: number | null;
 }
 
 export interface ChatMessage {
@@ -142,200 +85,96 @@ export interface ConversationHistoryItem {
 }
 
 // ---------------------------------------------------------------------------
-// Ops Console — human-in-the-loop approval queue (Phase 4)
+// Tevet-7 admin console
 // ---------------------------------------------------------------------------
 
-/** The recommendation produced by the agent for a given onboarding dossier. */
-export type ProposedDecision = "approve" | "reject" | "request_info";
-
-/** The lifecycle state of an approval request (an admin decision advances it). */
-export type ApprovalStatus = "pending" | "approved" | "rejected" | "overridden";
-
-/** A single issue the agent flagged while reviewing the dossier. */
-export interface ApprovalIssue {
-  severity: "info" | "warning" | "critical";
-  code: string;
-  message: string;
-}
-
-/** A single check the agent ran against the dossier (SIRET, docs, address, …). */
-export interface ApprovalCheck {
-  name: string;
-  status: "ok" | "warning" | "blocked";
-  detail: string;
-}
-
-/**
- * The full agent pre-analysis attached to an approval. The backend stores this
- * as a JSON string in the approval row's `agent_analysis` column — the proxy +
- * mapper parse it back into this shape before handing it to the UI.
- */
-export interface AgentAnalysis {
-  issues: ApprovalIssue[];
-  checks: ApprovalCheck[];
-  confidence: number;
-  proposed_decision: ProposedDecision;
-  proposed_reason: string;
-}
-
-/**
- * The full onboarding dossier that produced an approval. Surfaced in the
- * detail panel — every field the agent looked at is also visible to the
- * human reviewer.
- */
-export interface OnboardingDossier {
-  id: number;
-  legal_name: string;
-  siret: string;
-  siret_valid: boolean;
-  email: string;
-  phone: string;
-  declared_address: string;
-  rib_document_present: boolean;
-  id_document_present: boolean;
-  professional_certificate_present: boolean;
-  professional_certificate_expiry: string | null;
-  document_address: string | null;
-  submitted_at: string;
-  status: ApprovalStatus;
-  rejection_reason: string | null;
-}
-
-/** A row in the Ops Console list (left column). */
-export interface ApprovalSummary {
-  id: number;
-  onboarding_id: number;
-  legal_name: string;
-  siret: string;
-  proposed_decision: ProposedDecision;
-  proposed_reason: string;
-  confidence: number;
-  status: ApprovalStatus;
-  created_at: string;
-  agent_analysis: AgentAnalysis;
-  /** Present on decided rows — populated by the decide endpoint. */
-  decided_by?: string | null;
-  decided_at?: string | null;
-  human_reason?: string | null;
-  /** Final human decision (approve/reject/override) — null while pending. */
-  final_decision?: "approve" | "reject" | "override" | null;
-}
-
-/** Full detail response returned by GET /api/approvals/{id}. */
-export interface ApprovalDetail {
-  approval: ApprovalSummary;
-  onboarding: OnboardingDossier;
-}
-
-// ---------------------------------------------------------------------------
-// Authentication & multi-tenancy (Phase 6a)
-// ---------------------------------------------------------------------------
-//
-// The frontend speaks to the backend via JWT. The token carries the active
-// tenant context (`tenant_id`, `role`, `producer_id`) and is attached to
-// every API request via `Authorization: Bearer <token>`. When the user is
-// NOT authenticated, the app falls back to the mock identities (Marie /
-// Pierre / Admin) — the demo path described in the worklog.
-
-/** The authenticated user record returned by /api/auth/login + /api/auth/me. */
-export interface User {
-  id: number;
-  email: string;
-  name: string;
-}
-
-/**
- * A tenant membership returned by /api/auth/me and /api/tenants/mine.
- *
- * `is_demo: true` flags the seeded Drive Producteur tenant (Marie / Pierre /
- * Admin demo accounts) — useful for surfacing a "Demo" badge in the tenant
- * switcher.
- */
-export interface Tenant {
+/** A tenant membership returned by `GET /api/auth/me` or `GET /api/tenants/mine`. */
+export interface TenantMembership {
   tenant_id: string;
   name: string;
   slug: string;
-  role: string;
+  role: "producer" | "admin" | "customer" | string;
+  producer_id: number | null;
   is_demo: boolean;
+  is_active: boolean;
 }
 
-/** Auth response envelope returned by /api/auth/login + /api/auth/signup. */
-export interface AuthResult {
-  user: User;
-  token: string;
-}
-
-/** /api/auth/me envelope — user + their tenant memberships. */
-export interface MeResult {
-  user: User;
-  memberships: Tenant[];
-}
-
-// ---------------------------------------------------------------------------
-// Onboarding wizard (Phase 6b)
-// ---------------------------------------------------------------------------
-//
-// A freshly created tenant has no data connector and no schema/roles
-// configured. The onboarding wizard walks the user through 4 steps:
-//   1. Connect data (Postgres URL or CSV file upload)
-//   2. Detect schema (auto-detect tables/columns, pick which to expose)
-//   3. Define roles (admin + scoped roles with allowed tables)
-//   4. Ready (summary + redirect to the agent chat)
-//
-// All of these types are persisted server-side on the backend; the frontend
-// keeps a working copy in the store while the user is in the wizard.
-
-/** The data source the tenant connected to during onboarding. */
-export type ConnectorType = "postgres" | "csv" | "sqlite_demo";
-
-/** Result of POST /onboarding/connect — the connection test outcome. */
-export interface ConnectionTest {
-  ok: boolean;
-  error: string | null;
-  tables_count: number;
-}
-
-/** A single column inside an auto-detected table. */
-export interface SchemaColumn {
+/** Authenticated user as returned by `POST /api/auth/login` or `GET /api/auth/me`. */
+export interface AuthUser {
+  id: number;
+  email: string;
   name: string;
-  type: string;
-  description: string;
-  /** User can toggle whether the agent sees this column. */
-  selected: boolean;
+  created_at: string | null;
 }
 
-/** A table detected from the connector (Postgres introspection or CSV header). */
-export interface SchemaTable {
+/** A tenant admin as returned by `GET /api/admin/tenants/{id}/users`. */
+export interface TenantUser {
+  user_id: number;
+  email: string;
   name: string;
-  description: string;
-  columns: SchemaColumn[];
-  /** User can toggle whether the agent sees this table. */
-  selected: boolean;
-  /**
-   * The column the user picked as the RLS scope (e.g. "producer_id" or
-   * "team_id"). Null = no row-level scoping on this table.
-   */
-  scope_column: string | null;
+  role: string;
+  producer_id: number | null;
+  joined_at: string;
 }
 
-/** Auto-detected schema draft returned by /onboarding/detect-schema. */
-export interface SchemaDraft {
-  tables: SchemaTable[];
-}
-
-/** A role defined in step 3 of the wizard. */
-export interface RoleConfig {
-  name: string;
-  /** Which column to scope by (null = admin / unscoped). */
-  scope_column: string | null;
-  /** Tables this role is allowed to query. */
-  allowed_tables: string[];
-}
-
-/** GET /onboarding/status — drives the wizard gate in page.tsx. */
-export interface OnboardingStatus {
+/** Tenant configuration as returned by `GET /api/admin/tenants/{id}/config`. */
+export interface TenantConfig {
+  connector_type: string;
+  schema_config: unknown;
+  roles_config: unknown;
   onboarded: boolean;
-  connector_type: ConnectorType | null;
-  schema_tables_count: number;
-  roles_count: number;
+  created_at: string;
+}
+
+/** A conversation trace row (tenant admin scope). */
+export interface Conversation {
+  id: string;
+  user_message: string;
+  intent: string;
+  latency_ms: number;
+  tokens_in: number;
+  tokens_out: number;
+  cost_usd: number;
+  refused: boolean;
+  created_at: string;
+}
+
+/** Tenant-level aggregated stats. */
+export interface TenantStats {
+  total_conversations: number;
+  total_tokens: number;
+  total_cost_usd: number;
+  avg_latency_ms: number;
+  refusal_rate: number;
+  last_activity_at: string | null;
+}
+
+/** A tenant summary as seen by the platform owner. */
+export interface PlatformTenant {
+  id: string;
+  name: string;
+  slug: string;
+  is_demo: boolean;
+  onboarded: boolean;
+  member_count: number;
+  conversation_count: number;
+  total_cost_usd: number;
+  created_at: string;
+}
+
+/** Platform-wide aggregated stats. */
+export interface PlatformStats {
+  total_tenants: number;
+  total_users: number;
+  total_conversations: number;
+  total_cost_usd: number;
+  total_tokens: number;
+  avg_latency_ms: number;
+}
+
+/** Result of `POST /api/admin/platform/reset-demo`. */
+export interface ResetResult {
+  reset: boolean;
+  orders_reseeded: number;
+  docs_reseeded: number;
 }
