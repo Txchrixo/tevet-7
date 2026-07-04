@@ -4,7 +4,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useCopilotStore } from "@/lib/store";
 import { fetchDocuments, uploadDocument, deleteDocument, type DocumentInfo } from "@/lib/documents-api";
-import { FileText, Trash2, Upload, X } from "@/components/ui/feather-icons";
+import { FileText, Trash, Upload, X } from "@/components/ui/feather-icons";
 import { toast } from "sonner";
 
 export function DocumentsPanel() {
@@ -127,7 +127,7 @@ export function DocumentsPanel() {
                 onClick={() => handleDelete(doc.id)}
                 className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
               >
-                <Trash2 size={12} />
+                <Trash size={12} />
               </button>
             </div>
           ))
