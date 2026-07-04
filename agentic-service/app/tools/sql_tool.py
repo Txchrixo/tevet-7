@@ -526,6 +526,7 @@ class SqlReadTool:
                     schema=schema,
                     api_key=api_key,
                     model=settings.llm_model,
+                    base_url=settings.llm_base_url or None,
                 )
             else:
                 self.generator = RuleBasedSQLGenerator(schema=schema)

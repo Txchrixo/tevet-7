@@ -66,8 +66,16 @@ class Settings(BaseSettings):
         return v
 
     # ── LLM ──────────────────────────────────────────────────────────────────
-    openai_api_key: str = Field(default="sk-replace-me", description="OpenAI API key.")
-    llm_model: str = Field(default="gpt-4o-mini", description="Default chat model.")
+    # Provider-agnostic: works with OpenAI, DeepSeek, OpenRouter, Groq,
+    # Mistral, any OpenAI-compatible endpoint. Just change base_url + key + model.
+    openai_api_key: str = Field(default="sk-replace-me", description="LLM API key (works with any OpenAI-compatible provider).")
+    llm_model: str = Field(default="gpt-4o-mini", description="Default chat model (e.g. gpt-4o-mini, deepseek-chat, meta-llama/llama-3.3-70b-instruct).")
+    llm_base_url: str = Field(
+        default="",
+        description="OpenAI-compatible base URL. Empty = OpenAI default. "
+        "Examples: https://openrouter.ai/api/v1, https://api.deepseek.com, "
+        "https://api.groq.com/openai/v1, https://api.mistral.ai/v1",
+    )
     embedding_model: str = Field(
         default="text-embedding-3-small", description="Default embedding model for RAG."
     )

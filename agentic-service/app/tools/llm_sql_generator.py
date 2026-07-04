@@ -60,6 +60,7 @@ class LLMSQLGenerator:
         schema: dict | None = None,
         api_key: str | None = None,
         model: str = "gpt-4o-mini",
+        base_url: str | None = None,
         temperature: float = 0.0,
         max_tokens: int = 500,
     ) -> None:
@@ -68,16 +69,21 @@ class LLMSQLGenerator:
         self._temperature = temperature
         self._max_tokens = max_tokens
         self._api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self._base_url = base_url or ""
         self._fallback = RuleBasedSQLGenerator(schema=schema)
         self._client = None
 
         if self._api_key and self._api_key != "sk-replace-me":
             try:
                 from openai import AsyncOpenAI
-                self._client = AsyncOpenAI(api_key=self._api_key)
-                logger.info("LLMSQLGenerator: OpenAI client ready (model=%s)", model)
+                kwargs: dict[str, Any] = {"api_key": self._api_key}
+                if self._base_url:
+                    kwargs["base_url"] = self._base_url
+                self._client = AsyncOpenAI(**kwargs)
+                provider = self._base_url or "OpenAI default"
+                logger.info("LLMSQLGenerator: client ready (provider=%s model=%s)", provider, model)
             except Exception as exc:
-                logger.warning("LLMSQLGenerator: failed to init OpenAI client: %s", exc)
+                logger.warning("LLMSQLGenerator: failed to init LLM client: %s", exc)
                 self._client = None
         else:
             logger.info("LLMSQLGenerator: no API key — will use rule-based fallback")
