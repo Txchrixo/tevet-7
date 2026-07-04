@@ -12,6 +12,13 @@ import {
   type DocumentUploadInput,
 } from "./api";
 import {
+  activateTenant,
+  getMe,
+  login as loginApi,
+  signup as signupApi,
+  AuthApiError,
+} from "./auth-api";
+import {
   DEFAULT_IDENTITY_ID,
   IDENTITIES,
   getMockResponse,
@@ -23,6 +30,8 @@ import type {
   ChatMessage,
   DocumentInfo,
   Identity,
+  Tenant,
+  User,
 } from "./types";
 
 let idCounter = 0;
@@ -39,6 +48,9 @@ const MOCK_LATENCY_JITTER_MS = 350;
 /** Sonner toast id used for the demo-mode notice — prevents stacking. */
 const DEMO_TOAST_ID = "tevet7-demo-mode";
 
+/** localStorage key under which the JWT is persisted across reloads. */
+export const AUTH_TOKEN_STORAGE_KEY = "tevet7.auth.token";
+
 /**
  * The two top-level surfaces the admin can switch between. Producers only ever
  * see "copilot" — the ViewToggle is admin-only and `setIdentity` forces the
@@ -52,9 +64,143 @@ function sleep(ms: number): Promise<void> {
 
 export type BackendStatus = "connected" | "demo" | "unknown";
 
+// ---------------------------------------------------------------------------
+// Auth helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Decode the payload of a JWT **without verifying the signature**.
+ *
+ * The signature is verified server-side; here we only read the claims so the
+ * UI can derive the active identity (role, producer_id, tenant_id) from the
+ * token without an extra round-trip. Returns null on any parse error.
+ */
+function decodeJwt(token: string): {
+  sub?: string | number;
+  email?: string;
+  tenant_id?: string;
+  role?: string;
+  producer_id?: number;
+  exp?: number;
+} | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    // base64url → base64 → JSON
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = atob(base64);
+    return JSON.parse(json) as {
+      sub?: string | number;
+      email?: string;
+      tenant_id?: string;
+      role?: string;
+      producer_id?: number;
+      exp?: number;
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Read the persisted JWT from localStorage (browser-only, no-op on SSR). */
+function readTokenFromStorage(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Persist or clear the JWT in localStorage. */
+function writeTokenToStorage(token: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (token) {
+      window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    } else {
+      window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // localStorage can throw in private-mode Safari — fail silently.
+  }
+}
+
+/** Build a chat-layer `Identity` from the auth state (JWT + user + tenant). */
+function deriveIdentityFromAuth(state: CopilotState): Identity | null {
+  if (!state.user || !state.token) return null;
+  const claims = decodeJwt(state.token);
+  const role = claims?.role ?? "producer";
+  const producerId = claims?.producer_id ?? null;
+  const tenantId = claims?.tenant_id ?? null;
+  const tenant =
+    state.tenants.find((t) => t.tenant_id === tenantId) ??
+    state.activeTenant ??
+    null;
+  const isProducer = role === "producer" && producerId != null;
+
+  const name = state.user.name || state.user.email;
+  const initials =
+    name
+      .split(/[\s@.]+/)
+      .filter(Boolean)
+      .map((s) => s[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2) || "?";
+
+  return {
+    id: isProducer
+      ? `producer-${producerId}`
+      : role === "admin"
+        ? `admin-${state.user.id}`
+        : `user-${state.user.id}`,
+    kind: isProducer ? "producer" : "admin",
+    name,
+    producerNumber: producerId != null ? `#${producerId}` : null,
+    producerId,
+    farmName: tenant?.name ?? null,
+    role: isProducer ? "Producteur" : "Équipe Ops",
+    initials,
+    accent: "accent",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Store interface
+// ---------------------------------------------------------------------------
+
 interface CopilotState {
+  // -- Auth (Phase 6a) ------------------------------------------------------
+  /** The authenticated user. Null = NOT authenticated (demo mode). */
+  user: User | null;
+  /** The JWT. Null = NOT authenticated. Persisted in localStorage. */
+  token: string | null;
+  /** The user's tenant memberships (loaded via /api/auth/me). */
+  tenants: Tenant[];
+  /** The currently active tenant (matches the tenant_id claim in the JWT). */
+  activeTenant: Tenant | null;
+  /** True while login/signup/loadAuthFromStorage is in flight. */
+  authLoading: boolean;
+  /** Last auth error message — surfaced in the AuthScreen. */
+  authError: string | null;
+  /**
+   * True when the "Essayer la démo" path failed because the backend was
+   * unreachable, and we fell back to mock identities. The UI surfaces a
+   * "Mode démo (backend hors ligne)" note when this is set.
+   */
+  demoFallback: boolean;
+
+  // -- Identity (chat-layer) ------------------------------------------------
+  /**
+   * The active chat identity. When authenticated, this is DERIVED from the
+   * JWT + active tenant. When NOT authenticated, this falls back to the
+   * selected mock identity (marie/pierre/admin) via `identityId`.
+   */
   identityId: string;
   identity: Identity;
+
+  // -- Chat -----------------------------------------------------------------
   messages: ChatMessage[];
   /** Id of the assistant message currently being inspected in the right panel. */
   selectedMessageId: string | null;
@@ -85,6 +231,49 @@ interface CopilotState {
   /** True while a decision POST is in flight (disables the action buttons). */
   decisionInFlight: boolean;
 
+  // -- Auth actions ---------------------------------------------------------
+  /**
+   * Log in with email + password. On success: persists the JWT to
+   * localStorage, fetches the user's tenants, and re-derives the chat
+   * identity from the JWT claims.
+   *
+   * Throws an `AuthApiError` on failure — the caller (AuthScreen) is
+   * responsible for surfacing the error.
+   */
+  login: (email: string, password: string) => Promise<void>;
+  /**
+   * Sign up with email + password + name. Same flow as `login` after the
+   * account is created (the backend returns a JWT immediately).
+   */
+  signup: (
+    email: string,
+    password: string,
+    name: string,
+  ) => Promise<void>;
+  /** Clear auth state + localStorage. The chat identity reverts to mock. */
+  logout: () => void;
+  /**
+   * Activate a different tenant. Calls /api/tenants/{id}/activate, gets a
+   * new JWT, persists it, and re-derives the identity from the new claims.
+   */
+  setActiveTenant: (tenantId: string) => Promise<void>;
+  /**
+   * On app mount: read the JWT from localStorage, validate it via /api/auth/me,
+   * and (if valid) populate the auth state. On failure: clear the token and
+   * stay in demo mode.
+   */
+  loadAuthFromStorage: () => Promise<void>;
+  /** Clear the last auth error (used when the AuthScreen closes/re-renders). */
+  clearAuthError: () => void;
+  /**
+   * Skip authentication and use the mock identities (Marie / Pierre / Admin)
+   * directly. Used by the AuthScreen's "Essayer la démo" button when the
+   * backend is unreachable — falls back to the Phase 0 mock path so the
+   * demo still works without forcing a signup.
+   */
+  enterDemoMode: () => void;
+
+  // -- Identity / chat actions ----------------------------------------------
   setIdentity: (identityId: string) => void;
   sendExample: (questionId: string, label: string) => void;
   sendMessage: (text: string) => void;
@@ -111,7 +300,56 @@ function identityById(id: string): Identity {
   return IDENTITIES.find((i) => i.id === id) ?? IDENTITIES[0];
 }
 
+/**
+ * Recompute the chat-layer `identity` from the current auth state.
+ *
+ * - Authenticated → derive from JWT claims + active tenant.
+ * - NOT authenticated → fall back to the mock identity selected via
+ *   `identityId` (Marie / Pierre / Admin).
+ *
+ * Returns the partial state to merge (or an empty object if the identity is
+ * unchanged — we let zustand dedupe).
+ */
+function recomputeIdentity(state: CopilotState): Partial<CopilotState> {
+  const derived = deriveIdentityFromAuth(state);
+  const identity = derived ?? identityById(state.identityId);
+  // If the identity id changes (e.g. on login), reset the chat session so
+  // messages from the previous identity don't leak across contexts.
+  const previous = state.identity;
+  const shouldResetChat =
+    derived !== null &&
+    previous !== null &&
+    (derived.id !== previous.id || derived.kind !== previous.kind);
+  if (shouldResetChat) {
+    return {
+      identity,
+      messages: [],
+      selectedMessageId: null,
+      isStreaming: false,
+      inspectorOpen: false,
+      backendStatus: "unknown",
+      documents: [],
+      documentsLoading: true,
+      approvals: [],
+      selectedApprovalId: null,
+      selectedApprovalDetail: null,
+      view: "copilot",
+    };
+  }
+  return { identity };
+}
+
 export const useCopilotStore = create<CopilotState>((set, get) => ({
+  // -- Auth -----------------------------------------------------------------
+  user: null,
+  token: null,
+  tenants: [],
+  activeTenant: null,
+  authLoading: false,
+  authError: null,
+  demoFallback: false,
+
+  // -- Identity / chat ------------------------------------------------------
   identityId: DEFAULT_IDENTITY_ID,
   identity: identityById(DEFAULT_IDENTITY_ID),
   messages: [],
@@ -130,7 +368,253 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   selectedApprovalDetail: null,
   decisionInFlight: false,
 
+  // -----------------------------------------------------------------------
+  // Auth actions
+  // -----------------------------------------------------------------------
+
+  login: async (email, password) => {
+    if (get().authLoading) return;
+    set({ authLoading: true, authError: null, demoFallback: false });
+    try {
+      const { user, token } = await loginApi(email, password);
+      writeTokenToStorage(token);
+      // Set the token + user immediately so deriveIdentityFromAuth can run.
+      set({ user, token });
+      // Fetch the user's tenant memberships (best-effort — a freshly created
+      // user may legitimately have zero tenants).
+      let tenants: Tenant[] = [];
+      try {
+        const me = await getMe(token);
+        tenants = me.memberships;
+        // Use the user record from /me if it's more authoritative.
+        set({ user: me.user, tenants });
+      } catch (err) {
+        console.warn(
+          "getMe failed after login — proceeding without tenant list",
+          err instanceof Error ? err.message : err,
+        );
+      }
+      // Resolve the active tenant from the JWT's tenant_id claim.
+      const claims = decodeJwt(token);
+      const tenantId = claims?.tenant_id ?? null;
+      const activeTenant =
+        tenants.find((t) => t.tenant_id === tenantId) ?? null;
+      set({ activeTenant, authLoading: false });
+      // Recompute the chat identity from the new auth state.
+      set(recomputeIdentity(get()));
+      toast.success(`Connecté en tant que ${user.name || user.email}`, {
+        description: activeTenant
+          ? `${activeTenant.name} · ${activeTenant.role}`
+          : "Aucun tenant actif",
+      });
+    } catch (err) {
+      const message =
+        err instanceof AuthApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Échec de la connexion";
+      set({ authLoading: false, authError: message });
+      throw err;
+    }
+  },
+
+  signup: async (email, password, name) => {
+    if (get().authLoading) return;
+    set({ authLoading: true, authError: null, demoFallback: false });
+    try {
+      const { user, token } = await signupApi(email, password, name);
+      writeTokenToStorage(token);
+      set({ user, token });
+      // A freshly created user has zero tenants — try getMe anyway (the
+      // backend may seed a demo membership).
+      let tenants: Tenant[] = [];
+      try {
+        const me = await getMe(token);
+        tenants = me.memberships;
+        set({ user: me.user, tenants });
+      } catch (err) {
+        console.warn(
+          "getMe failed after signup — proceeding without tenant list",
+          err instanceof Error ? err.message : err,
+        );
+      }
+      const claims = decodeJwt(token);
+      const tenantId = claims?.tenant_id ?? null;
+      const activeTenant =
+        tenants.find((t) => t.tenant_id === tenantId) ?? null;
+      set({ activeTenant, authLoading: false });
+      set(recomputeIdentity(get()));
+      if (tenants.length === 0) {
+        toast.success(`Compte créé — bienvenue ${user.name || user.email}`, {
+          description:
+            "Aucun tenant. Utilisez la démo ou créez un tenant (Phase 6b).",
+        });
+      } else {
+        toast.success(`Compte créé — bienvenue ${user.name || user.email}`, {
+          description: activeTenant
+            ? `${activeTenant.name} · ${activeTenant.role}`
+            : "Tenant actif",
+        });
+      }
+    } catch (err) {
+      const message =
+        err instanceof AuthApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Échec de l'inscription";
+      set({ authLoading: false, authError: message });
+      throw err;
+    }
+  },
+
+  logout: () => {
+    writeTokenToStorage(null);
+    set({
+      user: null,
+      token: null,
+      tenants: [],
+      activeTenant: null,
+      authError: null,
+      demoFallback: false,
+      // Reset the chat session so messages from the authenticated identity
+      // don't leak into the demo session.
+      messages: [],
+      selectedMessageId: null,
+      isStreaming: false,
+      inspectorOpen: false,
+      backendStatus: "unknown",
+      documents: [],
+      approvals: [],
+      selectedApprovalId: null,
+      selectedApprovalDetail: null,
+      view: "copilot",
+      identityId: DEFAULT_IDENTITY_ID,
+      identity: identityById(DEFAULT_IDENTITY_ID),
+    });
+    toast.success("Déconnecté", {
+      description: "Vous êtes en mode démo (identités mock).",
+    });
+  },
+
+  setActiveTenant: async (tenantId) => {
+    const token = get().token;
+    if (!token) return;
+    set({ authLoading: true, authError: null });
+    try {
+      const { token: newToken } = await activateTenant(tenantId, token);
+      writeTokenToStorage(newToken);
+      const activeTenant =
+        get().tenants.find((t) => t.tenant_id === tenantId) ?? null;
+      set({ token: newToken, activeTenant, authLoading: false });
+      set(recomputeIdentity(get()));
+      toast.success("Tenant activé", {
+        description: activeTenant?.name ?? tenantId,
+      });
+    } catch (err) {
+      const message =
+        err instanceof AuthApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Échec de l'activation du tenant";
+      set({ authLoading: false, authError: message });
+      toast.error("Activation échouée", { description: message });
+    }
+  },
+
+  loadAuthFromStorage: async () => {
+    const token = readTokenFromStorage();
+    if (!token) {
+      // No persisted token — stay in demo mode (the AuthScreen is shown).
+      return;
+    }
+    set({ authLoading: true, authError: null });
+    try {
+      const me = await getMe(token);
+      const claims = decodeJwt(token);
+      const tenantId = claims?.tenant_id ?? null;
+      const activeTenant =
+        me.memberships.find((t) => t.tenant_id === tenantId) ?? null;
+      set({
+        user: me.user,
+        token,
+        tenants: me.memberships,
+        activeTenant,
+        authLoading: false,
+      });
+      set(recomputeIdentity(get()));
+    } catch (err) {
+      // The token is invalid/expired OR the backend is down. We can't tell
+      // the difference from the error type alone — clear the token to be
+      // safe (a backend-outage during demo just re-prompts the AuthScreen,
+      // which has a "Essayer la démo" fallback).
+      console.warn(
+        "loadAuthFromStorage failed — clearing persisted token",
+        err instanceof Error ? err.message : err,
+      );
+      writeTokenToStorage(null);
+      set({
+        user: null,
+        token: null,
+        tenants: [],
+        activeTenant: null,
+        authLoading: false,
+        // If the backend was reachable enough to return a 401, this is a real
+        // "token expired" — surface it. If it was a 502/network error, the
+        // AuthScreen "Essayer la démo" path will retry the backend.
+        authError:
+          err instanceof AuthApiError && err.status === 401
+            ? "Session expirée — reconnectez-vous."
+            : null,
+      });
+    }
+  },
+
+  clearAuthError: () => set({ authError: null }),
+
+  enterDemoMode: () => {
+    // Skip auth — use the mock identities directly. The token stays null so
+    // the chat API falls back to the body-identity path (Phase 0 behaviour).
+    set({
+      demoFallback: true,
+      authError: null,
+      authLoading: false,
+      identityId: DEFAULT_IDENTITY_ID,
+      identity: identityById(DEFAULT_IDENTITY_ID),
+      messages: [],
+      selectedMessageId: null,
+      isStreaming: false,
+      inspectorOpen: false,
+      backendStatus: "unknown",
+      documents: [],
+      approvals: [],
+      selectedApprovalId: null,
+      selectedApprovalDetail: null,
+      view: "copilot",
+    });
+    toast("Mode démo (backend hors ligne)", {
+      id: DEMO_TOAST_ID,
+      description:
+        "Le service Tevet-7 est injoignable — réponses simulées depuis le mock local.",
+    });
+  },
+
+  // -----------------------------------------------------------------------
+  // Identity / chat actions
+  // -----------------------------------------------------------------------
+
   setIdentity: (identityId) => {
+    // When authenticated, the identity is derived from the JWT — switching
+    // to a mock identity would break the auth context. We no-op + toast.
+    if (get().token) {
+      toast.error("Identité verrouillée", {
+        description:
+          "Vous êtes connecté — déconnectez-vous pour changer d'identité.",
+      });
+      return;
+    }
     const identity = identityById(identityId);
     // The Ops Console is admin-only — switching to a producer identity forces
     // the view back to copilot. When switching TO admin we keep the current

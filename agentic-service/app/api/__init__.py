@@ -11,6 +11,11 @@ Currently exposes:
 - ``approvals`` — Phase 4 Ops Copilot human-in-the-loop endpoints:
   ``GET /approvals``, ``GET /approvals/{id}``,
   ``POST /approvals/{id}/decide``, ``POST /approvals/analyze/{onboarding_id}``.
+- ``auth`` — Phase 6a authentication endpoints: ``POST /auth/signup``,
+  ``POST /auth/login``, ``GET /auth/me``. JWT-based.
+- ``tenants`` — Phase 6a tenant management endpoints: ``POST /tenants``,
+  ``GET /tenants/mine``, ``POST /tenants/{id}/activate``,
+  ``GET /tenants/{id}``, ``POST /tenants/{id}/members``.
 
 Planned routers (not yet implemented):
 
@@ -23,7 +28,16 @@ Planned routers (not yet implemented):
 from app.api.approvals import router as approvals_router
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
+from app.auth import auth_router
+from app.tenants import tenants_router
 
 router = chat_router
-__all__ = ["chat_router", "documents_router", "approvals_router", "router"]
+__all__ = [
+    "chat_router",
+    "documents_router",
+    "approvals_router",
+    "auth_router",
+    "tenants_router",
+    "router",
+]
 

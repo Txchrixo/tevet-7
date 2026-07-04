@@ -11,6 +11,7 @@ import { Zap } from "@/components/ui/feather-icons";
 import { EXAMPLE_QUESTIONS } from "@/lib/mock-data";
 import { useCopilotStore } from "@/lib/store";
 
+import { AuthScreen } from "@/components/producer-copilot/auth-screen";
 import { ChatInput } from "@/components/producer-copilot/chat-input";
 import { ChatMessage, TypingIndicator } from "@/components/producer-copilot/chat-message";
 import { Footer } from "@/components/producer-copilot/footer";
@@ -32,9 +33,37 @@ export default function Home() {
   const loadDocuments = useCopilotStore((s) => s.loadDocuments);
   const view = useCopilotStore((s) => s.view);
 
+  // Auth state — drives the top-level gate.
+  const token = useCopilotStore((s) => s.token);
+  const user = useCopilotStore((s) => s.user);
+  const demoFallback = useCopilotStore((s) => s.demoFallback);
+  const authLoading = useCopilotStore((s) => s.authLoading);
+  const loadAuthFromStorage = useCopilotStore((s) => s.loadAuthFromStorage);
+
   const [sidebarSheet, setSidebarSheet] = React.useState(false);
   const [inspectorSheet, setInspectorSheet] = React.useState(false);
   const isMobile = useIsMobile();
+
+  // Phase 6a: validate any persisted JWT on mount. `loadAuthFromStorage` is
+  // idempotent — no-op when there's no token in localStorage.
+  React.useEffect(() => {
+    void loadAuthFromStorage();
+  }, [loadAuthFromStorage]);
+
+  // Loading state while we validate the persisted JWT (or right after a
+  // signup/login). The AuthScreen also renders its own spinner during
+  // auth actions, but this top-level guard prevents a flash of the
+  // AuthScreen when a valid token is about to be rehydrated.
+  const [bootstrapped, setBootstrapped] = React.useState(false);
+  React.useEffect(() => {
+    // The first effect runs loadAuthFromStorage; we wait one tick so the
+    // store has a chance to flip `authLoading` to false. The guard is
+    // purely cosmetic — the gate below uses `token` as the source of truth.
+    if (!bootstrapped) {
+      const id = window.setTimeout(() => setBootstrapped(true), 50);
+      return () => window.clearTimeout(id);
+    }
+  }, [bootstrapped]);
 
   const selectedMessage = React.useMemo(
     () => messages.find((m) => m.id === selectedMessageId) ?? null,
@@ -55,6 +84,28 @@ export default function Home() {
   React.useEffect(() => {
     void loadDocuments();
   }, [identity.id, loadDocuments]);
+
+  // -- Auth gate ------------------------------------------------------------
+  //
+  //   1. While the persisted JWT is being validated → minimal loader.
+  //   2. If NOT authenticated AND NOT in demo fallback → AuthScreen.
+  //   3. Otherwise (authenticated OR demo fallback) → 3-zone layout.
+  const isAuthenticated = !!token && !!user;
+  if (!bootstrapped && authLoading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
+        <div className="flex size-12 items-center justify-center rounded-md border border-border bg-background text-accent">
+          <BrandMark size={28} />
+        </div>
+        <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          Tevet-7 <span className="text-muted-foreground/50">·</span> chargement…
+        </p>
+      </div>
+    );
+  }
+  if (!isAuthenticated && !demoFallback) {
+    return <AuthScreen />;
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-background">

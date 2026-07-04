@@ -23,19 +23,24 @@ export async function POST(
   const body = await req.text();
   // Forward the query string (e.g. ?admin=true) — the backend requires admin=true.
   const search = req.nextUrl.search;
+  // Forward the Authorization header (Phase 6a dual mode — JWT context).
+  const auth = req.headers.get("authorization");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
 
   try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+    if (auth) headers["Authorization"] = auth;
+
     const backendRes = await fetch(
       `${BACKEND_ORIGIN}/api/approvals/${encodeURIComponent(id)}/decide${search}`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
-        },
+        headers,
         body,
         signal: controller.signal,
       },

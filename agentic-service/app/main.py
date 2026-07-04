@@ -22,8 +22,10 @@ from app import __version__
 from app.api.approvals import router as approvals_router
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
+from app.auth import auth_router
 from app.config import get_settings
 from app.db_seed import dispose_engine, init_db
+from app.tenants import tenants_router
 from app.tracing import get_tracer
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -127,9 +129,14 @@ def create_app() -> FastAPI:
     # Phase 4: the approvals router adds the Ops Copilot HITL surface
     # (list / detail / decide / re-analyze) — every "agent proposes, human
     # decides" workflow lives there.
+    # Phase 6a: the auth router adds signup/login/me (JWT issuance) and
+    # the tenants router adds tenant CRUD + membership activation. Both
+    # are required for the multi-tenant frontend.
     app.include_router(chat_router, prefix="/api", tags=["chat"])
     app.include_router(documents_router, prefix="/api", tags=["documents"])
     app.include_router(approvals_router, prefix="/api", tags=["approvals"])
+    app.include_router(auth_router, prefix="/api", tags=["auth"])
+    app.include_router(tenants_router, prefix="/api", tags=["tenants"])
 
     # ── Health & info ────────────────────────────────────────────────────────
     @app.get("/health", tags=["meta"])

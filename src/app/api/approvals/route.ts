@@ -20,16 +20,23 @@ const BACKEND_TIMEOUT_MS = 15_000;
 
 export async function GET(req: NextRequest) {
   const search = req.nextUrl.search; // includes the leading "?"
+  // Forward the Authorization header (Phase 6a dual mode — JWT context).
+  const auth = req.headers.get("authorization");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
 
   try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    if (auth) headers["Authorization"] = auth;
+
     const backendRes = await fetch(
       `${BACKEND_ORIGIN}/api/approvals${search}`,
       {
         method: "GET",
-        headers: { Accept: "application/json" },
+        headers,
         signal: controller.signal,
       },
     );

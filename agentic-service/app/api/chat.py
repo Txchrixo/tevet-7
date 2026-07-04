@@ -47,6 +47,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.agents.orchestrator import AgentOrchestrator
+from app.auth.dependencies import TenantContext, try_get_tenant_context
 from app.connectors.sqlite_connector import SqliteConnector
 from app.tools.forecast_tool import ForecastTool
 from app.tools.rag_tool import RagSearchTool
@@ -69,16 +70,49 @@ class ChatRequest(BaseModel):
     ``identity_id`` is a human-readable handle (e.g. "marie"); ``producer_id``
     is the row-level scope value (NULL for admin); ``role`` selects the table
     allowlist + decides whether scoping is enforced.
+
+    Phase 6a — dual auth mode
+    -------------------------
+
+    The identity fields (``identity_id``, ``producer_id``, ``role``) are
+    now OPTIONAL. Two paths are supported:
+
+    1. **JWT path (new, for the frontend)** — the caller sends
+       ``Authorization: Bearer <jwt>``. Identity is extracted from the
+       verified JWT (tenant_id, role, producer_id, email). The body
+       identity fields are IGNORED.
+    2. **Body path (legacy, for the eval + tests)** — no
+       ``Authorization`` header. Identity is read from the body. The
+       tenant is hardcoded to ``"dp"`` (the demo tenant).
+
+    Both paths funnel into the SAME orchestrator — the agentic core has
+    no notion of users or JWTs, it only receives ``role``,
+    ``producer_id``, ``tenant_id`` as plain strings. The dual mode keeps
+    the existing 39-case eval passing WITHOUT modification (the eval
+    uses the body path) while letting the frontend authenticate via JWT.
     """
 
     message: str = Field(..., min_length=1, max_length=4000, description="User message.")
-    identity_id: str = Field(..., description="Caller identity handle (e.g. 'marie').")
+    # Phase 6a: identity fields are now optional — when an Authorization
+    # header is present they're read from the JWT instead. Defaults
+    # (None) keep the old body path working for the eval.
+    identity_id: str | None = Field(
+        default=None,
+        description=(
+            "Caller identity handle (e.g. 'marie'). OPTIONAL when "
+            "Authorization: Bearer is present (read from the JWT)."
+        ),
+    )
     producer_id: int | None = Field(
         default=None,
         description="Producer id (row-level scope). NULL for admin role.",
     )
-    role: Literal["producer", "admin"] = Field(
-        ..., description="Caller role. 'admin' disables row-level scoping."
+    role: Literal["producer", "admin"] | None = Field(
+        default=None,
+        description=(
+            "Caller role. 'admin' disables row-level scoping. OPTIONAL "
+            "when Authorization: Bearer is present."
+        ),
     )
 
 
@@ -95,20 +129,65 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
     body (``refused: true``, ``answer`` explaining what happened) so the
     frontend has a single success path.
     """
-    logger.info(
-        "chat called — identity=%s producer_id=%s role=%s msg_len=%d",
-        req.identity_id,
-        req.producer_id,
-        req.role,
-        len(req.message),
-    )
+    # ── Phase 6a — dual auth mode ──────────────────────────────────────────
+    # If the caller sends an ``Authorization: Bearer <jwt>`` header we
+    # extract the identity (tenant_id, role, producer_id) from the
+    # verified JWT. Otherwise we fall back to the body identity (the
+    # legacy path used by the eval + the old frontend). The CORE agentic
+    # (orchestrator + tools + tracing) is unchanged — it receives plain
+    # ``role``/``producer_id``/``tenant_id`` strings either way.
+    jwt_ctx: TenantContext | None = try_get_tenant_context(request)
+    if jwt_ctx is not None:
+        # JWT path — identity comes from the token.
+        if not jwt_ctx.role or not jwt_ctx.tenant_id:
+            # A fresh signup has no membership yet — refuse with 403 so
+            # the frontend can prompt for tenant creation/activation.
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "no active tenant in JWT — create or activate a tenant "
+                    "via POST /api/tenants or POST /api/tenants/{id}/activate"
+                ),
+            )
+        # The orchestrator expects role ∈ {"producer", "admin"}.
+        # "customer" maps to "producer" for scoping purposes (same
+        # row-level filter on producer_id).
+        role: str = jwt_ctx.role if jwt_ctx.role in ("producer", "admin") else "producer"
+        producer_id: int | None = jwt_ctx.producer_id
+        identity_id: str = jwt_ctx.email or f"user_{jwt_ctx.user_id}"
+        tenant_id: str = jwt_ctx.tenant_id
+        logger.info(
+            "chat called [JWT path] — user_id=%s email=%s tenant=%s role=%s producer_id=%s msg_len=%d",
+            jwt_ctx.user_id, jwt_ctx.email, tenant_id, role, producer_id, len(req.message),
+        )
+    else:
+        # Legacy body path — used by the eval (eval/eval.py sends body
+        # identity without an Authorization header).
+        if not req.identity_id or not req.role:
+            raise HTTPException(
+                status_code=401,
+                detail=(
+                    "Authorization header missing or invalid, AND body is "
+                    "missing identity_id/role. Send either a Bearer JWT or "
+                    "the body identity fields (identity_id, role, producer_id)."
+                ),
+            )
+        role = req.role
+        producer_id = req.producer_id
+        identity_id = req.identity_id
+        tenant_id = "dp"  # hardcoded for the demo tenant (eval path)
+        logger.info(
+            "chat called [body path] — identity=%s producer_id=%s role=%s msg_len=%d",
+            identity_id, producer_id, role, len(req.message),
+        )
+
     try:
         # Build a per-request connector + tool + orchestrator.
         connector = SqliteConnector()
         schema = connector.get_schema()
-        allowed_tables = connector.get_allowed_tables(req.role)
-        scope_column = "producer_id" if req.role == "producer" else None
-        scope_value = req.producer_id if req.role == "producer" else None
+        allowed_tables = connector.get_allowed_tables(role)
+        scope_column = "producer_id" if role == "producer" else None
+        scope_value = producer_id if role == "producer" else None
 
         sql_tool = SqlReadTool(
             connector=connector,
@@ -116,15 +195,17 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             allowed_tables=allowed_tables,
             scope_column=scope_column,
             scope_value=scope_value,
-            role=req.role,
+            role=role,
         )
         # Phase 3 — build the RAG tool with the same identity context so
         # documentary questions are scoped identically to analytical ones.
+        # Phase 6a — tenant_id now comes from the JWT (multi-tenant) or
+        # defaults to "dp" for the legacy body path (eval).
         rag_tool = RagSearchTool(
             connector=connector,
-            tenant_id="dp",
-            producer_id=req.producer_id,
-            role=req.role,
+            tenant_id=tenant_id,
+            producer_id=producer_id,
+            role=role,
             tracer=get_tracer(),
         )
         # Phase 5 — build the forecast tool with the same identity context so
@@ -134,16 +215,16 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
         # never sees another producer's ML predictions, even with a model bug.
         forecast_tool = ForecastTool(
             connector=connector,
-            tenant_id="dp",
-            producer_id=req.producer_id,
-            role=req.role,
+            tenant_id=tenant_id,
+            producer_id=producer_id,
+            role=role,
             tracer=get_tracer(),
         )
         orchestrator = AgentOrchestrator(
             sql_tool=sql_tool,
-            role=req.role,
-            producer_id=req.producer_id,
-            identity_id=req.identity_id,
+            role=role,
+            producer_id=producer_id,
+            identity_id=identity_id,
             tracer=get_tracer(),
             rag_tool=rag_tool,
             forecast_tool=forecast_tool,
@@ -171,6 +252,10 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             "forecast_predictions": response.forecast_predictions,
             "trace_id": response.trace_id,
         }
+    except HTTPException:
+        # Re-raise FastAPI HTTP exceptions (401/403 from the dual-mode
+        # check above) without wrapping them in the catch-all below.
+        raise
     except Exception as exc:  # noqa: BLE001 — never crash the frontend
         logger.exception("Unhandled error in /chat")
         return {

@@ -396,3 +396,32 @@ export function XCircle(props: FeatherIconProps) {
     </Svg>
   );
 }
+
+export function LogIn(props: FeatherIconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+      <polyline points="10 17 15 12 10 7" />
+      <line x1="15" y1="12" x2="3" y2="12" />
+    </Svg>
+  );
+}
+
+export function LogOut(props: FeatherIconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <polyline points="16 17 21 12 16 7" />
+      <line x1="21" y1="12" x2="9" y2="12" />
+    </Svg>
+  );
+}
+
+export function Mail(props: FeatherIconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+      <polyline points="22,6 12,13 2,6" />
+    </Svg>
+  );
+}

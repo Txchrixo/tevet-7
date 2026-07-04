@@ -35,6 +35,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     func,
     select,
     text,
@@ -374,6 +375,74 @@ traces_table = Table(
     Column("latency_ms", Integer, nullable=False, default=0),
     Column("error", Text, nullable=True),
     Column("response_answer", Text, nullable=True),  # first 500 chars of the answer
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase 6a — Auth + multi-tenant platform tables
+# ─────────────────────────────────────────────────────────────────────────────
+# Three new tables that turn Tevet-7 from a single-tenant demo into a
+# multi-tenant platform. They are created in the same ``metadata.create_all``
+# call as the business tables (no separate migration) and live in the SAME
+# SQLite file. The CORE agentic (agents/tools/tracing) never imports these
+# tables — only ``app/auth`` and ``app/tenants`` do. The HTTP layer
+# (app/api/*) extracts the identity from the JWT and passes plain
+# ``role``/``producer_id``/``tenant_id`` strings down to the orchestrator.
+#
+# Schema:
+#   users               — id, email (unique), name, password_hash (bcrypt), created_at
+#   tenants             — id (str, e.g. "dp"), name, slug (unique), is_demo,
+#                         created_at, owner_user_id (FK→users.id)
+#   tenant_memberships  — id, user_id, tenant_id, role, producer_id,
+#                         is_active, created_at. UNIQUE(user_id, tenant_id).
+#                         A user has at most one is_active=True row at a time
+#                         (enforced by set_active_membership in app.tenants.service).
+users = Table(
+    "users",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("email", String, nullable=False, unique=True, index=True),
+    Column("name", String, nullable=False),
+    Column("password_hash", String, nullable=False),
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+)
+
+tenants = Table(
+    "tenants",
+    metadata,
+    Column("id", String, primary_key=True),  # e.g. "dp" (== slug)
+    Column("name", String, nullable=False),
+    Column("slug", String, nullable=False, unique=True, index=True),
+    Column("is_demo", Boolean, nullable=False, default=False),
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+    Column("owner_user_id", Integer, ForeignKey("users.id"), nullable=True),
+)
+
+tenant_memberships = Table(
+    "tenant_memberships",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column(
+        "user_id",
+        Integer,
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    ),
+    Column(
+        "tenant_id",
+        String,
+        ForeignKey("tenants.id"),
+        nullable=False,
+        index=True,
+    ),
+    Column("role", String, nullable=False),  # "producer"|"admin"|"customer"
+    Column("producer_id", Integer, nullable=True),  # row-level scope; NULL for admin
+    Column("is_active", Boolean, nullable=False, default=False),
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+    # UNIQUE(user_id, tenant_id) — a user can be a member of a tenant at
+    # most once. Enforced by SQLite via the composite unique below.
+    UniqueConstraint("user_id", "tenant_id", name="uq_user_tenant"),
 )
 
 
@@ -1235,6 +1304,19 @@ async def init_db() -> None:
     # (no lazy-compute on first open). The approval_requests.status stays
     # "pending" — the admin will close the loop via POST /api/approvals/{id}/decide.
     await _seed_onboardings(engine)
+
+    # ── Phase 6a — Auth + multi-tenant platform seed ──
+    # Create the demo "dp" tenant + 3 demo users (marie/pierre/admin,
+    # password "tevet7demo") + their memberships. Idempotent — safe to
+    # call on every startup. The frontend logs in with these credentials
+    # to obtain a JWT carrying the tenant context (tenant_id="dp",
+    # role="producer", producer_id=42).
+    try:
+        from app.tenants.service import seed_demo_tenant
+        await seed_demo_tenant()
+        logger.info("Phase 6a demo tenant + users seeded (dp, marie, pierre, admin)")
+    except Exception:  # noqa: BLE001 — never block app startup on auth seed
+        logger.exception("seed_demo_tenant() failed — auth endpoints may not work")
 
 
 async def _seed_onboardings(engine: AsyncEngine) -> None:

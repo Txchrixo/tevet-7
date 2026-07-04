@@ -36,6 +36,36 @@ import type {
 const BACKEND_URL = "/api/chat";
 const BACKEND_TIMEOUT_MS = 12000;
 
+// ---------------------------------------------------------------------------
+// JWT auth header (Phase 6a)
+// ---------------------------------------------------------------------------
+//
+// When the user is authenticated, the JWT is persisted in localStorage under
+// `tevet7.auth.token` (see `src/lib/store.ts`). Every backend call in this
+// file attaches `Authorization: Bearer <token>` so the FastAPI service can
+// scope the request by the JWT's claims (tenant_id, role, producer_id).
+//
+// When the token is absent (demo mode — not authenticated), the call falls
+// back to the body-identity path: the existing `identity_id` / `producer_id`
+// / `role` fields in the request body drive the backend's scoping. This is
+// the original Phase 0 behaviour and is preserved unchanged.
+
+const AUTH_TOKEN_STORAGE_KEY = "tevet7.auth.token";
+
+function readAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function authHeaders(): Record<string, string> {
+  const token = readAuthToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 // -- Raw backend types (snake_case) ----------------------------------------
 
 interface BackendChartSeries {
@@ -261,7 +291,10 @@ export async function callBackend(
   try {
     const res = await fetch(BACKEND_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+      },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -346,7 +379,7 @@ export async function listDocuments(
   try {
     const res = await fetch(DOCUMENTS_URL, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...authHeaders() },
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -394,6 +427,7 @@ export async function uploadDocument(
   try {
     const res = await fetch(DOCUMENTS_URL, {
       method: "POST",
+      headers: { ...authHeaders() },
       body: fd,
       signal: controller.signal,
     });
@@ -425,6 +459,7 @@ export async function deleteDocument(id: number): Promise<void> {
   try {
     const res = await fetch(`${DOCUMENTS_URL}/${id}`, {
       method: "DELETE",
+      headers: { ...authHeaders() },
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -646,7 +681,7 @@ export async function listApprovals(
   try {
     const res = await fetch(`${APPROVALS_URL}?admin=true`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...authHeaders() },
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -674,7 +709,7 @@ export async function getApprovalDetail(
   try {
     const res = await fetch(`${APPROVALS_URL}/${id}?admin=true`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...authHeaders() },
       signal: controller.signal,
     });
     if (!res.ok) {
@@ -716,7 +751,10 @@ export async function decideApproval(
   try {
     const res = await fetch(`${APPROVALS_URL}/${id}/decide?admin=true`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+      },
       body: JSON.stringify({
         decision,
         reason,

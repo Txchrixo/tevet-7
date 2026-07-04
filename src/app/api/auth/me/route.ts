@@ -1,26 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 
 /**
- * Server-side proxy — GET detail for a single approval (approval row + full
- * onboarding dossier + parsed agent_analysis).
+ * Server-side proxy to the Tevet-7 FastAPI backend's auth API.
  *
- * The browser calls the relative `/api/approvals/{id}` and Next.js forwards
- * the request server-side to `http://localhost:8001/api/approvals/{id}`.
+ * Mirrors the pattern of `src/app/api/chat/route.ts`: the browser calls the
+ * relative `/api/auth/me` (same origin, always reachable), and Next.js
+ * forwards the request server-side to
+ * `http://localhost:8001/api/auth/me`. Works on any port the Preview Panel
+ * uses — no Caddy gateway or `XTransformPort` query needed.
+ *
+ * The Authorization header is ALWAYS forwarded — `getMe` is authed.
  */
 
 const BACKEND_ORIGIN = "http://localhost:8001";
-const BACKEND_TIMEOUT_MS = 15_000;
+const BACKEND_TIMEOUT_MS = 12_000;
 
-// `params` is a Promise in Next.js 15+/16 — we await it before reading `id`.
-export async function GET(
-  req: NextRequest,
-  ctx: { params: Promise<{ id: string }> },
-) {
-  const { id } = await ctx.params;
-  // Forward the query string (e.g. ?admin=true) — the backend requires admin=true
-  // on all approval endpoints. The browser-side store always sends it.
-  const search = req.nextUrl.search;
-  // Forward the Authorization header (Phase 6a dual mode — JWT context).
+export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization");
 
   const controller = new AbortController();
@@ -32,14 +27,11 @@ export async function GET(
     };
     if (auth) headers["Authorization"] = auth;
 
-    const backendRes = await fetch(
-      `${BACKEND_ORIGIN}/api/approvals/${encodeURIComponent(id)}${search}`,
-      {
-        method: "GET",
-        headers,
-        signal: controller.signal,
-      },
-    );
+    const backendRes = await fetch(`${BACKEND_ORIGIN}/api/auth/me`, {
+      method: "GET",
+      headers,
+      signal: controller.signal,
+    });
 
     const text = await backendRes.text();
 

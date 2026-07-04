@@ -17,15 +17,20 @@ as the chat traces.
 Security model
 ==============
 
-Phase 3 keeps the model intentionally simple:
+Phase 6a — dual auth mode (same pattern as ``app/api/chat.py``):
 
-- The ``tenant_id`` is taken from the request form (default ``dp``). In
-  production this would come from the verified JWT.
-- ``producer_id`` is optional. NULL = tenant-wide document (visible to
-  every producer of the tenant). Set to an int = producer-private doc.
-- The list / detail endpoints scope their results by ``producer_id``
-  when it is provided (so a producer can list only their own docs); the
-  default (no ``producer_id`` query param) returns all tenant docs.
+1. **JWT path (new, for the frontend)** — the caller sends
+   ``Authorization: Bearer <jwt>``. The ``tenant_id`` and
+   ``producer_id`` are extracted from the verified JWT (the form/query
+   params are IGNORED).
+2. **Form/query path (legacy, for the eval + the old frontend)** — no
+   ``Authorization`` header. The ``tenant_id`` is read from the form
+   (POST) or query string (GET) and defaults to ``"dp"``. The
+   ``producer_id`` is read from the form/query string too.
+
+Phase 3 kept the model intentionally simple (no JWT) — the dual mode
+preserves that for the eval while letting the frontend authenticate
+via JWT.
 
 PDF extraction uses ``pypdf`` (already in requirements.txt). If the
 extraction yields no text (e.g. scanned PDF), the endpoint returns 400.
@@ -38,10 +43,11 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func, select
 
+from app.auth.dependencies import TenantContext, try_get_tenant_context
 from app.db_seed import (
     delete_document,
     document_chunks,
@@ -60,6 +66,29 @@ router = APIRouter()
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+def _resolve_doc_context(
+    request: Request,
+    fallback_tenant_id: str,
+    fallback_producer_id: int | None,
+) -> tuple[str, int | None]:
+    """Return ``(tenant_id, producer_id)`` for a documents endpoint call.
+
+    Phase 6a dual mode:
+      - If an ``Authorization: Bearer <jwt>`` header is present and
+        valid, the tenant_id + producer_id are extracted from the JWT
+        (the form/query fallbacks are IGNORED).
+      - Otherwise the fallback values (from the form/query params) are
+        used — this is the legacy path the eval relies on.
+    """
+    jwt_ctx: TenantContext | None = try_get_tenant_context(request)
+    if jwt_ctx is not None and jwt_ctx.tenant_id:
+        # For producer role → scope to their producer_id; for admin role
+        # → producer_id stays None (tenant-wide).
+        pid = jwt_ctx.producer_id if jwt_ctx.role == "producer" else None
+        return jwt_ctx.tenant_id, pid
+    return fallback_tenant_id, fallback_producer_id
 
 
 def _extract_pdf_text(file_bytes: bytes) -> str:
@@ -106,17 +135,23 @@ def _start_doc_span(name: str, **metadata: Any) -> tuple[Any, TraceContext | Non
 
 @router.post("/documents")
 async def upload_document(
+    request: Request,
     title: str = Form(..., description="Document title (e.g. 'CGV Drive Producteur')."),
     source_type: str = Form("text", description="'pdf' or 'text'."),
     file: UploadFile | None = File(None, description="PDF file (required if source_type=pdf)."),
     content: str | None = Form(None, description="Manual text content (required if source_type=text)."),
     producer_id: int | None = Form(None, description="Producer id for producer-private docs. NULL = tenant-wide."),
-    tenant_id: str = Form("dp", description="Tenant id (default 'dp')."),
+    tenant_id: str = Form("dp", description="Tenant id (default 'dp'). IGNORED when Authorization: Bearer is present."),
 ) -> dict[str, Any]:
     """Upload a document, chunk it, sync the FTS5 table.
 
     Returns ``{document_id, title, chunks_count}``.
+
+    Phase 6a — dual auth mode: when an ``Authorization: Bearer <jwt>``
+    header is present, the tenant_id and producer_id are extracted from
+    the JWT and the form fields are ignored.
     """
+    tenant_id, producer_id = _resolve_doc_context(request, tenant_id, producer_id)
     tracer, ctx, span = _start_doc_span(
         "document_upload",
         title=title,
@@ -245,10 +280,17 @@ async def upload_document(
 
 @router.get("/documents")
 async def list_documents(
-    producer_id: int | None = Query(None, description="Scope the list to a producer (NULL = all tenant docs)."),
-    tenant_id: str = Query("dp", description="Tenant id (default 'dp')."),
+    request: Request,
+    producer_id: int | None = Query(None, description="Scope the list to a producer (NULL = all tenant docs). IGNORED when Authorization: Bearer is present and role=producer."),
+    tenant_id: str = Query("dp", description="Tenant id (default 'dp'). IGNORED when Authorization: Bearer is present."),
 ) -> dict[str, Any]:
-    """List documents for the tenant, optionally scoped to a producer."""
+    """List documents for the tenant, optionally scoped to a producer.
+
+    Phase 6a — dual auth mode: when an ``Authorization: Bearer <jwt>``
+    header is present, the tenant_id and producer_id are extracted from
+    the JWT and the query params are ignored.
+    """
+    tenant_id, producer_id = _resolve_doc_context(request, tenant_id, producer_id)
     tracer, ctx, span = _start_doc_span(
         "document_list",
         tenant_id=tenant_id,

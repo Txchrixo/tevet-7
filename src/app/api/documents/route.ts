@@ -20,16 +20,23 @@ const BACKEND_TIMEOUT_MS = 30_000;
 
 export async function GET(req: NextRequest) {
   const search = req.nextUrl.search; // includes the leading "?"
+  // Forward the Authorization header (Phase 6a dual mode — JWT context).
+  const auth = req.headers.get("authorization");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
 
   try {
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    if (auth) headers["Authorization"] = auth;
+
     const backendRes = await fetch(
       `${BACKEND_ORIGIN}/api/documents${search}`,
       {
         method: "GET",
-        headers: { Accept: "application/json" },
+        headers,
         signal: controller.signal,
       },
     );
@@ -70,6 +77,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   // Forward the multipart/form-data body verbatim — fetch reconstructs the
   // Content-Type header (with the boundary) when the body is a FormData.
+  // Forward the Authorization header (Phase 6a dual mode — JWT context).
+  const auth = req.headers.get("authorization");
   let form: FormData;
   try {
     form = await req.formData();
@@ -87,8 +96,12 @@ export async function POST(req: NextRequest) {
   const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
 
   try {
+    const headers: Record<string, string> = {};
+    if (auth) headers["Authorization"] = auth;
+
     const backendRes = await fetch(`${BACKEND_ORIGIN}/api/documents`, {
       method: "POST",
+      headers,
       body: form,
       signal: controller.signal,
     });

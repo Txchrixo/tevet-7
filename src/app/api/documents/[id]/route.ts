@@ -12,19 +12,25 @@ const BACKEND_TIMEOUT_MS = 30_000;
 
 // `params` is a Promise in Next.js 15+/16 — we await it before reading `id`.
 export async function DELETE(
-  _req: NextRequest,
+  req: NextRequest,
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id } = await ctx.params;
+  // Forward the Authorization header (Phase 6a dual mode — JWT context).
+  const auth = req.headers.get("authorization");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
 
   try {
+    const headers: Record<string, string> = {};
+    if (auth) headers["Authorization"] = auth;
+
     const backendRes = await fetch(
       `${BACKEND_ORIGIN}/api/documents/${encodeURIComponent(id)}`,
       {
         method: "DELETE",
+        headers,
         signal: controller.signal,
       },
     );

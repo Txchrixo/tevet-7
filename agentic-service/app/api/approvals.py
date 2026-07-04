@@ -21,13 +21,22 @@ Endpoints
   Updates the approval_request's ``agent_analysis`` /
   ``proposed_decision`` / ``proposed_reason`` / ``trace_id``.
 
-Security model (Phase 4 — temporary)
-====================================
+Security model (Phase 6a — dual auth mode)
+==========================================
 
-All endpoints require ``role=admin``. Phase 4 trusts the client to send
-``admin=true`` (or a ``role=admin`` field in the body) — real JWT-based
-role enforcement ships in Phase 6. The endpoints still log the caller's
-``decided_by`` identity for audit.
+Same pattern as ``app/api/chat.py``:
+
+1. **JWT path (new, for the frontend)** — the caller sends
+   ``Authorization: Bearer <jwt>``. The ``role`` is extracted from the
+   verified JWT and must be ``"admin"`` (otherwise 403). The
+   ``tenant_id`` is also extracted from the JWT. The ``admin=true``
+   query/body param is IGNORED.
+2. **Query/body path (legacy, for the eval + the old frontend)** — no
+   ``Authorization`` header. The caller must send ``admin=true`` as a
+   query param (GET) or in the body (POST decide). The ``tenant_id``
+   comes from the query string and defaults to ``"dp"``.
+
+All endpoints still log the caller's ``decided_by`` identity for audit.
 
 Tracing
 =======
@@ -48,12 +57,13 @@ import time
 from datetime import datetime
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 
 from app.agents.ops_copilot import OpsCopilotAgent
+from app.auth.dependencies import TenantContext, try_get_tenant_context
 from app.db_seed import approval_requests, get_engine, producer_onboardings
 from app.tracing import get_tracer
 
@@ -81,6 +91,32 @@ def _require_admin(admin: bool, *, source: str = "query") -> None:
                 "Phase 6 will enforce this via JWT role claims."
             ),
         )
+
+
+def _resolve_admin_context(
+    request: Request,
+    fallback_admin: bool,
+    fallback_tenant_id: str = "dp",
+    fallback_identity: str = "admin",
+) -> tuple[bool, str, str]:
+    """Return ``(is_admin, tenant_id, identity_id)`` for an approvals call.
+
+    Phase 6a dual mode:
+      - If an ``Authorization: Bearer <jwt>`` header is present and
+        valid, the role/tenant_id/email are extracted from the JWT. The
+        fallback values (admin query param, tenant_id query param,
+        ``"admin"`` identity) are IGNORED. Returns ``is_admin = (role
+        == "admin")``.
+      - Otherwise the fallback values are used — this is the legacy
+        path the eval relies on (``admin=true`` query param).
+    """
+    jwt_ctx: TenantContext | None = try_get_tenant_context(request)
+    if jwt_ctx is not None:
+        is_admin = (jwt_ctx.role == "admin")
+        tenant_id = jwt_ctx.tenant_id or fallback_tenant_id
+        identity_id = jwt_ctx.email or fallback_identity
+        return is_admin, tenant_id, identity_id
+    return bool(fallback_admin), fallback_tenant_id, fallback_identity
 
 
 class _Namespace:
@@ -182,12 +218,13 @@ class DecisionRequest(BaseModel):
 
 @router.get("/approvals")
 async def list_approvals(
-    admin: bool = Query(False, description="Phase 4 admin gate (must be true)."),
+    request: Request,
+    admin: bool = Query(False, description="Phase 4 admin gate (must be true). IGNORED when Authorization: Bearer is present."),
     status: str = Query(
         "pending",
         description="Filter by approval_requests.status (pending|approved|rejected|overridden|all).",
     ),
-    tenant_id: str = Query("dp", description="Tenant id (default 'dp')."),
+    tenant_id: str = Query("dp", description="Tenant id (default 'dp'). IGNORED when Authorization: Bearer is present."),
 ) -> dict[str, Any]:
     """List approval requests for the tenant (admin only).
 
@@ -197,13 +234,20 @@ async def list_approvals(
     The ``agent_analysis`` field is included so the admin UI can render the
     agent's checks + issues inline without a second round-trip to
     ``GET /api/approvals/{id}``.
+
+    Phase 6a — dual auth mode: when an ``Authorization: Bearer <jwt>``
+    header is present, the role/tenant_id are extracted from the JWT and
+    the query params are ignored.
     """
-    _require_admin(admin)
+    is_admin, tenant_id, identity_id = _resolve_admin_context(
+        request, admin, tenant_id,
+    )
+    _require_admin(is_admin)
     t0 = time.monotonic()
     tracer = get_tracer()
     ctx = tracer.start_trace(
         "ops_approval_list",
-        {"tenant_id": tenant_id, "role": "admin", "identity_id": "admin"},
+        {"tenant_id": tenant_id, "role": "admin", "identity_id": identity_id},
     )
     span = tracer.start_span(ctx, "ops_approval_list", tenant_id=tenant_id, status=status)
     try:
@@ -292,7 +336,8 @@ async def list_approvals(
 @router.get("/approvals/{approval_id}")
 async def get_approval(
     approval_id: int,
-    admin: bool = Query(False, description="Phase 4 admin gate (must be true)."),
+    request: Request,
+    admin: bool = Query(False, description="Phase 4 admin gate (must be true). IGNORED when Authorization: Bearer is present."),
 ) -> dict[str, Any]:
     """Return the full detail of one approval request.
 
@@ -300,8 +345,13 @@ async def get_approval(
     proposed_reason, the human decision (if any), and the onboarding dossier
     itself (so the admin UI can show the source documents + declared fields
     alongside the agent's checks).
+
+    Phase 6a — dual auth mode: when an ``Authorization: Bearer <jwt>``
+    header is present, the role is extracted from the JWT and must be
+    ``"admin"``; the ``admin`` query param is ignored.
     """
-    _require_admin(admin)
+    is_admin, _tenant_id, _identity_id = _resolve_admin_context(request, admin)
+    _require_admin(is_admin)
     t0 = time.monotonic()
     tracer = get_tracer()
     ctx = tracer.start_trace(
@@ -409,6 +459,7 @@ async def get_approval(
 @router.post("/approvals/{approval_id}/decide")
 async def decide_approval(
     approval_id: int,
+    request: Request,
     body: DecisionRequest,
 ) -> dict[str, Any]:
     """Close the loop on an approval request.
@@ -417,7 +468,8 @@ async def decide_approval(
       - ``decision``: ``approve`` | ``reject`` | ``override``
       - ``reason``: human-readable reason (required, especially for override)
       - ``decided_by``: admin identity_id (audit)
-      - ``admin``: must be ``true`` (Phase 4 gate; Phase 6 = JWT role)
+      - ``admin``: must be ``true`` (Phase 4 gate; Phase 6 = JWT role).
+        IGNORED when ``Authorization: Bearer <jwt>`` is present.
 
     The endpoint updates BOTH tables in one transaction:
       - ``approval_requests.status``: approved | rejected | overridden
@@ -430,8 +482,17 @@ async def decide_approval(
     appears in Langfuse alongside the agent's original ``ops_onboarding_analysis``
     span (same trace tree if the user re-uses the agent's trace_id, otherwise
     a sibling trace).
+
+    Phase 6a — dual auth mode: when an ``Authorization: Bearer <jwt>``
+    header is present, the role is extracted from the JWT and must be
+    ``"admin"``; the body's ``admin`` field is ignored. The
+    ``decided_by`` field is still required (audit trail) — when using
+    JWT, the frontend should set ``decided_by`` to the admin's email.
     """
-    _require_admin(body.admin, source="body")
+    is_admin, _tenant_id, _identity_id = _resolve_admin_context(
+        request, body.admin,
+    )
+    _require_admin(is_admin, source="body")
     t0 = time.monotonic()
     tracer = get_tracer()
     ctx = tracer.start_trace(
@@ -628,7 +689,8 @@ async def decide_approval(
 @router.post("/approvals/analyze/{onboarding_id}")
 async def reanalyze_onboarding(
     onboarding_id: int,
-    admin: bool = Query(False, description="Phase 4 admin gate (must be true)."),
+    request: Request,
+    admin: bool = Query(False, description="Phase 4 admin gate (must be true). IGNORED when Authorization: Bearer is present."),
 ) -> dict[str, Any]:
     """Re-run the OpsCopilotAgent pre-analysis on an onboarding dossier.
 
@@ -639,8 +701,13 @@ async def reanalyze_onboarding(
     ``trace_id`` columns.
 
     Returns the fresh ``OpsAnalysis`` dict + the updated approval_request id.
+
+    Phase 6a — dual auth mode: when an ``Authorization: Bearer <jwt>``
+    header is present, the role is extracted from the JWT and must be
+    ``"admin"``; the ``admin`` query param is ignored.
     """
-    _require_admin(admin)
+    is_admin, _tenant_id, _identity_id = _resolve_admin_context(request, admin)
+    _require_admin(is_admin)
     t0 = time.monotonic()
     engine = get_engine()
 

@@ -35,13 +35,27 @@ function statusConfig(status: BackendStatus): StatusConfig {
 
 export function Footer() {
   const backendStatus = useCopilotStore((s) => s.backendStatus);
+  const user = useCopilotStore((s) => s.user);
+  const token = useCopilotStore((s) => s.token);
+  const demoFallback = useCopilotStore((s) => s.demoFallback);
   const { label, dot } = statusConfig(backendStatus);
+
+  // Auth status label — drives the left-side text in the footer.
+  //   - Authenticated → "Connecté en tant que {email}"
+  //   - Demo fallback (backend unreachable) → "Mode démo (backend hors ligne)"
+  //   - Pure demo (not authenticated, no fallback yet) → "Mode démo"
+  let authStatus = "Mode démo";
+  if (user && token) {
+    authStatus = `Connecté en tant que ${user.email}`;
+  } else if (demoFallback) {
+    authStatus = "Mode démo (backend hors ligne)";
+  }
 
   return (
     <footer className="mt-auto border-t border-border bg-background">
       <div className="flex h-9 items-center justify-between gap-2 px-3 text-[11px] text-muted-foreground sm:px-4">
         <span className="truncate font-body uppercase tracking-wide">
-          Tevet-7 <span className="text-muted-foreground/50">·</span> Phase 0 Prototype
+          Tevet-7 <span className="text-muted-foreground/50">·</span> {authStatus}
         </span>
         <span className="hidden truncate text-center font-body uppercase tracking-wide sm:inline">
           Drive Producteur tenant

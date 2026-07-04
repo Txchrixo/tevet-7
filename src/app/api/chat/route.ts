@@ -25,17 +25,25 @@ const BACKEND_TIMEOUT_MS = 12_000;
 
 export async function POST(req: NextRequest) {
   const body = await req.text();
+  // Forward the Authorization header so the FastAPI service can switch to
+  // JWT-based context (Phase 6a dual mode). When the header is absent, the
+  // backend falls back to the body-identity path (`identity_id`, `role`,
+  // `producer_id`) — the original Phase 0 behaviour.
+  const auth = req.headers.get("authorization");
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
 
   try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    };
+    if (auth) headers["Authorization"] = auth;
+
     const backendRes = await fetch(`${BACKEND_ORIGIN}/api/chat`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers,
       body,
       signal: controller.signal,
       // Server-side fetch: no CORS, credentials, or browser origin.

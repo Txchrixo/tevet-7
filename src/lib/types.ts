@@ -226,3 +226,47 @@ export interface ApprovalDetail {
   approval: ApprovalSummary;
   onboarding: OnboardingDossier;
 }
+
+// ---------------------------------------------------------------------------
+// Authentication & multi-tenancy (Phase 6a)
+// ---------------------------------------------------------------------------
+//
+// The frontend speaks to the backend via JWT. The token carries the active
+// tenant context (`tenant_id`, `role`, `producer_id`) and is attached to
+// every API request via `Authorization: Bearer <token>`. When the user is
+// NOT authenticated, the app falls back to the mock identities (Marie /
+// Pierre / Admin) — the demo path described in the worklog.
+
+/** The authenticated user record returned by /api/auth/login + /api/auth/me. */
+export interface User {
+  id: number;
+  email: string;
+  name: string;
+}
+
+/**
+ * A tenant membership returned by /api/auth/me and /api/tenants/mine.
+ *
+ * `is_demo: true` flags the seeded Drive Producteur tenant (Marie / Pierre /
+ * Admin demo accounts) — useful for surfacing a "Demo" badge in the tenant
+ * switcher.
+ */
+export interface Tenant {
+  tenant_id: string;
+  name: string;
+  slug: string;
+  role: string;
+  is_demo: boolean;
+}
+
+/** Auth response envelope returned by /api/auth/login + /api/auth/signup. */
+export interface AuthResult {
+  user: User;
+  token: string;
+}
+
+/** /api/auth/me envelope — user + their tenant memberships. */
+export interface MeResult {
+  user: User;
+  memberships: Tenant[];
+}
