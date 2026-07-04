@@ -224,6 +224,76 @@ document_chunks = Table(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Ops Copilot — human-in-the-loop onboarding tables (Task 26 / Phase 4)
+# ─────────────────────────────────────────────────────────────────────────────
+# Two tables that materialise the HITL contract: the agent pre-analyzes
+# a producer-onboarding dossier, writes its structured analysis into
+# ``approval_requests.agent_analysis`` (JSON) + ``proposed_decision`` +
+# ``proposed_reason``, and waits. A human admin later closes the loop via
+# ``POST /api/approvals/{id}/decide`` which flips ``approval_requests.status``
+# AND ``producer_onboardings.status`` in the same transaction.
+#
+# Design notes
+# ------------
+# * ``producer_onboardings`` mirrors the dossier structure described in the
+#   DP onboarding procedure (one of the 4 RAG documents): legal_name, SIRET,
+#   RIB, ID, professional certificate, declared address vs document address.
+#   ``siret_valid`` is the result of the (out-of-band) SIRENE API call — we
+#   store it rather than call INSEE live so the demo is self-contained.
+# * ``approval_requests`` is intentionally generic (``request_type`` column)
+#   so Phase 5+ can reuse it for ticket classification, refund approval,
+#   etc. — every "agent proposes, human decides" workflow lives here.
+# * ``trace_id`` carries the Langfuse trace_id of the agent's pre-analysis
+#   so the audit trail links the human decision back to the agent run.
+producer_onboardings = Table(
+    "producer_onboardings",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("tenant_id", String, nullable=False, default="dp", index=True),
+    Column("legal_name", String, nullable=False),
+    Column("siret", String, nullable=False),
+    Column("siret_valid", Boolean, nullable=False, default=False),
+    Column("email", String, nullable=True),
+    Column("phone", String, nullable=True),
+    Column("declared_address", String, nullable=True),
+    Column("rib_document_present", Boolean, nullable=False, default=False),
+    Column("id_document_present", Boolean, nullable=False, default=False),
+    Column("professional_certificate_present", Boolean, nullable=False, default=False),
+    Column("professional_certificate_expiry", String, nullable=True),  # ISO date
+    Column("document_address", String, nullable=True),
+    Column("submitted_at", DateTime, nullable=False, default=datetime.utcnow),
+    Column("status", String, nullable=False, default="pending"),  # pending|approved|rejected
+    Column("rejection_reason", String, nullable=True),
+)
+
+approval_requests = Table(
+    "approval_requests",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("tenant_id", String, nullable=False, default="dp", index=True),
+    Column(
+        "onboarding_id",
+        Integer,
+        ForeignKey("producer_onboardings.id"),
+        nullable=False,
+        index=True,
+    ),
+    Column("request_type", String, nullable=False, default="onboarding_analysis"),
+    Column("agent_analysis", Text, nullable=True),  # JSON string
+    Column("proposed_decision", String, nullable=False, default="approve"),
+    # "approve" | "reject" | "request_info"
+    Column("proposed_reason", Text, nullable=True),
+    Column("status", String, nullable=False, default="pending"),
+    # "pending" | "approved" | "rejected" | "overridden"
+    Column("decided_by", String, nullable=True),
+    Column("decided_at", DateTime, nullable=True),
+    Column("human_reason", Text, nullable=True),
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+    Column("trace_id", String, nullable=True),  # Langfuse trace_id of the agent run
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Observability — traces table (Task 18 / Phase 2 tracing)
 # ─────────────────────────────────────────────────────────────────────────────
 # One row per ``/api/chat`` request, written by ``LocalTracer.end_trace``.
@@ -813,6 +883,157 @@ async def init_db() -> None:
     logger.info(
         "RAG seed — %d documents, %d chunks (CGV, FAQ, Onboarding, Retrait)",
         n_docs, n_chunks,
+    )
+
+    # ── Phase 4 — Ops Copilot HITL seed ──
+    # 4 fictitious onboarding dossiers + their pre-analyzed approval_requests.
+    # The ``agent_analysis`` / ``proposed_decision`` / ``proposed_reason``
+    # fields are PRE-FILLED by calling OpsCopilotAgent.analyze_onboarding()
+    # during seeding so the admin UI shows the agent's proposal immediately
+    # (no lazy-compute on first open). The approval_requests.status stays
+    # "pending" — the admin will close the loop via POST /api/approvals/{id}/decide.
+    await _seed_onboardings(engine)
+
+
+async def _seed_onboardings(engine: AsyncEngine) -> None:
+    """Insert 4 fictitious onboarding dossiers + their pre-analyzed approval_requests.
+
+    See the comment block on ``producer_onboardings`` for the schema and the
+    Phase 4 HITL contract. The agent's pre-analysis is run inline (with the
+    real tracer) so each seed-time analysis gets a trace_id persisted on the
+    approval_requests row — that ties the human decision back to the agent
+    run that proposed it.
+    """
+    # Local import to avoid a circular dependency at module load time
+    # (app.agents.ops_copilot imports app.tracing.base only, but keeping
+    # the import local makes the dependency direction explicit).
+    import json as _json
+
+    from app.agents.ops_copilot import OpsCopilotAgent
+    from app.tracing import get_tracer
+
+    now = datetime.utcnow()
+    # Build the 4 dossier dicts. The order here is also the order of the
+    # auto-increment ids (1, 2, 3, 4) — relied on by the eval cases and
+    # the curl verifications in the worklog.
+    dossiers: list[dict[str, Any]] = [
+        {
+            "tenant_id": "dp",
+            "legal_name": "Ferme des Collines",
+            "siret": "12345678900012",
+            "siret_valid": True,
+            "email": "contact@ferme-des-collines.fr",
+            "phone": "+33 4 73 11 22 33",
+            "declared_address": "15 route des Collines, 63000 Clermont-Ferrand",
+            "rib_document_present": True,
+            "id_document_present": True,
+            "professional_certificate_present": True,
+            "professional_certificate_expiry": "2027-12-31",  # future → valid
+            "document_address": "15 route des Collines, 63000 Clermont-Ferrand",
+            "submitted_at": now,
+            "status": "pending",
+            "rejection_reason": None,
+        },
+        {
+            "tenant_id": "dp",
+            "legal_name": "Maraîchage Bio Soleil",
+            "siret": "98765432100025",
+            "siret_valid": True,
+            "email": "contact@bio-soleil.fr",
+            "phone": "+33 4 75 44 55 66",
+            "declared_address": "8 chemin du Soleil, 26000 Valence",
+            "rib_document_present": True,
+            "id_document_present": True,
+            "professional_certificate_present": False,  # ← missing
+            "professional_certificate_expiry": None,
+            "document_address": "8 chemin du Soleil, 26000 Valence",
+            "submitted_at": now,
+            "status": "pending",
+            "rejection_reason": None,
+        },
+        {
+            "tenant_id": "dp",
+            "legal_name": "Élevage du Vernet",
+            "siret": "11111111111111",
+            "siret_valid": False,  # ← SIRENE check failed (legal blocker)
+            "email": "contact@elevage-vernet.fr",
+            "phone": "+33 5 61 77 88 99",
+            "declared_address": "3 lieu-dit le Vernet, 31000 Toulouse",
+            "rib_document_present": True,
+            "id_document_present": True,
+            "professional_certificate_present": True,
+            "professional_certificate_expiry": "2027-03-15",  # future → cert OK
+            "document_address": "3 lieu-dit le Vernet, 31000 Toulouse",
+            "submitted_at": now,
+            "status": "pending",
+            "rejection_reason": None,
+        },
+        {
+            "tenant_id": "dp",
+            "legal_name": "Vignoble des Coteaux",
+            "siret": "22222222222222",
+            "siret_valid": True,
+            "email": "contact@vignoble-coteaux.fr",
+            "phone": "+33 3 80 22 33 44",
+            "declared_address": "21 rue des Vignes, 21200 Beaune",
+            "rib_document_present": True,
+            "id_document_present": True,
+            "professional_certificate_present": True,
+            "professional_certificate_expiry": "2023-05-01",  # ← expired (past)
+            "document_address": "4 route des Coteaux, 71100 Chalon-sur-Saône",  # ← mismatch
+            "submitted_at": now,
+            "status": "pending",
+            "rejection_reason": None,
+        },
+    ]
+
+    # 1) Insert the 4 onboarding rows and capture their auto-incremented ids.
+    onboarding_ids: list[int] = []
+    async with engine.begin() as conn:
+        for ob in dossiers:
+            result = await conn.execute(
+                producer_onboardings.insert()
+                .values(**ob)
+                .returning(producer_onboardings.c.id)
+            )
+            ob_id = int(result.scalar_one())
+            onboarding_ids.append(ob_id)
+
+    # 2) Run the agent pre-analysis OUTSIDE the seeding transaction so each
+    #    analyze_onboarding() call can write its own trace row without
+    #    nested-transaction contention on SQLite.
+    agent = OpsCopilotAgent(tracer=get_tracer())
+    approval_rows: list[dict[str, Any]] = []
+    for ob, ob_id in zip(dossiers, onboarding_ids):
+        analysis = await agent.analyze_onboarding({**ob, "id": ob_id})
+        approval_rows.append({
+            "tenant_id": "dp",
+            "onboarding_id": ob_id,
+            "request_type": "onboarding_analysis",
+            "agent_analysis": _json.dumps(analysis.to_dict(), ensure_ascii=False),
+            "proposed_decision": analysis.proposed_decision,
+            "proposed_reason": analysis.proposed_reason,
+            "status": "pending",  # ← admin has not decided yet
+            "decided_by": None,
+            "decided_at": None,
+            "human_reason": None,
+            "created_at": now,
+            "trace_id": analysis.trace_id,
+        })
+        logger.info(
+            "Onboarding seed — id=%d legal_name=%r proposed=%s confidence=%d trace_id=%s",
+            ob_id, ob["legal_name"], analysis.proposed_decision,
+            analysis.confidence, analysis.trace_id,
+        )
+
+    # 3) Insert the 4 approval_requests rows.
+    async with engine.begin() as conn:
+        for row in approval_rows:
+            await conn.execute(approval_requests.insert().values(**row))
+
+    logger.info(
+        "Ops Copilot seed — %d onboarding dossiers + %d pre-analyzed approval_requests",
+        len(dossiers), len(approval_rows),
     )
 
 

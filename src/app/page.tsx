@@ -16,6 +16,7 @@ import { ChatMessage, TypingIndicator } from "@/components/producer-copilot/chat
 import { Footer } from "@/components/producer-copilot/footer";
 import { Header } from "@/components/producer-copilot/header";
 import { Inspector } from "@/components/producer-copilot/inspector";
+import { OpsConsole } from "@/components/producer-copilot/ops-console";
 import { Sidebar } from "@/components/producer-copilot/sidebar";
 import { BrandMark } from "@/components/producer-copilot/brand-mark";
 
@@ -29,6 +30,7 @@ export default function Home() {
   const sendExample = useCopilotStore((s) => s.sendExample);
   const identity = useCopilotStore((s) => s.identity);
   const loadDocuments = useCopilotStore((s) => s.loadDocuments);
+  const view = useCopilotStore((s) => s.view);
 
   const [sidebarSheet, setSidebarSheet] = React.useState(false);
   const [inspectorSheet, setInspectorSheet] = React.useState(false);
@@ -67,43 +69,49 @@ export default function Home() {
           <Sidebar />
         </aside>
 
-        {/* Center: chat thread */}
+        {/* Center: chat thread OR Ops Console (admin only) */}
         <main className="flex min-w-0 flex-1 flex-col">
-          <div ref={scrollRef} className="flex-1 overflow-y-auto">
-            <div className="mx-auto w-full max-w-3xl px-3 py-5 sm:px-4">
-              {messages.length === 0 ? (
-                <WelcomeState
-                  onPick={(id, label) => sendExample(id, label)}
-                />
-              ) : (
-                <div className="space-y-5">
-                  <AnimatePresence initial={false}>
-                    {messages.map((m, i) => (
-                      <ChatMessage
-                        key={m.id}
-                        message={m}
-                        selected={m.id === selectedMessageId}
-                        onSelect={(id) => {
-                          selectMessage(id);
-                          if (isMobile) setInspectorSheet(true);
-                        }}
-                        isLast={i === messages.length - 1 && m.role === "assistant"}
-                      />
-                    ))}
-                  </AnimatePresence>
-                  {isStreaming && <TypingIndicator />}
+          {identity.kind === "admin" && view === "ops" ? (
+            <OpsConsole />
+          ) : (
+            <>
+              <div ref={scrollRef} className="flex-1 overflow-y-auto">
+                <div className="mx-auto w-full max-w-3xl px-3 py-5 sm:px-4">
+                  {messages.length === 0 ? (
+                    <WelcomeState
+                      onPick={(id, label) => sendExample(id, label)}
+                    />
+                  ) : (
+                    <div className="space-y-5">
+                      <AnimatePresence initial={false}>
+                        {messages.map((m, i) => (
+                          <ChatMessage
+                            key={m.id}
+                            message={m}
+                            selected={m.id === selectedMessageId}
+                            onSelect={(id) => {
+                              selectMessage(id);
+                              if (isMobile) setInspectorSheet(true);
+                            }}
+                            isLast={i === messages.length - 1 && m.role === "assistant"}
+                          />
+                        ))}
+                      </AnimatePresence>
+                      {isStreaming && <TypingIndicator />}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </div>
+              </div>
 
-          {/* Chat input docked at bottom of main */}
-          <div className="border-t border-border bg-background px-3 py-3 sm:px-4">
-            <ChatInput />
-            <p className="mt-1.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground">
-              Prototype Phase 0 — réponses simulées
-            </p>
-          </div>
+              {/* Chat input docked at bottom of main */}
+              <div className="border-t border-border bg-background px-3 py-3 sm:px-4">
+                <ChatInput />
+                <p className="mt-1.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground">
+                  Prototype Phase 0 — réponses simulées
+                </p>
+              </div>
+            </>
+          )}
         </main>
 
         {/* Desktop inspector */}

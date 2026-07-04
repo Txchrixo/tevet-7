@@ -153,6 +153,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             "refused": response.refused,
             "tables_touched": response.tables_touched,
             "sources": response.sources,
+            "ops_analysis": response.ops_analysis,
             "trace_id": response.trace_id,
         }
     except Exception as exc:  # noqa: BLE001 — never crash the frontend
@@ -174,6 +175,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             "refused": True,
             "tables_touched": [],
             "sources": [],
+            "ops_analysis": None,
             "trace_id": None,
             "error": str(exc),
         }

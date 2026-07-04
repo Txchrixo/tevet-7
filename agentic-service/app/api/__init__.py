@@ -8,6 +8,9 @@ Currently exposes:
 - ``documents`` — Phase 3 documentary RAG management endpoints:
   ``POST /documents``, ``GET /documents``, ``GET /documents/{id}``,
   ``DELETE /documents/{id}``.
+- ``approvals`` — Phase 4 Ops Copilot human-in-the-loop endpoints:
+  ``GET /approvals``, ``GET /approvals/{id}``,
+  ``POST /approvals/{id}/decide``, ``POST /approvals/analyze/{onboarding_id}``.
 
 Planned routers (not yet implemented):
 
@@ -17,9 +20,10 @@ Planned routers (not yet implemented):
 - ``evals`` — Phase 7 eval harness endpoints.
 """
 
+from app.api.approvals import router as approvals_router
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
 
 router = chat_router
-__all__ = ["chat_router", "documents_router", "router"]
+__all__ = ["chat_router", "documents_router", "approvals_router", "router"]
 

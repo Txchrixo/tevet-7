@@ -1,9 +1,15 @@
 import type {
+  AgentAnalysis,
+  ApprovalDetail,
+  ApprovalStatus,
+  ApprovalSummary,
   AssistantResponse,
   ChartSpec,
   ChartType,
   DocumentInfo,
   Identity,
+  OnboardingDossier,
+  ProposedDecision,
   SecurityCheck,
   Source,
   TraceStatus,
@@ -396,6 +402,307 @@ export async function deleteDocument(id: number): Promise<void> {
         `deleteDocument → HTTP ${res.status} ${res.statusText}`,
       );
     }
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ops Console — approval queue API (Phase 4)
+// ---------------------------------------------------------------------------
+//
+// Same proxy pattern as /api/chat and /api/documents: the browser calls the
+// relative `/api/approvals` path, and Next.js route handlers forward each
+// request server-side to `http://localhost:8001/api/approvals/...`. The admin
+// identity is the only one allowed to call these endpoints client-side — the
+// ViewToggle is hidden for producers, and the backend independently enforces
+// role=admin on every approval endpoint.
+
+const APPROVALS_URL = "/api/approvals";
+const APPROVALS_TIMEOUT_MS = 15_000;
+
+export type ApprovalDecision = "approve" | "reject" | "override";
+
+// -- Raw backend types (snake_case) ----------------------------------------
+
+interface BackendApprovalIssue {
+  severity: "info" | "warning" | "critical";
+  code: string;
+  message: string;
+}
+
+interface BackendApprovalCheck {
+  name: string;
+  status: "ok" | "warning" | "blocked";
+  detail: string;
+}
+
+/**
+ * `agent_analysis` arrives as EITHER a JSON string (list endpoint) OR a
+ * parsed object (detail endpoint, when the backend already decoded it). We
+ * normalise both shapes to a single `AgentAnalysis` object via
+ * `parseAgentAnalysis`.
+ */
+type RawAgentAnalysis =
+  | string
+  | {
+      issues?: BackendApprovalIssue[];
+      checks?: BackendApprovalCheck[];
+      confidence?: number;
+      proposed_decision?: ProposedDecision;
+      proposed_reason?: string;
+    }
+  | null
+  | undefined;
+
+interface BackendApprovalSummary {
+  id: number;
+  onboarding_id: number;
+  legal_name: string;
+  siret: string;
+  proposed_decision: ProposedDecision;
+  proposed_reason: string;
+  confidence: number;
+  status: ApprovalStatus;
+  created_at: string;
+  agent_analysis: RawAgentAnalysis;
+  // Optional fields populated after a decision is recorded.
+  decided_by?: string | null;
+  decided_at?: string | null;
+  human_reason?: string | null;
+  final_decision?: "approve" | "reject" | "override" | null;
+  rejection_reason?: string | null;
+}
+
+interface BackendApprovalListResponse {
+  approvals: BackendApprovalSummary[];
+}
+
+interface BackendOnboarding {
+  id: number;
+  legal_name: string;
+  siret: string;
+  siret_valid: boolean;
+  email: string;
+  phone: string;
+  declared_address: string;
+  rib_document_present: boolean;
+  id_document_present: boolean;
+  professional_certificate_present: boolean;
+  professional_certificate_expiry: string | null;
+  document_address: string | null;
+  submitted_at: string;
+  status: ApprovalStatus;
+  rejection_reason: string | null;
+}
+
+interface BackendApprovalDetailResponse {
+  approval: BackendApprovalSummary;
+  onboarding: BackendOnboarding;
+}
+
+// -- Mappers (snake_case → camelCase) --------------------------------------
+
+function parseAgentAnalysis(raw: RawAgentAnalysis): AgentAnalysis {
+  // Default-constructed so a malformed/missing payload still renders cleanly.
+  const empty: AgentAnalysis = {
+    issues: [],
+    checks: [],
+    confidence: 0,
+    proposed_decision: "request_info",
+    proposed_reason: "",
+  };
+  if (raw == null) return empty;
+
+  let obj: {
+    issues?: BackendApprovalIssue[];
+    checks?: BackendApprovalCheck[];
+    confidence?: number;
+    proposed_decision?: ProposedDecision;
+    proposed_reason?: string;
+  };
+  if (typeof raw === "string") {
+    if (raw.trim().length === 0) return empty;
+    try {
+      obj = JSON.parse(raw);
+    } catch {
+      // Malformed JSON string — surface an empty analysis rather than
+      // crashing the whole list.
+      return empty;
+    }
+  } else {
+    obj = raw;
+  }
+  return {
+    issues: obj.issues ?? [],
+    checks: obj.checks ?? [],
+    confidence: obj.confidence ?? 0,
+    proposed_decision: obj.proposed_decision ?? "request_info",
+    proposed_reason: obj.proposed_reason ?? "",
+  };
+}
+
+function mapApprovalSummary(
+  a: BackendApprovalSummary,
+): ApprovalSummary {
+  return {
+    id: a.id,
+    onboarding_id: a.onboarding_id,
+    legal_name: a.legal_name,
+    siret: a.siret,
+    proposed_decision: a.proposed_decision,
+    proposed_reason: a.proposed_reason,
+    confidence: a.confidence,
+    status: a.status,
+    created_at: a.created_at,
+    agent_analysis: parseAgentAnalysis(a.agent_analysis),
+    decided_by: a.decided_by ?? null,
+    decided_at: a.decided_at ?? null,
+    human_reason: a.human_reason ?? null,
+    final_decision: a.final_decision ?? null,
+  };
+}
+
+function mapOnboarding(o: BackendOnboarding): OnboardingDossier {
+  return {
+    id: o.id,
+    legal_name: o.legal_name,
+    siret: o.siret,
+    siret_valid: o.siret_valid,
+    email: o.email,
+    phone: o.phone,
+    declared_address: o.declared_address,
+    rib_document_present: o.rib_document_present,
+    id_document_present: o.id_document_present,
+    professional_certificate_present:
+      o.professional_certificate_present,
+    professional_certificate_expiry:
+      o.professional_certificate_expiry,
+    document_address: o.document_address,
+    submitted_at: o.submitted_at,
+    status: o.status,
+    rejection_reason: o.rejection_reason,
+  };
+}
+
+function mapApprovalDetail(
+  r: BackendApprovalDetailResponse,
+): ApprovalDetail {
+  return {
+    approval: mapApprovalSummary(r.approval),
+    onboarding: mapOnboarding(r.onboarding),
+  };
+}
+
+// -- Public API ------------------------------------------------------------
+
+/**
+ * List pending + decided approval requests for the Ops Console.
+ *
+ * `?admin=true` is sent unconditionally — the backend's approval endpoints are
+ * admin-only and the query merely hints "include decided rows". The toggle
+ * itself is admin-gated client-side (ViewToggle hidden for producers), so by
+ * the time this runs we KNOW the active identity is the admin.
+ */
+export async function listApprovals(
+  _identity: Identity,
+): Promise<ApprovalSummary[]> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    APPROVALS_TIMEOUT_MS,
+  );
+
+  try {
+    const res = await fetch(`${APPROVALS_URL}?admin=true`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(
+        `listApprovals → HTTP ${res.status} ${res.statusText}`,
+      );
+    }
+    const json = (await res.json()) as BackendApprovalListResponse;
+    return (json.approvals ?? []).map(mapApprovalSummary);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+/** Fetch full detail (approval + onboarding dossier) for one approval. */
+export async function getApprovalDetail(
+  id: number,
+): Promise<ApprovalDetail> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    APPROVALS_TIMEOUT_MS,
+  );
+
+  try {
+    const res = await fetch(`${APPROVALS_URL}/${id}?admin=true`, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      throw new Error(
+        `getApprovalDetail → HTTP ${res.status} ${res.statusText}`,
+      );
+    }
+    const json = (await res.json()) as BackendApprovalDetailResponse;
+    return mapApprovalDetail(json);
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Record the admin's human-in-the-loop decision on an approval.
+ *
+ * `decision` is one of "approve" | "reject" | "override":
+ *   - approve  → confirm the agent's positive recommendation
+ *   - reject   → confirm the agent's negative recommendation
+ *   - override → invalidate the agent's recommendation (used when the admin
+ *                disagrees — e.g. the agent said REJECT but the admin approves)
+ *
+ * `decided_by` is the admin's identity id (e.g. "admin"). The backend persists
+ * it alongside the reason and the timestamp so the decision is fully traced.
+ */
+export async function decideApproval(
+  id: number,
+  decision: ApprovalDecision,
+  reason: string,
+  decidedBy: string,
+): Promise<ApprovalDetail> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(
+    () => controller.abort(),
+    APPROVALS_TIMEOUT_MS,
+  );
+
+  try {
+    const res = await fetch(`${APPROVALS_URL}/${id}/decide?admin=true`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        decision,
+        reason,
+        decided_by: decidedBy,
+        admin: true,
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `decideApproval → HTTP ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`,
+      );
+    }
+    const json = (await res.json()) as BackendApprovalDetailResponse;
+    return mapApprovalDetail(json);
   } finally {
     window.clearTimeout(timeoutId);
   }

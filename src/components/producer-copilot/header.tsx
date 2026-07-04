@@ -9,6 +9,7 @@ import { Eye, Menu, Settings } from "@/components/ui/feather-icons";
 import { useCopilotStore } from "@/lib/store";
 
 import { BrandLogo } from "./brand-mark";
+import { ViewToggle } from "./view-toggle";
 
 interface HeaderProps {
   onOpenSidebar: () => void;
@@ -45,6 +46,11 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
       >
         Drive Producteur
       </Badge>
+
+      {/* Admin-only view toggle — switches between Producer Copilot and Ops Console.
+          Returns null for producers so the header layout is identical to before.
+          On mobile the labels collapse to icon-only. */}
+      <ViewToggle />
 
       {/* Scope breadcrumb (hidden on small) */}
       <div className="ml-2 hidden items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground lg:flex">

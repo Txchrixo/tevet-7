@@ -3,9 +3,12 @@ import { toast } from "sonner";
 
 import {
   callBackend,
+  decideApproval,
   deleteDocument,
-  listDocuments,
+  getApprovalDetail,
+  listApprovals,
   uploadDocument,
+  type ApprovalDecision,
   type DocumentUploadInput,
 } from "./api";
 import {
@@ -14,6 +17,8 @@ import {
   getMockResponse,
 } from "./mock-data";
 import type {
+  ApprovalDetail,
+  ApprovalSummary,
   AssistantResponse,
   ChatMessage,
   DocumentInfo,
@@ -33,6 +38,13 @@ const MOCK_LATENCY_MIN_MS = 800;
 const MOCK_LATENCY_JITTER_MS = 350;
 /** Sonner toast id used for the demo-mode notice — prevents stacking. */
 const DEMO_TOAST_ID = "tevet7-demo-mode";
+
+/**
+ * The two top-level surfaces the admin can switch between. Producers only ever
+ * see "copilot" — the ViewToggle is admin-only and `setIdentity` forces the
+ * view back to copilot whenever a producer is selected.
+ */
+export type CopilotView = "copilot" | "ops";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -60,6 +72,19 @@ interface CopilotState {
   /** True while an upload or delete is in flight (disables the panel actions). */
   documentMutating: boolean;
 
+  /** Active top-level surface — `ops` is admin-only (forced to `copilot` for producers). */
+  view: CopilotView;
+  /** Approval queue rows for the Ops Console (admin identity only). */
+  approvals: ApprovalSummary[];
+  /** True while `loadApprovals` is in flight. */
+  approvalsLoading: boolean;
+  /** Id of the approval currently selected in the Ops Console list. */
+  selectedApprovalId: number | null;
+  /** Full detail (approval + onboarding dossier) for the selected row. */
+  selectedApprovalDetail: ApprovalDetail | null;
+  /** True while a decision POST is in flight (disables the action buttons). */
+  decisionInFlight: boolean;
+
   setIdentity: (identityId: string) => void;
   sendExample: (questionId: string, label: string) => void;
   sendMessage: (text: string) => void;
@@ -71,6 +96,15 @@ interface CopilotState {
   loadDocuments: () => Promise<void>;
   addDocument: (input: DocumentUploadInput) => Promise<void>;
   removeDocument: (id: number) => Promise<void>;
+
+  setView: (view: CopilotView) => void;
+  loadApprovals: () => Promise<void>;
+  selectApproval: (id: number | null) => Promise<void>;
+  decide: (
+    id: number,
+    decision: ApprovalDecision,
+    reason: string,
+  ) => Promise<void>;
 }
 
 function identityById(id: string): Identity {
@@ -89,8 +123,22 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   documentsLoading: false,
   documentMutating: false,
 
+  view: "copilot",
+  approvals: [],
+  approvalsLoading: false,
+  selectedApprovalId: null,
+  selectedApprovalDetail: null,
+  decisionInFlight: false,
+
   setIdentity: (identityId) => {
     const identity = identityById(identityId);
+    // The Ops Console is admin-only — switching to a producer identity forces
+    // the view back to copilot. When switching TO admin we keep the current
+    // view unchanged (per spec: "don't force ops"), defaulting to copilot if
+    // this is the first time the admin identity is selected.
+    const nextView: CopilotView = identity.kind === "admin"
+      ? get().view
+      : "copilot";
     set({
       identityId,
       identity,
@@ -106,6 +154,13 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       // is re-triggered from the page-level effect that watches identity.
       documents: [],
       documentsLoading: true,
+      // Reset the Ops Console state — the new identity may not be allowed to
+      // see approvals at all, and even if it is the queue must be re-fetched.
+      view: nextView,
+      approvals: [],
+      approvalsLoading: false,
+      selectedApprovalId: null,
+      selectedApprovalDetail: null,
     });
     // Dismiss any lingering demo-mode notice when the scope changes.
     toast.dismiss(DEMO_TOAST_ID);
@@ -213,6 +268,120 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       });
     } finally {
       set({ documentMutating: false });
+    }
+  },
+
+  // -----------------------------------------------------------------------
+  // Ops Console — approval queue (admin-only)
+  // -----------------------------------------------------------------------
+
+  setView: (view) => {
+    const identity = get().identity;
+    // Defensive: producers can never enter the ops view. The ViewToggle is
+    // hidden for them, but this guard also catches any client-side race.
+    const next: CopilotView =
+      view === "ops" && identity.kind !== "admin" ? "copilot" : view;
+    set({ view: next });
+    // Per spec — loading the approvals happens when the view switches to ops.
+    if (next === "ops") {
+      void get().loadApprovals();
+    }
+  },
+
+  loadApprovals: async () => {
+    const identity = get().identity;
+    if (identity.kind !== "admin") {
+      // Hard guard — even if a producer somehow calls this, do not hit the
+      // admin-only endpoint. The backend would reject anyway, but we avoid
+      // the network round-trip and the noisy 403.
+      set({ approvals: [], approvalsLoading: false });
+      return;
+    }
+    set({ approvalsLoading: true });
+    try {
+      const approvals = await listApprovals(identity);
+      set({ approvals, approvalsLoading: false });
+    } catch (err) {
+      console.warn(
+        "Approvals backend unreachable, leaving queue empty",
+        err instanceof Error ? err.message : err,
+      );
+      set({ approvals: [], approvalsLoading: false });
+      toast.error("Ops Console injoignable", {
+        description:
+          err instanceof Error
+            ? err.message
+            : "Le backend Tevet-7 est injoignable.",
+      });
+    }
+  },
+
+  selectApproval: async (id) => {
+    if (id === null) {
+      set({ selectedApprovalId: null, selectedApprovalDetail: null });
+      return;
+    }
+    set({ selectedApprovalId: id, selectedApprovalDetail: null });
+    try {
+      const detail = await getApprovalDetail(id);
+      // Guard against races: only commit if the user hasn't selected another
+      // row while this fetch was in flight.
+      if (get().selectedApprovalId === id) {
+        set({ selectedApprovalDetail: detail });
+      }
+    } catch (err) {
+      console.warn(
+        "Approval detail fetch failed",
+        err instanceof Error ? err.message : err,
+      );
+      if (get().selectedApprovalId === id) {
+        set({ selectedApprovalDetail: null });
+      }
+      toast.error("Dossier injoignable", {
+        description:
+          err instanceof Error ? err.message : "Backend Tevet-7 injoignable.",
+      });
+    }
+  },
+
+  decide: async (id, decision, reason) => {
+    if (get().decisionInFlight) return;
+    const identity = get().identity;
+    if (identity.kind !== "admin") return;
+    set({ decisionInFlight: true });
+    try {
+      const detail = await decideApproval(
+        id,
+        decision,
+        reason,
+        identity.id,
+      );
+      toast.success("Décision enregistrée", {
+        description: `${detail.approval.legal_name} · ${
+          decision === "approve"
+            ? "Approuvé"
+            : decision === "reject"
+              ? "Rejeté"
+              : "Outrepassé"
+        }`,
+      });
+      // Update the selected detail in place + refresh the list so the row
+      // moves to the "decided" group with its new status badge.
+      set({
+        selectedApprovalDetail: detail,
+        decisionInFlight: false,
+      });
+      await get().loadApprovals();
+    } catch (err) {
+      console.warn(
+        "Decide failed",
+        err instanceof Error ? err.message : err,
+      );
+      set({ decisionInFlight: false });
+      toast.error("Décision échouée", {
+        description:
+          err instanceof Error ? err.message : "Backend Tevet-7 injoignable.",
+      });
     }
   },
 }));

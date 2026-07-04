@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Tevet-7 eval suite — 35-case acceptance-criteria scorer.
+"""Tevet-7 eval suite — 38-case acceptance-criteria scorer.
 
-Runs the 35 natural-language questions in ``dataset.json`` against the
+Runs the 38 natural-language questions in ``dataset.json`` against the
 Tevet-7 backend at ``http://localhost:8001/api/chat`` and scores:
 
   - % SQL valid          (sql_expected=true cases where SQL is present
@@ -14,10 +14,9 @@ Tevet-7 backend at ``http://localhost:8001/api/chat`` and scores:
                               matches the API contract)
 
 This is the interview argument n°2 (after the 8 security tests):
-"I have a 35-case eval suite that scores the agent on real acceptance
-criteria, not vibes." The 5 documentary cases (Phase 3) extend the
-original 30 analytical/security cases — they assert sources non-empty,
-chart null, and answer-needle matches over the FTS5-retrieved chunks.
+"I have a 38-case eval suite that scores the agent on real acceptance
+criteria, not vibes." The 5 documentary cases (Phase 3) + 3 Ops Copilot
+cases (Phase 4) extend the original 30 analytical/security cases.
 
 Exit codes
 ----------
@@ -167,6 +166,7 @@ def run_assertions(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
     actual_answer = response.get("answer") or ""
     actual_chart = response.get("chart")
     actual_sources = response.get("sources") or []
+    actual_ops = response.get("ops_analysis")
 
     # 1. Intent match (extracted from steps[0].detail)
     if "intent" in expected and expected["intent"] is not None:
@@ -234,6 +234,27 @@ def run_assertions(case: dict[str, Any], response: dict[str, Any]) -> list[str]:
     if expected.get("sources_non_empty"):
         if not actual_sources:
             reasons.append("Expected non-empty sources, got empty list")
+
+    # 10. Ops analysis present (Phase 4 ops_copilot cases).
+    if expected.get("ops_analysis_present"):
+        if not actual_ops:
+            reasons.append("Expected ops_analysis present, got null/missing")
+
+    # 11. Ops proposed_decision match (Phase 4 ops_copilot cases).
+    if expected.get("ops_proposed_decision"):
+        expected_decision = expected["ops_proposed_decision"]
+        if not actual_ops:
+            reasons.append(
+                f"Expected ops_analysis.proposed_decision={expected_decision!r}, "
+                "but ops_analysis is null"
+            )
+        else:
+            actual_decision = actual_ops.get("proposed_decision")
+            if actual_decision != expected_decision:
+                reasons.append(
+                    f"Expected ops_analysis.proposed_decision={expected_decision!r}, "
+                    f"got {actual_decision!r}"
+                )
 
     return reasons
 
@@ -324,6 +345,9 @@ async def run_case(
             if response.get("sql")
             else [],
             "http_error": response.get("_error"),
+            "ops_proposed_decision": (response.get("ops_analysis") or {}).get(
+                "proposed_decision"
+            ) if response.get("ops_analysis") else None,
         },
     }
 

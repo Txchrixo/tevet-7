@@ -564,5 +564,59 @@
       "sources_non_empty": true
     },
     "description": "Phase 3 documentary case — producer 42 asks how to add a product to their catalog. classify_question matches 'comment' + 'ajouter' + 'catalogue' (doc keywords) → documentary. RAG retrieves the FAQ 'Comment ajouter un produit à mon catalogue ?' chunk. Answer must mention 'catalogue' or 'produit', sources non-empty."
+  },
+  {
+    "id": "eval-036",
+    "category": "ops_copilot",
+    "question": "Analyse le dossier d onboarding de Ferme des Collines",
+    "identity": {"identity_id": "ops", "producer_id": null, "role": "admin"},
+    "expected": {
+      "intent": "ops_analysis",
+      "refused": false,
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "tables_allowed": null,
+      "answer_contains_any": ["Ferme des Collines", "APPROUVER", "approve"],
+      "chart_expected": false,
+      "ops_analysis_present": true,
+      "ops_proposed_decision": "approve"
+    },
+    "description": "Phase 4 Ops Copilot case — admin asks the agent to pre-analyze the 'Ferme des Collines' onboarding dossier. classify_question matches 'analyse le dossier d onboarding' (ops keyword) → ops_analysis. _run_ops_copilot resolves the dossier by name, calls OpsCopilotAgent.analyze_onboarding() which runs 5 checks (SIRET ok, documents ok, address ok, cert ok) and proposes APPROVE with high confidence. Response must include the ops_analysis dict with proposed_decision='approve'."
+  },
+  {
+    "id": "eval-037",
+    "category": "ops_copilot",
+    "question": "Analyse le dossier d onboarding de Maraîchage Bio Soleil",
+    "identity": {"identity_id": "ops", "producer_id": null, "role": "admin"},
+    "expected": {
+      "intent": "ops_analysis",
+      "refused": false,
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "tables_allowed": null,
+      "answer_contains_any": ["Maraîchage Bio Soleil", "COMPLÉTER", "request_info", "manquant"],
+      "chart_expected": false,
+      "ops_analysis_present": true,
+      "ops_proposed_decision": "request_info"
+    },
+    "description": "Phase 4 Ops Copilot case — admin asks the agent to pre-analyze the 'Maraîchage Bio Soleil' dossier (missing professional certificate). classify_question matches 'analyse le dossier d onboarding' → ops_analysis. OpsCopilotAgent runs the documents check which flags the missing cert (severity=missing) → proposed_decision='request_info'. Response must include ops_analysis.proposed_decision='request_info' and the answer must mention 'COMPLÉTER' or 'manquant'."
+  },
+  {
+    "id": "eval-038",
+    "category": "ops_copilot",
+    "question": "Analyse le dossier d onboarding de Vignoble des Coteaux",
+    "identity": {"identity_id": "ops", "producer_id": null, "role": "admin"},
+    "expected": {
+      "intent": "ops_analysis",
+      "refused": false,
+      "sql_expected": false,
+      "scope_clause_contains": null,
+      "tables_allowed": null,
+      "answer_contains_any": ["Vignoble des Coteaux", "REJETER", "reject", "incohérent", "expiré"],
+      "chart_expected": false,
+      "ops_analysis_present": true,
+      "ops_proposed_decision": "reject"
+    },
+    "description": "Phase 4 Ops Copilot case — admin asks the agent to pre-analyze the 'Vignoble des Coteaux' dossier (address mismatch + expired cert). classify_question matches 'analyse le dossier d onboarding' → ops_analysis. OpsCopilotAgent runs the address check (declared_address 'Beaune' vs document_address 'Chalon-sur-Saône' → Jaccard < 0.5 → blocker) + the cert expiry check (2023-05-01 < today → blocker) → proposed_decision='reject'. Response must include ops_analysis.proposed_decision='reject' and the answer must mention 'REJETER' or 'incohérent'/'expiré'."
   }
 ]

@@ -37,6 +37,18 @@ logger = logging.getLogger("tevet7.orchestrator")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Ops Copilot — known onboarding dossier names (Phase 4)
+# ─────────────────────────────────────────────────────────────────────────────
+# Used by ``_run_ops_copilot`` to map a free-text question like
+# "Analyse le dossier d'onboarding de Ferme des Collines" to a
+# producer_onboardings row. Loaded lazily on the first ops_analysis request.
+#
+# We don't ship a hardcoded list — we load the names from the DB so new
+# dossiers submitted after startup are also resolvable through chat.
+_OPS_ONBOARDING_NAMES: list[tuple[int, str]] | None = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # No-op tracer (used when callers don't supply one)
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -138,6 +150,12 @@ class AgentResponse:
     tables_touched: list[str] = field(default_factory=list)
     sources: list[dict[str, Any]] = field(default_factory=list)
     trace_url: str | None = None
+    # Phase 4 — Ops Copilot HITL: when the intent is ``ops_analysis``, this
+    # field carries the full ``OpsAnalysis.to_dict()`` (issues,
+    # proposed_decision, proposed_reason, confidence, checks, …) so the
+    # chat endpoint can surface it in the JSON response. ``None`` for all
+    # other intents.
+    ops_analysis: dict[str, Any] | None = None
     # Phase 2 tracing — id of the row written to the ``traces`` table (and
     # optionally to Langfuse). ``None`` means tracing was disabled.
     trace_id: str | None = None
@@ -149,18 +167,27 @@ class AgentResponse:
 
 
 def classify_question(question: str, role: str) -> str:
-    """Return one of: top_products | stock_shortfall | net_revenue |
-    weekly_sales | cross_producer | documentary | unknown.
+    """Return one of: ops_analysis | top_products | stock_shortfall |
+    net_revenue | weekly_sales | cross_producer | documentary | unknown.
 
     Used by the formatter to pick the right answer template. The
     RuleBasedSQLGenerator mirrors this branching — keep them in sync.
 
-    Classification priority (Phase 3):
+    Classification priority (Phase 4):
         1. cross_producer  — admin-only aggregation across producers.
-        2. analytical (strong signals) — top_products, stock_shortfall, weekly_sales.
-        3. documentary     — CGV / FAQ / onboarding / retrait questions.
-        4. net_revenue     — money questions ("commission", "gagné", "chiffre", ...).
-        5. unknown         — fallback.
+        2. ops_analysis    — admin-only Ops Copilot onboarding analysis
+                             ("analyse le dossier", "valider un producteur",
+                             "dossier d'onboarding", …).
+        3. analytical (strong signals) — top_products, stock_shortfall,
+                                          weekly_sales.
+        4. documentary     — CGV / FAQ / onboarding / retrait questions.
+        5. net_revenue     — money questions ("commission", "gagné", …).
+        6. unknown         — fallback.
+
+    The ``ops_analysis`` intent is checked ABOVE documentary so a question
+    like "Analyse le dossier d'onboarding de Ferme des Collines" routes to
+    the Ops Copilot agent (not the RAG documentary retriever) even though
+    it contains "onboarding" (a documentary keyword).
 
     The documentary intent is detected when the question contains policy
     keywords ("comment", "quoi", "quelle", "procédure", "CGV", "FAQ",
@@ -181,7 +208,32 @@ def classify_question(question: str, role: str) -> str:
     if "producteur" in q and ("commande" in q or "vente" in q):
         return "cross_producer"
 
-    # 2. analytical intents with strong, unambiguous signals.
+    # 2. ops_analysis — admin-only Ops Copilot onboarding pre-analysis.
+    #    Trigger phrases:
+    #      - "analyse le dossier" / "analyser le dossier" / "analyse du dossier"
+    #      - "dossier d onboarding" / "dossier d'onboarding"
+    #      - "analyse le producteur" / "analyser le producteur"
+    #      - "pré-analyse" / "pre-analyse" / "preanalyse"
+    #    We deliberately do NOT trigger on bare "valider un producteur" or
+    #    bare "onboarding" — those are documentary keywords ("Quelles pièces
+    #    sont nécessaires pour valider un producteur ?" is a doc question
+    #    about the onboarding procedure, NOT an ops analysis request). The
+    #    distinguishing factor is the verb "analyse" / "analyser" or the
+    #    compound noun "dossier d'onboarding".
+    ops_keywords = (
+        "analyse le dossier", "analyser le dossier", "analyse du dossier",
+        "analyse le dossier d onboarding", "analyse le dossier d'onboarding",
+        "dossier d onboarding", "dossier d'onboarding",
+        "valider un dossier", "valider le dossier",
+        "pré-analyse", "pre-analyse", "preanalyse",
+        "analyse le producteur", "analyser le producteur",
+        "analyse l onboarding", "analyser l onboarding",
+        "analyse l'onboarding", "analyser l'onboarding",
+    )
+    if any(k in q for k in ops_keywords):
+        return "ops_analysis"
+
+    # 3. analytical intents with strong, unambiguous signals.
     if ("produit" in q or "vendu" in q or "vente" in q) and (
         "top" in q or "plus" in q or "best" in q or "meilleur" in q
     ):
@@ -191,7 +243,7 @@ def classify_question(question: str, role: str) -> str:
     if any(k in q for k in ("résumé", "resume", "semaine", "synthèse", "synthese")):
         return "weekly_sales"
 
-    # 3. documentary — policy / FAQ / procedure questions.
+    # 4. documentary — policy / FAQ / procedure questions.
     #    Checked BEFORE net_revenue so "Comment fonctionnent les
     #    commissions ?" routes to RAG (not to the revenue SQL).
     #    NOTE: we deliberately do NOT include "quel"/"quelle" here — too
@@ -212,14 +264,14 @@ def classify_question(question: str, role: str) -> str:
     if any(k in q for k in doc_keywords):
         return "documentary"
 
-    # 4. net_revenue — money questions without a documentary keyword.
+    # 5. net_revenue — money questions without a documentary keyword.
     if any(
         k in q for k in
         ("gagné", "gagne", "net", "commission", "chiffre", "ca ", "revenu", "recette")
     ):
         return "net_revenue"
 
-    # 5. unknown.
+    # 6. unknown.
     return "unknown"
 
 
@@ -805,10 +857,17 @@ class AgentOrchestrator:
             )
 
         # Step 2 — tool selection (sql_read_tool for analytical intents,
-        # rag_search for documentary). The documentary branch routes to
-        # ``_run_documentary`` right after; the analytical branch keeps
-        # the existing SQL generation/validation/execution pipeline.
-        selected_tool = "rag_search" if intent == "documentary" else "sql_read_tool"
+        # rag_search for documentary, ops_copilot for ops_analysis). The
+        # documentary branch routes to ``_run_documentary`` right after;
+        # the ops_analysis branch routes to ``_run_ops_copilot``;
+        # the analytical branch keeps the existing SQL generation/validation/
+        # execution pipeline.
+        if intent == "ops_analysis":
+            selected_tool = "ops_copilot"
+        elif intent == "documentary":
+            selected_tool = "rag_search"
+        else:
+            selected_tool = "sql_read_tool"
         steps.append(
             StepTrace(
                 index=2,
@@ -819,6 +878,15 @@ class AgentOrchestrator:
             )
         )
         self.tracer.end_span(ctx, span, status="ok", tool=selected_tool)
+
+        # ── Phase 4 — ops_analysis intent: route to OpsCopilotAgent ──
+        # Admin-only: producers asking for an onboarding pre-analysis are
+        # refused with the same shape as the cross_producer refusal
+        # (security_checks + steps + polite French message).
+        if intent == "ops_analysis":
+            if self.role != "admin":
+                return self._build_ops_refusal(steps, started_at)
+            return await self._run_ops_copilot(user_message, ctx, started_at, steps)
 
         # ── Phase 3 — documentary intent: route to RagSearchTool ──
         # We intercept BEFORE SQL generation because documentary questions
@@ -1282,3 +1350,390 @@ class AgentOrchestrator:
             tables_touched=["document_chunks_fts", "document_chunks", "documents"],
             sources=sources,
         )
+
+    # ───────────────────────────────────────────────────────────────────────
+    # Phase 4 — ops_analysis intent (Ops Copilot HITL path)
+    # ───────────────────────────────────────────────────────────────────────
+    def _build_ops_refusal(
+        self,
+        steps: list[StepTrace],
+        started_at: float,
+    ) -> AgentResponse:
+        """Build the refusal returned when a non-admin asks for an ops analysis.
+
+        Same shape as the cross_producer refusal (steps 3-6 with status
+        "blocked" + a polite French message) so the inspector UI renders a
+        consistent refusal regardless of which guard fired.
+        """
+        security_checks = [
+            SecurityCheck("Read-only", "ok", "N/A — requête non exécutée"),
+            SecurityCheck(
+                "Scope appliqué", "blocked",
+                "Violation : ops analysis réservée à l'admin Ops",
+            ),
+            SecurityCheck("Tables autorisées", "ok", "N/A"),
+            SecurityCheck("LIMIT 1000", "ok", "N/A"),
+        ]
+        for next_idx, (title, detail, status) in enumerate(
+            [
+                ("Validation sqlglot", "Ops Copilot : accès admin requis.", "blocked"),
+                ("Exécution read-only", "Action refusée — ops analysis est admin-only", "blocked"),
+                ("Synthèse", "Refus formaté.", "blocked"),
+            ],
+            start=3,
+        ):
+            tt = time.monotonic()
+            steps.append(
+                StepTrace(
+                    index=next_idx,
+                    title=title,
+                    detail=detail,
+                    status=status,
+                    duration_ms=int((time.monotonic() - tt) * 1000),
+                )
+            )
+        return AgentResponse(
+            answer=(
+                "L'analyse préalable des dossiers d'onboarding est réservée à "
+                "l'équipe Ops Drive Producteur (rôle admin). En tant que producteur, "
+                "vous ne pouvez pas demander cette analyse. Si vous avez une question "
+                "sur votre propre dossier, contactez l'équipe Ops qui dispose d'un "
+                "accès admin."
+            ),
+            sql=None,
+            scope_clause=None,
+            chart=None,
+            tokens_in=480,
+            tokens_out=120,
+            latency_ms=int((time.monotonic() - started_at) * 1000),
+            tool_calls=[],
+            steps=[s.__dict__ for s in steps],
+            security_checks=[s.__dict__ for s in security_checks],
+            refused=True,
+            tables_touched=[],
+        )
+
+    async def _run_ops_copilot(
+        self,
+        user_message: str,
+        ctx: TraceContext,
+        started_at: float,
+        steps: list[StepTrace],
+    ) -> AgentResponse:
+        """Ops Copilot intent: resolve the dossier by name → analyze → respond.
+
+        Flow:
+          3. Résolution du dossier (name → onboarding_id, SQL SELECT)
+          4. Pré-analyse OpsCopilotAgent (5 checks + recommendation)
+          5. Synthèse avec décision proposée (FR)
+          6. Réponse finalisée + ops_analysis dict attached
+
+        Security checks:
+          - Scope appliqué     : admin-only intent (already gated upstream)
+          - Dossier résolu     : ok | warning (dossier introuvable)
+          - Décision proposée  : approve | reject | request_info
+
+        If the dossier name cannot be resolved from the message, returns a
+        polite "dossier introuvable" answer with the list of known names
+        (so the user can retry with an exact match).
+        """
+        # Lazy import to avoid circular dependency at module load time.
+        from app.agents.ops_copilot import OpsCopilotAgent
+        from sqlalchemy import select as _select
+
+        from app.db_seed import get_engine, producer_onboardings
+
+        # ── Step 3 — dossier resolution ──
+        span = self.tracer.start_span(ctx, "ops_dossier_resolution")
+        t = time.monotonic()
+        onboarding_dict, resolution_detail = await self._resolve_onboarding(
+            user_message
+        )
+        steps.append(
+            StepTrace(
+                index=3,
+                title="Résolution du dossier",
+                detail=resolution_detail,
+                status="ok" if onboarding_dict else "blocked",
+                duration_ms=int((time.monotonic() - t) * 1000),
+            )
+        )
+        self.tracer.end_span(
+            ctx, span,
+            status="ok" if onboarding_dict else "blocked",
+            onboarding_id=(onboarding_dict or {}).get("id"),
+        )
+
+        if onboarding_dict is None:
+            # Dossier not found — return a polite message + the known names.
+            known = await self._known_onboarding_names()
+            known_str = ", ".join(known) if known else "(aucun dossier en base)"
+            answer = (
+                "Je n'ai pas pu identifier le dossier d'onboarding visé par votre "
+                "demande. Veuillez préciser le nom exact (raison sociale) du "
+                "producteur. Dossiers actuellement en base : " + known_str + "."
+            )
+            security_checks = [
+                SecurityCheck("Scope appliqué", "ok", "admin — accès tous dossiers"),
+                SecurityCheck("Dossier résolu", "warning", "Nom non reconnu"),
+                SecurityCheck("Décision proposée", "blocked", "N/A — dossier introuvable"),
+            ]
+            return AgentResponse(
+                answer=answer,
+                sql=None,
+                scope_clause=None,
+                chart=None,
+                tokens_in=350,
+                tokens_out=120,
+                latency_ms=int((time.monotonic() - started_at) * 1000),
+                tool_calls=["ops_copilot"],
+                steps=[s.__dict__ for s in steps],
+                security_checks=[s.__dict__ for s in security_checks],
+                refused=False,
+                tables_touched=["producer_onboardings"],
+                ops_analysis=None,
+            )
+
+        # ── Step 4 — OpsCopilotAgent pre-analysis ──
+        span = self.tracer.start_span(ctx, "ops_pre_analysis")
+        t = time.monotonic()
+        agent = OpsCopilotAgent(tracer=self.tracer)
+        analysis = await agent.analyze_onboarding(onboarding_dict)
+        analysis_dict = analysis.to_dict()
+        steps.append(
+            StepTrace(
+                index=4,
+                title="Pré-analyse Ops Copilot",
+                detail=(
+                    f"Décision proposée : {analysis.proposed_decision} "
+                    f"(confiance {analysis.confidence} %, "
+                    f"{len(analysis.issues)} issue(s) détectée(s))."
+                ),
+                status="ok",
+                duration_ms=int((time.monotonic() - t) * 1000),
+            )
+        )
+        self.tracer.end_span(
+            ctx, span, status="ok",
+            proposed_decision=analysis.proposed_decision,
+            confidence=analysis.confidence,
+            issues_count=len(analysis.issues),
+            trace_id=analysis.trace_id,
+        )
+
+        # ── Step 5 — synthèse (FR human-readable answer) ──
+        span = self.tracer.start_span(ctx, "ops_synthesis")
+        t = time.monotonic()
+        answer = self._format_ops_answer(analysis)
+        steps.append(
+            StepTrace(
+                index=5,
+                title="Synthèse avec décision proposée",
+                detail=(
+                    f"Recommandation : {analysis.proposed_decision} — "
+                    f"{len(analysis.issues)} issue(s)."
+                ),
+                status="ok",
+                duration_ms=int((time.monotonic() - t) * 1000),
+            )
+        )
+        self.tracer.end_span(
+            ctx, span, status="ok",
+            proposed_decision=analysis.proposed_decision,
+        )
+
+        # ── Step 6 — réponse finalisée ──
+        span = self.tracer.start_span(ctx, "ops_response")
+        t = time.monotonic()
+        steps.append(
+            StepTrace(
+                index=6,
+                title="Réponse finalisée",
+                detail=(
+                    f"Analyse prête — en attente de validation humaine "
+                    f"(trace_id={analysis.trace_id})."
+                ),
+                status="ok",
+                duration_ms=int((time.monotonic() - t) * 1000),
+            )
+        )
+        self.tracer.end_span(ctx, span, status="ok", trace_id=analysis.trace_id)
+
+        # Security checks for ops_analysis.
+        security_checks = [
+            SecurityCheck("Scope appliqué", "ok", "admin — accès tous dossiers"),
+            SecurityCheck(
+                "Dossier résolu", "ok",
+                f"id={onboarding_dict['id']} legal_name={onboarding_dict['legal_name']!r}",
+            ),
+            SecurityCheck(
+                "Décision proposée",
+                "ok" if analysis.proposed_decision == "approve" else "warning",
+                f"{analysis.proposed_decision} (confiance {analysis.confidence} %) — "
+                f"en attente de validation humaine",
+            ),
+        ]
+
+        return AgentResponse(
+            answer=answer,
+            sql=None,                       # ops_analysis → no SQL on the response
+            scope_clause=None,              # admin-only intent (no producer scoping)
+            chart=None,                     # ops_analysis → no chart
+            tokens_in=600,
+            tokens_out=320,
+            latency_ms=int((time.monotonic() - started_at) * 1000),
+            tool_calls=["ops_copilot"],
+            steps=[s.__dict__ for s in steps],
+            security_checks=[s.__dict__ for s in security_checks],
+            refused=False,
+            tables_touched=["producer_onboardings"],
+            ops_analysis=analysis_dict,
+        )
+
+    @staticmethod
+    def _format_ops_answer(analysis: Any) -> str:
+        """Build a French markdown answer that wraps the agent's
+        ``proposed_reason`` + a one-line summary table of the checks.
+
+        The answer is intentionally short — the full structured analysis
+        lives in the ``ops_analysis`` field of the AgentResponse (which the
+        chat endpoint serialises alongside the answer). The admin UI is
+        expected to render both.
+        """
+        decision_label = {
+            "approve": "✅ APPROUVER",
+            "reject": "❌ REJETER",
+            "request_info": "ℹ️ COMPLÉTER LE DOSSIER",
+        }.get(analysis.proposed_decision, analysis.proposed_decision.upper())
+        lines = [
+            f"**Pré-analyse du dossier « {analysis.legal_name} »**",
+            "",
+            f"- **Décision proposée** : {decision_label}",
+            f"- **Confiance** : {analysis.confidence} %",
+            f"- **SIRET** : `{analysis.siret}`",
+            f"- **Issues détectées** : {len(analysis.issues)}",
+            "",
+            "**Motivation** :",
+            "",
+            analysis.proposed_reason,
+            "",
+            "**Checks** :",
+            "",
+            "| Check | Statut | Détail |",
+            "|---|---|---|",
+        ]
+        for c in analysis.checks:
+            status_emoji = {
+                "ok": "✅", "warning": "⚠️", "blocked": "🚫",
+            }.get(c.status, c.status)
+            lines.append(
+                f"| {c.name} | {status_emoji} {c.status} | {c.detail} |"
+            )
+        lines.append("")
+        lines.append(
+            "*L'agent ne valide jamais le dossier seul — la décision finale "
+            "revient à un administrateur Ops via `/api/approvals/{id}/decide`.*"
+        )
+        return "\n".join(lines)
+
+    async def _resolve_onboarding(
+        self, user_message: str
+    ) -> tuple[dict[str, Any] | None, str]:
+        """Find the onboarding dossier whose ``legal_name`` appears in the message.
+
+        Returns ``(dossier_dict, detail_string)``. ``dossier_dict`` is None
+        when no match is found (the detail string then lists the known names
+        so the caller can render a helpful message).
+        """
+        from sqlalchemy import select as _select
+
+        from app.db_seed import get_engine, producer_onboardings
+
+        global _OPS_ONBOARDING_NAMES
+        engine = get_engine()
+        # Always re-read the onboarding rows — there may be new ones since
+        # the last call (uploads via the API). The cost is one SELECT
+        # per ops_analysis chat request; fine for the demo.
+        try:
+            async with engine.connect() as conn:
+                r = await conn.execute(
+                    _select(
+                        producer_onboardings.c.id,
+                        producer_onboardings.c.legal_name,
+                        producer_onboardings.c.siret,
+                        producer_onboardings.c.siret_valid,
+                        producer_onboardings.c.email,
+                        producer_onboardings.c.phone,
+                        producer_onboardings.c.declared_address,
+                        producer_onboardings.c.document_address,
+                        producer_onboardings.c.rib_document_present,
+                        producer_onboardings.c.id_document_present,
+                        producer_onboardings.c.professional_certificate_present,
+                        producer_onboardings.c.professional_certificate_expiry,
+                        producer_onboardings.c.tenant_id,
+                    )
+                )
+                rows = r.fetchall()
+        except Exception:  # noqa: BLE001
+            rows = []
+        _OPS_ONBOARDING_NAMES = [(row.id, row.legal_name) for row in rows]
+
+        if not rows:
+            return None, "Aucun dossier d'onboarding en base"
+
+        msg_lower = user_message.lower()
+        # Score each dossier by how many of its significant tokens appear
+        # in the message. Pick the highest-scoring one (with a tie-break
+        # on shorter name = more specific match).
+        best: tuple[float, Any] | None = None  # (score, row)
+        for row in rows:
+            name = row.legal_name or ""
+            # Tokenise the name (drop French stopwords + 1-char tokens).
+            tokens = [
+                t for t in name.lower().split()
+                if len(t) > 2 and t not in {"les", "des", "du", "de", "la", "le", "et"}
+            ]
+            if not tokens:
+                continue
+            hits = sum(1 for t in tokens if t in msg_lower)
+            # Exact name substring → instant win.
+            if name.lower() in msg_lower:
+                return (
+                    dict(row._mapping),
+                    f"Dossier « {name} » (id={row.id}) — match exact",
+                )
+            score = hits / len(tokens)
+            if best is None or score > best[0] or (score == best[0] and len(name) < len(best[1].legal_name or "")):
+                best = (score, row)
+
+        if best is not None and best[0] >= 0.5:
+            row = best[1]
+            return (
+                dict(row._mapping),
+                f"Dossier « {row.legal_name} » (id={row.id}) — match {int(best[0] * 100)} %",
+            )
+        known = ", ".join(r.legal_name for r in rows)
+        return None, f"Dossier non reconnu. Dossiers connus : {known}."
+
+    async def _known_onboarding_names(self) -> list[str]:
+        """Return the list of known onboarding legal_names (for the not-found message)."""
+        global _OPS_ONBOARDING_NAMES
+        if _OPS_ONBOARDING_NAMES is None:
+            try:
+                from sqlalchemy import select as _select
+
+                from app.db_seed import get_engine, producer_onboardings
+
+                engine = get_engine()
+                async with engine.connect() as conn:
+                    r = await conn.execute(
+                        _select(
+                            producer_onboardings.c.id, producer_onboardings.c.legal_name
+                        )
+                    )
+                    _OPS_ONBOARDING_NAMES = [
+                        (row.id, row.legal_name) for row in r.fetchall()
+                    ]
+            except Exception:  # noqa: BLE001
+                _OPS_ONBOARDING_NAMES = []
+        return [name for _id, name in _OPS_ONBOARDING_NAMES]

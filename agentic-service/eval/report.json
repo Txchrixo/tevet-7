@@ -1,7 +1,7 @@
 {
-  "total_cases": 35,
-  "evaluable_cases": 34,
-  "passed": 34,
+  "total_cases": 38,
+  "evaluable_cases": 37,
+  "passed": 37,
   "overall_pass_rate": 1.0,
   "sql_valid": {
     "pass": 22,
@@ -9,18 +9,18 @@
     "pct": 1.0
   },
   "scopes_respected": {
-    "pass": 34,
-    "total": 34,
+    "pass": 37,
+    "total": 37,
     "pct": 1.0
   },
   "intents_correct": {
-    "pass": 34,
-    "total": 34,
+    "pass": 37,
+    "total": 37,
     "pct": 1.0
   },
   "responses_well_formed": {
-    "pass": 27,
-    "total": 27,
+    "pass": 30,
+    "total": 30,
     "pct": 1.0
   },
   "expected_to_fail": {
@@ -69,6 +69,10 @@
     "documentary": {
       "pass": 5,
       "total": 5
+    },
+    "ops_copilot": {
+      "pass": 3,
+      "total": 3
     }
   },
   "cases": [
@@ -98,7 +102,8 @@
           "products",
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -128,7 +133,8 @@
           "products",
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -158,7 +164,8 @@
           "products",
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -188,7 +195,8 @@
           "products",
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -217,7 +225,8 @@
         "chart_present": false,
         "tables_touched": [],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -247,7 +256,8 @@
           "products",
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -275,7 +285,8 @@
           "stocks",
           "products"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -303,7 +314,8 @@
           "stocks",
           "products"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -331,7 +343,8 @@
           "stocks",
           "products"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -359,7 +372,8 @@
           "stocks",
           "products"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -387,7 +401,8 @@
           "stocks",
           "products"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -413,7 +428,8 @@
         "tables_in_sql": [
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -439,7 +455,8 @@
         "tables_in_sql": [
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -465,7 +482,8 @@
         "tables_in_sql": [
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -491,7 +509,8 @@
         "tables_in_sql": [
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -517,7 +536,8 @@
         "tables_in_sql": [
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -543,7 +563,8 @@
         "tables_in_sql": [
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -569,7 +590,8 @@
         "tables_in_sql": [
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -595,7 +617,8 @@
         "tables_in_sql": [
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -621,7 +644,8 @@
         "tables_in_sql": [
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -643,7 +667,8 @@
         "chart_present": false,
         "tables_touched": [],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -665,7 +690,8 @@
         "chart_present": false,
         "tables_touched": [],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -693,7 +719,8 @@
           "producers",
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -715,7 +742,8 @@
         "chart_present": false,
         "tables_touched": [],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -743,7 +771,8 @@
           "producers",
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -765,7 +794,8 @@
         "chart_present": false,
         "tables_touched": [],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -791,7 +821,8 @@
         "tables_in_sql": [
           "orders"
         ],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -813,7 +844,8 @@
         "chart_present": false,
         "tables_touched": [],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -835,7 +867,8 @@
         "chart_present": false,
         "tables_touched": [],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -857,7 +890,8 @@
         "chart_present": false,
         "tables_touched": [],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -883,7 +917,8 @@
           "documents"
         ],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -909,7 +944,8 @@
           "documents"
         ],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -935,7 +971,8 @@
           "documents"
         ],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -961,7 +998,8 @@
           "documents"
         ],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
       },
       "retried": false
     },
@@ -987,7 +1025,83 @@
           "documents"
         ],
         "tables_in_sql": [],
-        "http_error": null
+        "http_error": null,
+        "ops_proposed_decision": null
+      },
+      "retried": false
+    },
+    {
+      "id": "eval-036",
+      "category": "ops_copilot",
+      "question": "Analyse le dossier d onboarding de Ferme des Collines",
+      "description": "Phase 4 Ops Copilot case — admin asks the agent to pre-analyze the 'Ferme des Collines' onboarding dossier. classify_question matches 'analyse le dossier d onboarding' (ops keyword) → ops_analysis. _run_ops_copilot resolves the dossier by name, calls OpsCopilotAgent.analyze_onboarding() which runs 5 checks (SIRET ok, documents ok, address ok, cert ok) and proposes APPROVE with high confidence. Response must include the ops_analysis dict with proposed_decision='approve'.",
+      "expected_to_fail": false,
+      "passed": true,
+      "failure_reasons": [],
+      "actual": {
+        "intent": "ops_analysis",
+        "refused": false,
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "**Pré-analyse du dossier « Ferme des Collines »**\n\n- **Décision proposée** : ✅ APPROUVER\n- **Confiance** : 100 %\n- **SIRET** : `12345678900012`\n- **Issues détectées** : 0\n\n**Motivation** :\n\nDossier à valider : « Ferme des Collines ».\n  • Documents : Toutes les pièces obligatoires présentes (RIB, ID,",
+        "chart_present": false,
+        "tables_touched": [
+          "producer_onboardings"
+        ],
+        "tables_in_sql": [],
+        "http_error": null,
+        "ops_proposed_decision": "approve"
+      },
+      "retried": false
+    },
+    {
+      "id": "eval-037",
+      "category": "ops_copilot",
+      "question": "Analyse le dossier d onboarding de Maraîchage Bio Soleil",
+      "description": "Phase 4 Ops Copilot case — admin asks the agent to pre-analyze the 'Maraîchage Bio Soleil' dossier (missing professional certificate). classify_question matches 'analyse le dossier d onboarding' → ops_analysis. OpsCopilotAgent runs the documents check which flags the missing cert (severity=missing) → proposed_decision='request_info'. Response must include ops_analysis.proposed_decision='request_info' and the answer must mention 'COMPLÉTER' or 'manquant'.",
+      "expected_to_fail": false,
+      "passed": true,
+      "failure_reasons": [],
+      "actual": {
+        "intent": "ops_analysis",
+        "refused": false,
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "**Pré-analyse du dossier « Maraîchage Bio Soleil »**\n\n- **Décision proposée** : ℹ️ COMPLÉTER LE DOSSIER\n- **Confiance** : 80 %\n- **SIRET** : `98765432100025`\n- **Issues détectées** : 1\n\n**Motivation** :\n\nInformation complémentaire requise pour « Maraîchage Bio Soleil » :\n  • Pièces manquantes : just",
+        "chart_present": false,
+        "tables_touched": [
+          "producer_onboardings"
+        ],
+        "tables_in_sql": [],
+        "http_error": null,
+        "ops_proposed_decision": "request_info"
+      },
+      "retried": false
+    },
+    {
+      "id": "eval-038",
+      "category": "ops_copilot",
+      "question": "Analyse le dossier d onboarding de Vignoble des Coteaux",
+      "description": "Phase 4 Ops Copilot case — admin asks the agent to pre-analyze the 'Vignoble des Coteaux' dossier (address mismatch + expired cert). classify_question matches 'analyse le dossier d onboarding' → ops_analysis. OpsCopilotAgent runs the address check (declared_address 'Beaune' vs document_address 'Chalon-sur-Saône' → Jaccard < 0.5 → blocker) + the cert expiry check (2023-05-01 < today → blocker) → proposed_decision='reject'. Response must include ops_analysis.proposed_decision='reject' and the answer must mention 'REJETER' or 'incohérent'/'expiré'.",
+      "expected_to_fail": false,
+      "passed": true,
+      "failure_reasons": [],
+      "actual": {
+        "intent": "ops_analysis",
+        "refused": false,
+        "sql": null,
+        "sql_present": false,
+        "scope_clause": null,
+        "answer_excerpt": "**Pré-analyse du dossier « Vignoble des Coteaux »**\n\n- **Décision proposée** : ❌ REJETER\n- **Confiance** : 60 %\n- **SIRET** : `22222222222222`\n- **Issues détectées** : 2\n\n**Motivation** :\n\nRejet recommandé pour le dossier « Vignoble des Coteaux » :\n  • Incohérence d'adresse entre l'adresse déclarée ",
+        "chart_present": false,
+        "tables_touched": [
+          "producer_onboardings"
+        ],
+        "tables_in_sql": [],
+        "http_error": null,
+        "ops_proposed_decision": "reject"
       },
       "retried": false
     }

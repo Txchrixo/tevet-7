@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
+from app.api.approvals import router as approvals_router
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
 from app.config import get_settings
@@ -109,8 +110,12 @@ def create_app() -> FastAPI:
     # sqlglot scoping on SQLite).
     # Phase 3: the documents router adds the RAG management surface
     # (upload / list / detail / delete) used by the documentary intent.
+    # Phase 4: the approvals router adds the Ops Copilot HITL surface
+    # (list / detail / decide / re-analyze) — every "agent proposes, human
+    # decides" workflow lives there.
     app.include_router(chat_router, prefix="/api", tags=["chat"])
     app.include_router(documents_router, prefix="/api", tags=["documents"])
+    app.include_router(approvals_router, prefix="/api", tags=["approvals"])
 
     # ── Health & info ────────────────────────────────────────────────────────
     @app.get("/health", tags=["meta"])
