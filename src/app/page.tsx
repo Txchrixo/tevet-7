@@ -24,6 +24,7 @@ import { Sidebar } from "@/components/producer-copilot/sidebar";
 import { BrandMark } from "@/components/producer-copilot/brand-mark";
 import { CreateWorkspace } from "@/components/producer-copilot/create-workspace";
 import { ErrorBoundary } from "@/components/error-boundary";
+import { LandingPage } from "@/components/producer-copilot/landing-page";
 
 function Home() {
   const adminView = useCopilotStore((s) => s.adminView);
@@ -31,6 +32,7 @@ function Home() {
   const bootstrap = useCopilotStore((s) => s.bootstrap);
   const tenants = useCopilotStore((s) => s.tenants);
   const activeTenant = useCopilotStore((s) => s.activeTenant);
+  const [showAuth, setShowAuth] = React.useState(false);
 
   // Validate the stored JWT (if any) on first mount. Sets `authMode` to
   // "authenticated" / "anonymous" / "demo" depending on the outcome.
@@ -59,8 +61,18 @@ function Home() {
     );
   }
 
-  // Anonymous → AuthScreen (no header / sidebar / inspector).
-  if (authMode === "anonymous") {
+  // Anonymous → LandingPage (Phase C1) with CTA to signup/demo.
+  if (authMode === "anonymous" && !showAuth) {
+    return (
+      <LandingPage
+        onSignup={() => setShowAuth(true)}
+        onDemo={() => useCopilotStore.getState().tryDemoLogin()}
+      />
+    );
+  }
+
+  // AuthScreen (shown when user clicks "Sign up" / "Login" from landing).
+  if ((authMode === "anonymous") && showAuth) {
     return <AuthScreen />;
   }
 
