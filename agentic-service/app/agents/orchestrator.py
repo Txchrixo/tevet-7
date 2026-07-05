@@ -245,13 +245,27 @@ def classify_question(question: str, role: str) -> str:
         return "ops_analysis"
 
     # 3. analytical intents with strong, unambiguous signals.
-    if ("produit" in q or "vendu" in q or "vente" in q) and (
+    if ("produit" in q or "vendu" in q or "vente" in q or "vendre" in q) and (
         "top" in q or "plus" in q or "best" in q or "meilleur" in q
+        or "vendu" in q or "vendre" in q
     ):
         return "top_products"
-    if any(k in q for k in ("stock", "manqu", "rupture", "samedi", "épuis")):
+    if any(k in q for k in ("stock", "manqu", "rupture", "samedi", "épuis", "epuis")):
         return "stock_shortfall"
-    if any(k in q for k in ("résumé", "resume", "semaine", "synthèse", "synthese")):
+    if any(k in q for k in ("résumé", "resume", "semaine", "synthèse", "synthese", "7 jours", "hebdo", "bilan")):
+        return "weekly_sales"
+
+    # 3b. broader analytical signals — short or colloquial questions that
+    # don't match the strict patterns above but are clearly data questions.
+    # "mes ventes", "commandes", "argent", "juin" → these are analytical.
+    if any(k in q for k in (
+        "vente", "vendre", "vendu", "commande", "achete", "achat",
+        "argent", "euros", "eur", "€", "juin", "juillet", "mai", "avril",
+        "mois", "stats", "statistique", "chiffre",
+        "montre", "affiche", "donne", "dis-moi", "dis moi", "que deviennent",
+    )):
+        if any(k in q for k in ("argent", "euros", "eur", "€", "gagné", "gagne", "chiffre", "revenu", "recette", "net", "commission")):
+            return "net_revenue"
         return "weekly_sales"
 
     # 4. documentary — policy / FAQ / procedure questions.

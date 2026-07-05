@@ -228,6 +228,10 @@ class LLMOrchestrator:
             f"9. Cite document sources by title when using search_documents.\n"
             f"10. Format numbers with French conventions (virgule, espace).\n"
             f"11. Do NOT add semicolons at the end of SQL.\n"
+            f"12. CONVERSATION MEMORY: the user may ask follow-up questions that reference "
+            f"previous turns ('et le mois dernier ?', 'pareil pour les producteurs', 'compare avec juin'). "
+            f"Use the conversation history to resolve these references. If the previous question "
+            f"was about revenue in June, 'et le mois dernier ?' means 'revenue in May'.\n"
         )
 
     # ── Tool execution ───────────────────────────────────────────────────
@@ -370,9 +374,11 @@ class LLMOrchestrator:
         system_prompt = self._build_system_prompt()
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
 
-        # Add history (last 6 messages, compact — just role + content).
+        # Add history (last 10 messages = 5 turns, for conversation memory).
+        # Phase A3: the LLM uses this to resolve follow-up references
+        # ("et le mois dernier ?" after a question about June revenue).
         if history:
-            for h in history[-6:]:
+            for h in history[-10:]:
                 messages.append({
                     "role": h.get("role", "user"),
                     "content": h.get("content", ""),
