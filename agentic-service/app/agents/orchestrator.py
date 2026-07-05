@@ -1191,7 +1191,7 @@ class AgentOrchestrator:
                 sources=[],
                 ops_analysis=None,
                 forecast_predictions=None,
-                trace_id=trace_id,
+                trace_id=None,
             )
 
         if refused_by_generator:

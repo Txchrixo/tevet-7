@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "trained_at": "2026-07-04T15:45:20.136276+00:00",
+    "trained_at": "2026-07-05T14:12:40.075579+00:00",
     "n_rows": 6279,
     "n_train": 5023,
     "n_test": 1256,
@@ -36,138 +36,138 @@
     ]
   },
   "metrics": {
-    "accuracy": 0.9012738853503185,
-    "precision": 0.7266009852216748,
-    "recall": 0.9577922077922078,
-    "f1": 0.8263305322128851,
-    "roc_auc": 0.9765980327689188,
+    "accuracy": 0.9004777070063694,
+    "precision": 0.725925925925926,
+    "recall": 0.9545454545454546,
+    "f1": 0.8246844319775596,
+    "roc_auc": 0.9768959943010576,
     "confusion_matrix": [
       [
         837,
         111
       ],
       [
-        13,
-        295
+        14,
+        294
       ]
     ],
     "classification_report": {
       "0": {
-        "precision": 0.9847058823529412,
+        "precision": 0.9835487661574618,
         "recall": 0.8829113924050633,
-        "f1-score": 0.9310344827586207,
+        "f1-score": 0.9305169538632574,
         "support": 948.0
       },
       "1": {
-        "precision": 0.7266009852216748,
-        "recall": 0.9577922077922078,
-        "f1-score": 0.8263305322128851,
+        "precision": 0.725925925925926,
+        "recall": 0.9545454545454546,
+        "f1-score": 0.8246844319775596,
         "support": 308.0
       },
-      "accuracy": 0.9012738853503185,
+      "accuracy": 0.9004777070063694,
       "macro avg": {
-        "precision": 0.8556534337873081,
-        "recall": 0.9203518000986355,
-        "f1-score": 0.8786825074857529,
+        "precision": 0.8547373460416938,
+        "recall": 0.918728423475259,
+        "f1-score": 0.8776006929204085,
         "support": 1256.0
       },
       "weighted avg": {
-        "precision": 0.9214126432475033,
-        "recall": 0.9012738853503185,
-        "f1-score": 0.9053586732298895,
+        "precision": 0.9203737384573718,
+        "recall": 0.9004777070063694,
+        "f1-score": 0.9045643927638984,
         "support": 1256.0
       }
     },
     "top_features": [
       {
         "feature": "stock_available",
-        "importance": 0.3305991724862838
+        "importance": 0.33214740662222375
       },
       {
         "feature": "days_since_last_stockout",
-        "importance": 0.26446343985330234
+        "importance": 0.26545472586783303
       },
       {
         "feature": "sales_7d",
-        "importance": 0.11202606202614195
+        "importance": 0.1084030059782519
       },
       {
         "feature": "avg_sales_30d",
-        "importance": 0.10365530955794103
+        "importance": 0.10317685042504528
       },
       {
         "feature": "sales_3d",
-        "importance": 0.05795041313304125
+        "importance": 0.05771705384293253
       },
       {
         "feature": "sales_1d",
-        "importance": 0.03229610120147843
+        "importance": 0.032893884232276696
       },
       {
         "feature": "month",
-        "importance": 0.029088597943213633
+        "importance": 0.028288553518251856
       },
       {
         "feature": "is_perishable",
-        "importance": 0.018700006930692983
+        "importance": 0.01934314667013621
       },
       {
         "feature": "category_encoded",
-        "importance": 0.01708489667050899
+        "importance": 0.017999821529653324
       },
       {
         "feature": "day_of_week",
-        "importance": 0.01614742062187722
+        "importance": 0.016289858154488572
       }
     ],
     "all_features": [
       {
         "feature": "stock_available",
-        "importance": 0.3305991724862838
+        "importance": 0.33214740662222375
       },
       {
         "feature": "days_since_last_stockout",
-        "importance": 0.26446343985330234
+        "importance": 0.26545472586783303
       },
       {
         "feature": "sales_7d",
-        "importance": 0.11202606202614195
+        "importance": 0.1084030059782519
       },
       {
         "feature": "avg_sales_30d",
-        "importance": 0.10365530955794103
+        "importance": 0.10317685042504528
       },
       {
         "feature": "sales_3d",
-        "importance": 0.05795041313304125
+        "importance": 0.05771705384293253
       },
       {
         "feature": "sales_1d",
-        "importance": 0.03229610120147843
+        "importance": 0.032893884232276696
       },
       {
         "feature": "month",
-        "importance": 0.029088597943213633
+        "importance": 0.028288553518251856
       },
       {
         "feature": "is_perishable",
-        "importance": 0.018700006930692983
+        "importance": 0.01934314667013621
       },
       {
         "feature": "category_encoded",
-        "importance": 0.01708489667050899
+        "importance": 0.017999821529653324
       },
       {
         "feature": "day_of_week",
-        "importance": 0.01614742062187722
+        "importance": 0.016289858154488572
       },
       {
         "feature": "producer_id",
-        "importance": 0.015053392913402654
+        "importance": 0.015320720959174156
       },
       {
         "feature": "is_weekend",
-        "importance": 0.0029351866621158034
+        "importance": 0.0029649721997329096
       }
     ]
   }

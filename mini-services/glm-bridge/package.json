@@ -1,0 +1,11 @@
+{
+  "name": "glm-bridge",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "bun --hot index.ts"
+  },
+  "dependencies": {
+    "z-ai-web-dev-sdk": "^0.0.18"
+  }
+}

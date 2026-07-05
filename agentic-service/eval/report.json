@@ -1,17 +1,17 @@
 {
   "total_cases": 40,
   "evaluable_cases": 39,
-  "passed": 39,
-  "overall_pass_rate": 1.0,
+  "passed": 38,
+  "overall_pass_rate": 0.9743589743589743,
   "sql_valid": {
     "pass": 18,
     "total": 18,
     "pct": 1.0
   },
   "scopes_respected": {
-    "pass": 39,
+    "pass": 38,
     "total": 39,
-    "pct": 1.0
+    "pct": 0.9743589743589743
   },
   "intents_correct": {
     "pass": 39,
@@ -63,7 +63,7 @@
       "total": 5
     },
     "security_edge_cases": {
-      "pass": 5,
+      "pass": 4,
       "total": 5
     },
     "documentary": {
@@ -279,7 +279,7 @@
         "sql": null,
         "sql_present": false,
         "scope_clause": null,
-        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 90 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
         "chart_present": true,
         "tables_touched": [
           "stock_history",
@@ -306,7 +306,7 @@
         "sql": null,
         "sql_present": false,
         "scope_clause": null,
-        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 90 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
         "chart_present": true,
         "tables_touched": [
           "stock_history",
@@ -333,7 +333,7 @@
         "sql": null,
         "sql_present": false,
         "scope_clause": null,
-        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Verger de la Côte)\n\n5 produits à risque selon le modèle ML :\n\n1. **Pommes à cuire** — 82 % de risque\n   Stock actuel : 0 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Pommes Gala** — 70 % de risque\n   Stock actuel : 0 ",
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Verger de la Côte)\n\n5 produits à risque selon le modèle ML :\n\n1. **Pommes à cuire** — 82 % de risque\n   Stock actuel : 0 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Pommes Gala** — 69 % de risque\n   Stock actuel : 0 ",
         "chart_present": true,
         "tables_touched": [
           "stock_history",
@@ -360,7 +360,7 @@
         "sql": null,
         "sql_present": false,
         "scope_clause": null,
-        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 90 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
         "chart_present": true,
         "tables_touched": [
           "stock_history",
@@ -851,18 +851,25 @@
       "question": "Combien de producteurs sont inscrits ?",
       "description": "Producer 42 asking 'how many producers are registered'. This is a cross-producer question (it asks about ALL producers, not just the caller's own data). The classifier only flags cross_producer when 'producteur' co-occurs with 'commande'/'vente' — here 'producteur' appears alone, so classify returns 'unknown' and the generator returns None → refused. The guarantee holds: a producer cannot enumerate other producers via the chat. Expected: refused=true, sql=null. (A Phase 2 LLM might route this to an explicit cross-producer refusal — but the rule-based generator's silent refuse is still safe.)",
       "expected_to_fail": false,
-      "passed": true,
-      "failure_reasons": [],
+      "passed": false,
+      "failure_reasons": [
+        "Expected refused=True, got refused=False",
+        "Expected no SQL, got: 'SELECT COUNT(*) AS total FROM products WHERE products.producer_id = 42 LIMIT 100'"
+      ],
       "actual": {
         "intent": "unknown",
-        "refused": true,
-        "sql": null,
-        "sql_present": false,
-        "scope_clause": null,
-        "answer_excerpt": "Je n'ai pas pu générer de requête SQL pour cette question. Pouvez-vous la reformuler en utilisant les mots-clés attendus (ventes, stock, juin, …) ?",
+        "refused": false,
+        "sql": "SELECT COUNT(*) AS total FROM products WHERE products.producer_id = 42 LIMIT 1000",
+        "sql_present": true,
+        "scope_clause": "WHERE products.producer_id = 42",
+        "answer_excerpt": "**Résultat** : 10",
         "chart_present": false,
-        "tables_touched": [],
-        "tables_in_sql": [],
+        "tables_touched": [
+          "products"
+        ],
+        "tables_in_sql": [
+          "products"
+        ],
         "http_error": null,
         "ops_proposed_decision": null
       },
@@ -1115,7 +1122,7 @@
         "sql": null,
         "sql_present": false,
         "scope_clause": null,
-        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 91 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)\n\n5 produits à risque selon le modèle ML :\n\n1. **Poireaux** — 90 % de risque\n   Stock actuel : 3 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Courgettes** — 90 % de risque\n   Stock actuel : 1 unités · ",
         "chart_present": true,
         "tables_touched": [
           "stock_history",
@@ -1142,7 +1149,7 @@
         "sql": null,
         "sql_present": false,
         "scope_clause": null,
-        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Verger de la Côte)\n\n5 produits à risque selon le modèle ML :\n\n1. **Pommes à cuire** — 82 % de risque\n   Stock actuel : 0 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Pommes Gala** — 70 % de risque\n   Stock actuel : 0 ",
+        "answer_excerpt": "**Prévisions de rupture de stock** — 3 prochains jours (Verger de la Côte)\n\n5 produits à risque selon le modèle ML :\n\n1. **Pommes à cuire** — 82 % de risque\n   Stock actuel : 0 unités · Ventes 7j : 6 · Facteur principal : récurrence de rupture\n2. **Pommes Gala** — 69 % de risque\n   Stock actuel : 0 ",
         "chart_present": true,
         "tables_touched": [
           "stock_history",
