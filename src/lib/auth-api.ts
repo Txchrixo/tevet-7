@@ -123,10 +123,10 @@ async function apiFetch<T>(
 
   let res: Response;
   try {
-    // 3-second timeout — prevents the loading screen from hanging when the
-    // backend is slow or unreachable.
+    // 10-second timeout — the backend can take 1-2s per request (DB + LLM).
+    // 3s was too short and caused false "Backend injoignable" errors.
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 3000);
+    const timeout = setTimeout(() => controller.abort(), 10000);
     res = await fetch(url, { ...init, signal: controller.signal });
     clearTimeout(timeout);
   } catch (err) {
@@ -164,12 +164,19 @@ async function apiFetch<T>(
   }
 
   if (!res.ok) {
-    const message =
-      typeof parsed === "object" && parsed && "detail" in parsed
-        ? String((parsed as { detail: unknown }).detail)
-        : typeof parsed === "object" && parsed && "message" in parsed
-          ? String((parsed as { message: unknown }).message)
-          : `Auth API ${res.status} ${res.statusText}`;
+    // Parse user-friendly error message from the response.
+    let message = `Auth API ${res.status} ${res.statusText}`;
+    if (typeof parsed === "object" && parsed && "detail" in parsed) {
+      const detail = (parsed as { detail: unknown }).detail;
+      // FastAPI validation errors are arrays: [{msg: "...", ...}]
+      if (Array.isArray(detail)) {
+        message = detail.map((e: { msg?: string }) => e.msg || String(e)).join("; ");
+      } else {
+        message = String(detail);
+      }
+    } else if (typeof parsed === "object" && parsed && "message" in parsed) {
+      message = String((parsed as { message: unknown }).message);
+    }
     throw new AuthApiError(message, res.status, parsed);
   }
 
