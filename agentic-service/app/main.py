@@ -150,6 +150,13 @@ def create_app() -> FastAPI:
     app.include_router(tenants_router, prefix="/api", tags=["tenants"])
     app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 
+    # Phase C3 — Stripe billing (optional, requires STRIPE_SECRET_KEY)
+    try:
+        from app.billing import billing_router
+        app.include_router(billing_router, prefix="/api", tags=["billing"])
+    except ImportError:
+        pass
+
     # ── Health & info ────────────────────────────────────────────────────────
     @app.get("/health", tags=["meta"])
     async def health() -> dict:
