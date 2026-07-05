@@ -252,39 +252,10 @@ const DEMO_QUESTIONS = [
 
 function InteractiveDemo() {
   const [activeIdx, setActiveIdx] = useState(0);
-  const [displayedAnswer, setDisplayedAnswer] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
-  const [showContent, setShowContent] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const activeDemo = DEMO_QUESTIONS[activeIdx];
+  const maxChart = Math.max(...activeDemo.chart.data.map((d) => d.value));
 
-  useEffect(() => {
-    setIsTyping(true);
-    setDisplayedAnswer("");
-    setShowContent(false);
-    let i = 0;
-    const text = activeDemo.a;
-
-    const typeChar = () => {
-      if (i < text.length) {
-        setDisplayedAnswer(text.slice(0, i + 1));
-        i++;
-        timeoutRef.current = setTimeout(typeChar, 10);
-      } else {
-        setIsTyping(false);
-        setShowContent(true);
-      }
-    };
-
-    timeoutRef.current = setTimeout(typeChar, 800);
-
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
-  }, [activeIdx, activeDemo.a]);
-
-  // Parse the displayed text into segments (bold + normal)
+  // Parse the text into segments (bold + normal)
   const renderText = (text: string) => {
     return text.split("\n").map((line, i) => {
       const parts = line.split(/\*\*(.+?)\*\*/g);
@@ -303,11 +274,9 @@ function InteractiveDemo() {
     });
   };
 
-  const maxChart = Math.max(...activeDemo.chart.data.map((d) => d.value));
-
   return (
-    <div className="flex flex-col h-[560px] bg-background">
-      {/* Window header (exact copy of real dashboard) */}
+    <div className="flex flex-col bg-background">
+      {/* Window header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-secondary/20">
         <div className="flex items-center gap-2">
           <BrandMark size={16} />
@@ -320,85 +289,79 @@ function InteractiveDemo() {
         </div>
       </div>
 
-      {/* Chat thread (exact copy of real ChatMessage structure) */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* User message (right-aligned, bg-primary) */}
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex justify-end"
-        >
-          <div className="max-w-[80%] rounded-md rounded-br-sm bg-primary px-3 py-2 text-sm text-foreground">
-            {activeDemo.q}
-          </div>
-        </motion.div>
+      {/* Chat thread */}
+      <div className="p-4 space-y-4">
+        {/* User message */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`q-${activeIdx}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="flex justify-end"
+          >
+            <div className="max-w-[80%] rounded-md rounded-br-sm bg-primary px-3 py-2 text-sm text-foreground">
+              {activeDemo.q}
+            </div>
+          </motion.div>
+        </AnimatePresence>
 
-        {/* Assistant message (left-aligned, avatar + card) */}
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="flex justify-start"
-        >
-          <div className="flex items-start gap-2.5 max-w-[90%]">
-            {/* Avatar */}
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-accent">
-              <BrandMark size={18} />
-            </span>
+        {/* Assistant message */}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={`a-${activeIdx}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2, delay: 0.05 }}
+            className="flex justify-start"
+          >
+            <div className="flex items-start gap-2.5 max-w-[92%]">
+              {/* Avatar */}
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-accent">
+                <BrandMark size={18} />
+              </span>
 
-            {/* Response card (same border + bg as real ChatMessage) */}
-            <div className="flex-1 cursor-pointer rounded-md border border-border bg-background p-4">
-              {/* Typing dots OR content */}
-              {isTyping && !displayedAnswer ? (
-                <div className="flex items-center gap-1.5 py-1">
-                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
-                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
-                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
-                </div>
-              ) : (
+              {/* Response card */}
+              <div className="flex-1 rounded-md border border-border bg-background p-4">
+                {/* Text content */}
                 <div className="text-sm text-foreground leading-relaxed font-body">
-                  {renderText(displayedAnswer)}
-                  {isTyping && <span className="inline-block w-1.5 h-4 bg-accent ml-0.5 animate-pulse" />}
+                  {renderText(activeDemo.a)}
                 </div>
-              )}
 
-              {/* SQL block (collapsible, same style as real SqlBlock) */}
-              {showContent && activeDemo.sql && (
-                <div className="mt-3">
-                  <details className="group">
-                    <summary className="flex cursor-pointer items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground hover:text-foreground">
-                      <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
-                      SQL exécuté
-                    </summary>
-                    <pre className="mt-1.5 rounded-md border border-border bg-secondary/20 p-2 text-[10px] text-muted-foreground overflow-x-auto">
-                      <code>{activeDemo.sql}</code>
-                    </pre>
-                  </details>
-                </div>
-              )}
+                {/* SQL block */}
+                {activeDemo.sql && (
+                  <div className="mt-3">
+                    <details className="group">
+                      <summary className="flex cursor-pointer items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground hover:text-foreground">
+                        <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
+                        SQL exécuté
+                      </summary>
+                      <pre className="mt-1.5 rounded-md border border-border bg-secondary/20 p-2 text-[10px] text-muted-foreground overflow-x-auto">
+                        <code>{activeDemo.sql}</code>
+                      </pre>
+                    </details>
+                  </div>
+                )}
 
-              {/* Chart (same style as real ChartDisplay) */}
-              {showContent && (
+                {/* Chart */}
                 <div className="mt-3">
                   <div className="rounded-md border border-border bg-background p-3">
-                    {activeDemo.chart.title && (
-                      <div className="mb-2">
-                        <span className="font-heading text-xs text-foreground">{activeDemo.chart.title}</span>
-                      </div>
-                    )}
-                    {/* Bar chart (CSS-based, same look as recharts BarChart) */}
-                    <div className="h-40 flex items-end justify-between gap-2 pl-1">
+                    <div className="mb-3">
+                      <span className="font-heading text-xs text-foreground">{activeDemo.chart.title}</span>
+                    </div>
+                    <div className="h-36 flex items-end justify-between gap-2 px-1">
                       {activeDemo.chart.data.map((item, i) => (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                        <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
                           <span className="text-[10px] text-muted-foreground tabular-nums">
                             {activeDemo.tag === "predict_stock_shortage" ? `${item.value}%` : item.value.toLocaleString("fr-FR")}
                           </span>
                           <motion.div
                             initial={{ height: 0 }}
                             animate={{ height: `${(item.value / maxChart) * 100}%` }}
-                            transition={{ duration: 0.5, delay: i * 0.08 }}
-                            className={`w-full rounded-t-sm ${activeDemo.tag === "predict_stock_shortage" ? "bg-amber-600/60" : "bg-accent"}`}
-                            style={{ minHeight: 4 }}
+                            transition={{ duration: 0.4, delay: i * 0.06 }}
+                            className={`w-full rounded-t-sm min-h-[4px] ${activeDemo.tag === "predict_stock_shortage" ? "bg-amber-600/60" : "bg-accent"}`}
                           />
                           <span className="text-[10px] text-muted-foreground truncate max-w-full">{item.name}</span>
                         </div>
@@ -406,10 +369,8 @@ function InteractiveDemo() {
                     </div>
                   </div>
                 </div>
-              )}
 
-              {/* Footer line (exact copy: scope + tokens + latency + tool badge) */}
-              {showContent && (
+                {/* Footer */}
                 <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] uppercase tracking-wide text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
                     <Check size={12} className="text-accent" />
@@ -423,23 +384,18 @@ function InteractiveDemo() {
                     <span className="font-heading text-foreground tabular-nums">{activeDemo.latency}</span>
                     s
                   </span>
-                  {activeDemo.tag && (
-                    <span className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-1.5 py-0 text-[10px] text-muted-foreground">
-                      <Database size={10} />
-                      {activeDemo.tagLabel}
-                    </span>
-                  )}
-                  <span className="ml-auto hidden text-[10px] text-muted-foreground/70 sm:inline">
-                    cliquez pour voir la trace →
+                  <span className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-1.5 text-[10px] text-muted-foreground">
+                    <Database size={10} />
+                    {activeDemo.tagLabel}
                   </span>
                 </div>
-              )}
+              </div>
             </div>
-          </div>
-        </motion.div>
+          </motion.div>
+        </AnimatePresence>
       </div>
 
-      {/* Question selector (clickable chips) */}
+      {/* Question selector */}
       <div className="border-t border-border p-3 flex flex-wrap gap-2">
         {DEMO_QUESTIONS.map((d, i) => (
           <button key={i} onClick={() => setActiveIdx(i)}
