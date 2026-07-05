@@ -24,6 +24,30 @@ import { IdentityPicker } from "./identity-picker";
  * Renders the Tevet-7 design system: dark green background, Caudex headings,
  * Manrope body, Feather icons, no indigo/blue, no lucide-react.
  */
+
+const AUTH_T = {
+  en: {
+    subtitle: "Configurable AI agent platform. Sign in to access your agent - every question is secured by tenant scoping.",
+    name: "Name", namePlaceholder: "John Doe",
+    email: "Email", password: "Password",
+    signin: "Sign in", signup: "Create account", loading: "Loading...",
+    hasAccount: "Already have an account? Sign in",
+    noAccount: "No account? Create one",
+    demo: "Try demo", demoLoading: "Loading...",
+    mockBackend: "Continue without backend (mock data)",
+  },
+  fr: {
+    subtitle: "Plateforme d'agents IA configurable. Connectez-vous pour acceder a votre agent - chaque question est securisee par un scope tenant.",
+    name: "Nom", namePlaceholder: "Jean Dupont",
+    email: "Email", password: "Mot de passe",
+    signin: "Se connecter", signup: "Creer mon compte", loading: "Connexion...",
+    hasAccount: "Deja un compte ? Se connecter",
+    noAccount: "Pas de compte ? Creer un compte",
+    demo: "Essayer la demo", demoLoading: "Connexion...",
+    mockBackend: "Continuer sans backend (mock data)",
+  },
+};
+
 export function AuthScreen() {
   const showIdentityPicker = useCopilotStore((s) => s.showIdentityPicker);
   const setShowIdentityPicker = useCopilotStore((s) => s.setShowIdentityPicker);
