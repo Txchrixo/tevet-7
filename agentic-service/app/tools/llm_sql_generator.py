@@ -215,4 +215,4 @@ If you must refuse or cannot generate, return exactly "REFUSE" or "CANNOT_GENERA
 
         except Exception as exc:
             logger.warning("LLMSQLGenerator: OpenAI call failed (%s) — falling back to rule-based", exc)
-            return self._fallback.generate(question, role, scope_column, scope_value)
+            return await self._fallback.generate(question, role, scope_column, scope_value)

@@ -937,7 +937,7 @@ class AgentOrchestrator:
         span = self.tracer.start_span(ctx, "sql_generation")
         t = time.monotonic()
         try:
-            raw_sql = self.sql_tool.generate_sql(user_message)
+            raw_sql = await self.sql_tool.generate_sql(user_message)
         except Exception as exc:  # noqa: BLE001
             steps.append(
                 StepTrace(

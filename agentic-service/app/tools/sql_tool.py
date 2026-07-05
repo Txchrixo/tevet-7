@@ -312,7 +312,7 @@ class RuleBasedSQLGenerator:
         return f"SELECT {select_cols} FROM {table_name} LIMIT 20"
 
     # ── entry point ────────────────────────────────────────────────────────
-    def generate(
+    async def generate(
         self,
         question: str,
         role: str,
@@ -538,7 +538,7 @@ class SqlReadTool:
     # ───────────────────────────────────────────────────────────────────────
     # Step 1 — SQL generation
     # ───────────────────────────────────────────────────────────────────────
-    def generate_sql(self, question: str) -> str:
+    async def generate_sql(self, question: str) -> str:
         """Generate SQL for the question via the configured generator.
 
         Returns the SQL string. Returns ``REFUSE_MARKER`` if the generator
@@ -546,7 +546,7 @@ class SqlReadTool:
         cross-producer question). Raises ``SqlGenerationError`` if no rule
         matches AND no LLM fallback is available.
         """
-        sql = self.generator.generate(
+        sql = await self.generator.generate(
             question=question,
             role=self.role,
             scope_column=self.scope_column,
@@ -781,7 +781,7 @@ class SqlReadTool:
         explain the failure to the user without crashing.
         """
         try:
-            raw_sql = self.generate_sql(question)
+            raw_sql = await self.generate_sql(question)
             if raw_sql == REFUSE_MARKER:
                 # Generator explicitly refused the question (cross-producer
                 # question from a producer).
