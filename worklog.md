@@ -674,3 +674,27 @@ Work Log:
 Stage Summary:
 - The FinalCTA brandmark (animated heptagon) now sits on a painted desktop wallpaper, matching the Cursor reference's "app icon on a painted wallpaper" aesthetic. The art_bg oil painting is darkened + radially vignetted so it integrates with Tevet-7's dark green theme while keeping the painterly texture visible directly behind the brandmark.
 - 1 file added (public/art-bg.webp), 1 file modified (landing-page.tsx FinalCTA section).
+
+---
+Task ID: 47
+Agent: main
+Task: Move the painted wallpaper from the FinalCTA to the Hero section — behind the InteractiveDemo window (the Marc/Alexis/Maxime switcher card), matching the Cursor reference where an app window floats on a painted desktop wallpaper. FinalCTA reverted to its pre-wallpaper state.
+
+Work Log:
+- Re-analyzed the Cursor reference image with VLM: confirmed the app WINDOW sits ON TOP of the painted wallpaper (painting is external, visible around the window on all sides), the window is opaque (painting does not show through inside), and the window has a visible border/shadow separating it from the wallpaper.
+- Reverted FinalCTA (src/components/producer-copilot/landing-page.tsx) to its pre-wallpaper state: HeptagonDraw size 40, no painted background, just the HeptagonPattern opacity 0.05. The wallpaper was NOT meant to live there.
+- Modified the Hero section:
+  * Replaced the HeptagonPattern (opacity 0.04) background with the painted wallpaper: art_bg.webp as background-image cover/center, filter brightness(0.2) saturate(0.55) contrast(1.1) — darkens + mutes the vibrant oil painting so it reads as a moody desktop wallpaper, not a bright image. Painterly texture (buildings, palm trees, impasto brushstrokes) stays discernible.
+  * Added a top readability scrim: linear-gradient from var(--background) at the very top → color-mix 55% background/transparent at 60% → transparent at 100%. Darkens the painting behind the headline + badge + buttons so light text (text-foreground) stays legible, while fading to transparent toward the demo window so the painting shows through around the window.
+  * Added a bottom transition: linear-gradient transparent → var(--background) over the bottom 1/4 of the section, so the painting fades cleanly into the next section (SocialProof) with no harsh seam.
+  * Strengthened the demo window's separation from the wallpaper: kept rounded-xl border border-border bg-card overflow-hidden shadow-2xl, added ring-1 ring-black/40 for a crisper edge so the window reads as a distinct floating surface (like the Cursor app window on its wallpaper).
+  * Kept all existing Hero animations (badge scaleIn, headline WordReveal, subtitle fadeUp, CTA buttons staggered scaleIn, demo card cardPlace 3D tilt) — they now play on top of the painted wallpaper.
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings in layout.tsx).
+  * Dev server: GET / 200, clean compile, zero runtime errors.
+  * Agent Browser: screenshot captured, demo role switcher (Marc/Alexis/Maxime) still works (Marc → products table with Tomates visible), scrolled through all subsequent sections (Features, HowItWorks, Pricing, FAQ, FinalCTA) — all render correctly.
+  * VLM analysis of the Hero screenshot confirmed all 6 criteria: (1) painted oil-painting wallpaper visible as Hero background (muted dark green/brown, painterly texture, buildings + trees), (2) demo window clearly floating on top, opaque (painting not showing through inside), (3) wallpaper visible around the window on all sides, (4) headline "Your data speaks. Your AI agent listens." readable, (5) clean transition into the dark background at the bottom with no harsh seam, (6) gives the impression of an app window floating on a painted desktop wallpaper matching the Cursor reference.
+
+Stage Summary:
+- The painted wallpaper now lives behind the InteractiveDemo window in the Hero (where the user wanted it), giving the "app window on a painted desktop wallpaper" effect from the Cursor reference. The FinalCTA is back to its clean heptagon-only state.
+- 0 files added (art-bg.webp already in public/ from Task 46), 1 file modified (landing-page.tsx: Hero + FinalCTA).

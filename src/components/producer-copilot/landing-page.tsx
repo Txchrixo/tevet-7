@@ -331,8 +331,44 @@ function Navbar({ t, onLogin, onSignup }: { t: typeof T.en; onLogin: () => void;
 function Hero({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void; onDemo: () => void }) {
   return (
     <section className="relative pt-32 pb-20 px-4 overflow-hidden">
-      <HeptagonPattern opacity={0.04} />
-      <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent pointer-events-none" />
+      {/*
+        Painted desktop wallpaper behind the demo window.
+        The art_bg oil painting fills the Hero section as the "desktop
+        wallpaper". Darkened (brightness 0.2) so the painterly texture reads
+        as a moody backdrop, not a bright image. The InteractiveDemo window
+        floats on top (opaque bg-card + border + shadow) like an app window
+        on a painted desktop — matching the Cursor reference.
+      */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: "url('/art-bg.webp')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            filter: "brightness(0.2) saturate(0.55) contrast(1.1)",
+          }}
+        />
+        {/* Top readability scrim: darkens the painting behind the headline +
+            buttons so light text stays legible. Fades to transparent toward
+            the demo window so the painting shows through around the window. */}
+        <div
+          className="absolute inset-x-0 top-0 h-1/2"
+          style={{
+            background:
+              "linear-gradient(to bottom, var(--background) 0%, color-mix(in srgb, var(--background) 55%, transparent) 60%, transparent 100%)",
+          }}
+        />
+        {/* Bottom transition: fades the painting into the page background so
+            the seam into the next section (SocialProof) is clean. */}
+        <div
+          className="absolute inset-x-0 bottom-0 h-1/4"
+          style={{
+            background:
+              "linear-gradient(to bottom, transparent 0%, var(--background) 100%)",
+          }}
+        />
+      </div>
       <div className="relative max-w-4xl mx-auto text-center">
         {/* Badge scales in with a soft overshoot — "chip materializing" */}
         <Reveal variants={scaleIn} amount={0.5} className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 mb-6">
@@ -359,9 +395,11 @@ function Hero({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void; o
             <button onClick={onDemo} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-7 py-3 text-base font-medium text-foreground transition-all hover:bg-secondary/40">{t.ctaDemo}</button>
           </RevealItem>
         </RevealGroup>
-        {/* Demo card rises with a subtle 3D tilt — "window opening into the product" */}
+        {/* Demo card rises with a subtle 3D tilt — "window opening into the product".
+            Opaque bg-card + border + shadow-2xl + ring so the window reads as
+            a distinct floating surface on top of the painted wallpaper. */}
         <Reveal variants={cardPlace} amount={0.2} delay={0.2} className="mt-12 relative" style={{ perspective: "1200px" }}>
-          <div className="rounded-xl border border-border bg-card overflow-hidden shadow-2xl">
+          <div className="rounded-xl border border-border bg-card overflow-hidden shadow-2xl ring-1 ring-black/40">
             <InteractiveDemo t={t} />
           </div>
         </Reveal>
@@ -694,41 +732,12 @@ function FinalCTA({ t, onSignup }: { t: typeof T.en; onSignup: () => void }) {
   return (
     <section className="relative py-24 px-4 border-t border-border/50 overflow-hidden">
       <HeptagonPattern opacity={0.05} />
-      {/*
-        Painted wallpaper behind the brandmark.
-        The art_bg oil painting fills the section, darkened (brightness 0.2,
-        desaturated) so it reads as a moody desktop wallpaper rather than a
-        bright image. A radial vignette overlay fades the painting into the
-        page background toward the section edges, focusing the painted
-        texture directly behind the heptagon — like a brandmark icon sitting
-        on a painted desktop wallpaper.
-      */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: "url('/art-bg.webp')",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            filter: "brightness(0.2) saturate(0.6) contrast(1.08)",
-          }}
-        />
-        {/* Radial vignette: transparent in the center (painting shows through
-            behind the heptagon), fades to the page background at the edges. */}
-        <div
-          className="absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse 55% 65% at 50% 42%, transparent 0%, transparent 35%, var(--background) 88%)",
-          }}
-        />
-      </div>
       <div className="relative max-w-2xl mx-auto text-center">
         {/* The heptagon outline draws itself in (strokeDashoffset), then the
-            top-vertex node pops in — "the call crystallizes". Sits on top of
-            the painted wallpaper like an app icon on a desktop. */}
+            top-vertex node pops in — "the call crystallizes". Replaces the
+            static BrandMark with the animated HeptagonDraw. */}
         <Reveal variants={scaleIn} amount={0.5} className="flex justify-center mb-4">
-          <HeptagonDraw size={48} />
+          <HeptagonDraw size={40} />
         </Reveal>
         <h2 className="font-heading text-3xl md:text-4xl text-foreground mb-4">
           <WordReveal text={t.ctaTitle} stagger={0.08} delay={0.3} />
