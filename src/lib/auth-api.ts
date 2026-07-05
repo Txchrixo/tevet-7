@@ -17,6 +17,9 @@ import type { AuthUser, TenantMembership } from "./types";
 /** localStorage key shared with `admin-api.ts`. */
 const TOKEN_STORAGE_KEY = "tevet7.jwt";
 
+/** localStorage key for the refresh token (Phase B2). */
+const REFRESH_TOKEN_STORAGE_KEY = "tevet7.refreshToken";
+
 /** localStorage key for the cached active tenant id (so reloads remember it). */
 const ACTIVE_TENANT_KEY = "tevet7.activeTenantId";
 
@@ -41,6 +44,53 @@ export function setAuthToken(token: string | null): void {
     else window.localStorage.removeItem(TOKEN_STORAGE_KEY);
   } catch {
     /* ignore */
+  }
+}
+
+/** Reads the refresh token from localStorage (Phase B2). */
+export function getRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Stores/removes the refresh token in localStorage (Phase B2). */
+export function setRefreshToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (token) window.localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, token);
+    else window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * Calls POST /api/auth/refresh to exchange the refresh token for a new
+ * access token. Updates the stored access token. Returns false if the
+ * refresh failed (caller should redirect to login).
+ */
+async function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
+  try {
+    const res = await fetch("/api/auth/refresh", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    if (data.access_token) {
+      setAuthToken(data.access_token);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
   }
 }
 
@@ -153,6 +203,43 @@ async function apiFetch<T>(
     );
   }
 
+  // ── Phase B2: 401 auto-refresh interceptor ──
+  // When the access token expires (2h), the backend returns 401. Instead of
+  // forcing the user to re-login, we transparently call /auth/refresh with
+  // the stored refresh token (30d). If the refresh succeeds, we retry the
+  // original request with the new access token. If it fails, we clear both
+  // tokens and throw 401 (the caller redirects to login).
+  if (res.status === 401 && withToken && getRefreshToken()) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) {
+      // Retry the original request with the new token.
+      const newToken = getAuthToken();
+      const retryHeaders = { ...headers };
+      if (newToken) retryHeaders["authorization"] = `Bearer ${newToken}`;
+      const retryInit: RequestInit = { ...init, headers: retryHeaders };
+      try {
+        const controller2 = new AbortController();
+        const timeout2 = setTimeout(() => controller2.abort(), 10000);
+        res = await fetch(url, { ...retryInit, signal: controller2.signal });
+        clearTimeout(timeout2);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Network error";
+        throw new AuthApiError(message, 0, undefined, true);
+      }
+      // If the retry also fails with 401, the refresh token is invalid — logout.
+      if (res.status === 401) {
+        setAuthToken(null);
+        setRefreshToken(null);
+        throw new AuthApiError("Session expirée", 401);
+      }
+    } else {
+      // Refresh failed — clear tokens and throw 401.
+      setAuthToken(null);
+      setRefreshToken(null);
+      throw new AuthApiError("Session expirée", 401);
+    }
+  }
+
   const text = await res.text();
   let parsed: unknown = null;
   if (text.length > 0) {
@@ -190,6 +277,8 @@ async function apiFetch<T>(
 export interface LoginResponse {
   user: AuthUser;
   token: string;
+  /** Phase B2: refresh token (30d) for auto-renewal. */
+  refresh_token?: string;
 }
 
 /** `POST /api/auth/login` with `{email, password}`. Throws 401 on bad creds. */

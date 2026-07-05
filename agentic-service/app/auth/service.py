@@ -187,11 +187,22 @@ async def login(email: str, password: str) -> tuple[dict[str, Any], str]:
         "producer_id": membership["producer_id"] if membership else None,
         "is_demo": is_demo,
     })
+    # Phase B2: also create a refresh token (30d) so the frontend can
+    # auto-refresh when the access token expires (2h).
+    from app.auth.jwt import create_refresh_token
+    refresh_token = create_refresh_token({
+        "sub": str(user["id"]),
+        "email": user["email"],
+        "tenant_id": membership["tenant_id"] if membership else None,
+        "role": membership["role"] if membership else None,
+        "producer_id": membership["producer_id"] if membership else None,
+        "is_demo": is_demo,
+    })
     logger.info("login — user id=%d email=%s tenant=%s role=%s",
                 user["id"], user["email"],
                 membership["tenant_id"] if membership else None,
                 membership["role"] if membership else None)
-    return user, token
+    return user, token, refresh_token
 
 
 async def get_user_by_email(email: str) -> dict[str, Any] | None:

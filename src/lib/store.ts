@@ -20,6 +20,7 @@ import {
   login as authLogin,
   signup as authSignup,
   setAuthToken,
+  setRefreshToken,
   setActiveTenantId,
   getActiveTenantId,
 } from "./auth-api";
@@ -617,6 +618,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     } catch (err) {
       // Stale or invalid JWT — clear it and show the auth screen.
       setAuthToken(null);
+    setRefreshToken(null);
       setActiveTenantId(null);
       set({ authMode: "anonymous", user: null, tenants: [], activeTenant: null });
       if (err instanceof AuthApiError && !err.unreachable) {
@@ -637,8 +639,9 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   login: async (email, password) => {
     set({ authLoading: true });
     try {
-      const { user, token } = await authLogin(email, password);
+      const { user, token, refresh_token } = await authLogin(email, password);
       setAuthToken(token);
+      if (refresh_token) setRefreshToken(refresh_token);
       // Fetch memberships + tenants.
       const me = await getMe();
       const tenants = normalizeMemberships(me.memberships);
@@ -680,8 +683,9 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   signup: async (email, password, name) => {
     set({ authLoading: true });
     try {
-      const { user, token } = await authSignup(email, password, name);
+      const { user, token, refresh_token } = await authSignup(email, password, name);
       setAuthToken(token);
+      if (refresh_token) setRefreshToken(refresh_token);
       // New user has no memberships yet — they'll create a tenant next.
       set({
         authMode: "authenticated",
@@ -758,6 +762,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
    */
   enterDemoMode: () => {
     setAuthToken(null);
+    setRefreshToken(null);
     setActiveTenantId(null);
     set({
       authMode: "demo",
@@ -780,6 +785,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
 
   logout: () => {
     setAuthToken(null);
+    setRefreshToken(null);
     setActiveTenantId(null);
     set({
       authMode: "anonymous",

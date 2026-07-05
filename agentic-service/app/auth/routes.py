@@ -195,12 +195,12 @@ async def login_endpoint(body: LoginRequest, request: Request) -> dict[str, Any]
     tracer, ctx, span = _start_auth_span("auth_login", email=body.email)
     t0 = time.monotonic()
     try:
-        user, token = await login(body.email, body.password)
+        user, token, refresh_token = await login(body.email, body.password)
         await _end_auth_trace(
             tracer, ctx, span, t0, status_="ok",
             extra={"user_id": user["id"], "issued_token": True},
         )
-        return {"user": user, "token": token}
+        return {"user": user, "token": token, "refresh_token": refresh_token}
     except ValueError as exc:
         # Wrong email or wrong password — same message to avoid
         # user-enumeration leak.
@@ -288,7 +288,7 @@ async def demo_token_endpoint() -> dict[str, Any]:
     t0 = time.monotonic()
     try:
         # Login as the demo marie user (no password check — public demo).
-        user, token = await login("marie@tevet7.dev", "tevet7demo")
+        user, token, refresh_token = await login("marie@tevet7.dev", "tevet7demo")
         await _end_auth_trace(
             tracer, ctx, span, t0, status_="ok",
             extra={"user_id": user["id"], "demo": True, "issued_token": True},
@@ -296,6 +296,7 @@ async def demo_token_endpoint() -> dict[str, Any]:
         return {
             "user": {**user, "is_demo": True},
             "token": token,
+            "refresh_token": refresh_token,
             "is_demo": True,
         }
     except Exception as exc:  # noqa: BLE001
