@@ -461,7 +461,7 @@ function SocialProof({ t }: { t: typeof T.en }) {
       <div className="max-w-4xl mx-auto px-4">
         <p className="text-center text-xs text-muted-foreground/60 mb-6 uppercase tracking-wider">{t.proofLabel}</p>
         <div className="flex items-center justify-center gap-8 flex-wrap">
-          <img src="/drive-logo.png" alt="Drive Producteur" className="h-12 sm:h-16 md:h-20 opacity-60 grayscale hover:opacity-90 hover:grayscale-0 transition-all" />
+          <img src="/drive-logo.png" alt="Drive Producteur" className="h-12 sm:h-16 md:h-20 opacity-40 brightness-75 saturate-50 hover:opacity-100 hover:brightness-100 hover:saturate-100 transition-all duration-300" />
         </div>
         <div className="flex items-center justify-center gap-8 mt-6 flex-wrap">{t.metrics.map((s) => (<div key={s.label} className="text-center"><div className="font-heading text-xl text-foreground">{s.value}</div><div className="text-[10px] text-muted-foreground">{s.label}</div></div>))}</div>
       </div>
