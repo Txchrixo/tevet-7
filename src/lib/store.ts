@@ -137,6 +137,8 @@ interface CopilotState {
    * body identity instead of JWT so the user can switch without re-login. */
   demoIdentityOverride: Identity | null;
   messages: ChatMessage[];
+  /** Phase B4: current conversation_id (persisted in localStorage). */
+  currentConversationId: string | null;
   /** Id of the assistant message currently being inspected in the right panel. */
   selectedMessageId: string | null;
   /** True while the assistant is "thinking" (typing indicator). */
@@ -184,6 +186,7 @@ interface CopilotState {
   toggleInspector: () => void;
   setInspectorOpen: (open: boolean) => void;
   resetConversation: () => void;
+  setCurrentConversationId: (convId: string | null) => void;
 
   // --- Auth actions ---
   bootstrap: () => Promise<void>;
@@ -397,6 +400,11 @@ async function callBackendChat(message: string): Promise<AssistantResponse> {
     body.producer_id = override.producerId;
     body.role = override.kind;
   }
+  // Phase B4: send conversation_id so the backend loads history.
+  const convId = useCopilotStore.getState().currentConversationId;
+  if (convId) {
+    body.conversation_id = convId;
+  }
   // Phase A3: send conversation history (last 6 messages) for LLM memory.
   const msgs = useCopilotStore.getState().messages;
   if (msgs.length > 0) {
@@ -455,6 +463,11 @@ async function callBackendChatStream(
     body.identity_id = override.id;
     body.producer_id = override.producerId;
     body.role = override.kind;
+  }
+  // Phase B4: send conversation_id so the backend loads history.
+  const convId = useCopilotStore.getState().currentConversationId;
+  if (convId) {
+    body.conversation_id = convId;
   }
   // Phase A3: send conversation history (last 6 messages) for LLM memory.
   const streamMsgs = useCopilotStore.getState().messages;
@@ -534,6 +547,10 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   identity: identityById(DEFAULT_IDENTITY_ID),
   demoIdentityOverride: null,
   messages: [],
+  currentConversationId: (() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("tevet7_conversation_id") || null;
+  })(),
   selectedMessageId: null,
   isStreaming: false,
   inspectorOpen: false,
@@ -1100,8 +1117,17 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
   setShowIdentityPicker: (show) => set({ showIdentityPicker: show }),
   setInspectorOpen: (open) => set({ inspectorOpen: open }),
-  resetConversation: () =>
-    set({ messages: [], selectedMessageId: null, isStreaming: false }),
+  setCurrentConversationId: (convId) => {
+    if (typeof window !== "undefined") {
+      if (convId) localStorage.setItem("tevet7_conversation_id", convId);
+      else localStorage.removeItem("tevet7_conversation_id");
+    }
+    set({ currentConversationId: convId });
+  },
+  resetConversation: () => {
+    if (typeof window !== "undefined") localStorage.removeItem("tevet7_conversation_id");
+    set({ messages: [], selectedMessageId: null, isStreaming: false, currentConversationId: null });
+  },
 
   // -------------------------------------------------------------------------
   // Admin actions
