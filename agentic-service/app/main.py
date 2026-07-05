@@ -157,6 +157,13 @@ def create_app() -> FastAPI:
     except ImportError:
         pass
 
+    # Phase C5 — Export (CSV + PDF)
+    try:
+        from app.export_routes import router as export_router
+        app.include_router(export_router, prefix="/api", tags=["export"])
+    except ImportError:
+        pass
+
     # ── Health & info ────────────────────────────────────────────────────────
     @app.get("/health", tags=["meta"])
     async def health() -> dict:
