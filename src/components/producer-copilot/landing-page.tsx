@@ -73,7 +73,7 @@ function Navbar({ onSignup, onDemo }: { onSignup: () => void; onDemo: () => void
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
         <BrandLogo size={26} />
 
-        <div className="hidden md:flex items-center gap-8">
+        <div className="hidden lg:flex items-center gap-6">
           {navLinks.map((l) => (
             <a key={l.href} href={l.href}
                className="text-sm text-muted-foreground hover:text-foreground transition-colors">
@@ -82,7 +82,7 @@ function Navbar({ onSignup, onDemo }: { onSignup: () => void; onDemo: () => void
           ))}
         </div>
 
-        <div className="hidden md:flex items-center gap-3">
+        <div className="hidden lg:flex items-center gap-3">
           <button onClick={onDemo}
             className="text-sm text-muted-foreground hover:text-foreground transition-colors">
             Se connecter
@@ -93,7 +93,7 @@ function Navbar({ onSignup, onDemo }: { onSignup: () => void; onDemo: () => void
           </button>
         </div>
 
-        <button className="md:hidden text-foreground" onClick={() => setMobileOpen(!mobileOpen)}>
+        <button className="lg:hidden text-foreground" onClick={() => setMobileOpen(!mobileOpen)}>
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>
       </div>
@@ -104,7 +104,7 @@ function Navbar({ onSignup, onDemo }: { onSignup: () => void; onDemo: () => void
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden bg-background border-b border-border overflow-hidden"
+            className="lg:hidden bg-background border-b border-border overflow-hidden"
           >
             <div className="px-4 py-4 space-y-3">
               {navLinks.map((l) => (
@@ -143,7 +143,7 @@ function Hero({ onSignup, onDemo }: { onSignup: () => void; onDemo: () => void }
         >
           <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 mb-6">
             <Sparkles className="h-3 w-3 text-accent" />
-            <span className="text-xs text-muted-foreground">Agent IA pour marketplaces B2B</span>
+            <span className="text-xs text-muted-foreground">Agent IA configurable pour vos données</span>
           </div>
 
           <h1 className="font-heading text-4xl md:text-6xl text-foreground leading-tight mb-4">
@@ -189,7 +189,7 @@ function Hero({ onSignup, onDemo }: { onSignup: () => void; onDemo: () => void }
 // Interactive Demo — démo interactive façon Cursor
 // ─────────────────────────────────────────────────────────────────────────────
 
-type DemoRole = "producteur" | "gestionnaire" | "analyste";
+type DemoRole = "producteur" | "admin" | "client";
 
 interface DemoScenario {
   role: DemoRole;
@@ -239,60 +239,64 @@ const DEMO_SCENARIOS: DemoScenario[] = [
     chartColor: "accent",
   },
   {
-    role: "gestionnaire",
-    roleLabel: "Gestionnaire",
-    q: "Combien j'ai gagné net de commission en juin ?",
-    summary: "Votre revenu net en juin s'élève à 4 246,44 €, soit +15% par rapport à mai.",
+    role: "admin",
+    roleLabel: "Admin marketplace",
+    q: "Quel producteur a généré le plus de ventes ce mois-ci ?",
+    summary: "Voici le classement des producteurs par ventes ce mois-ci. La Ferme du Vallon est en tête avec 1 455,55 €.",
     table: {
-      headers: ["Poste", "Montant", "Part"],
+      headers: ["Producteur", "Commandes", "Chiffre d'affaires"],
       rows: [
-        ["Chiffre d'affaires brut", "4 825,50 €", "100%"],
-        ["Commission marketplace (12%)", "579,06 €", "12%"],
-        ["Revenu net", "4 246,44 €", "88%"],
+        ["Ferme du Vallon", "123", "1 455,55 €"],
+        ["Maraîchage Bio Soleil", "98", "1 203,20 €"],
+        ["Élevage du Vernet", "67", "890,40 €"],
+        ["Vignoble des Coteaux", "45", "1 739,49 €"],
+        ["Fromagerie du Col", "34", "542,10 €"],
       ],
     },
-    sql: "SELECT SUM(oi.line_total_eur) AS brut, SUM(oi.line_total_eur) * 0.12 AS commission, SUM(oi.line_total_eur) * 0.88 AS net FROM order_items AS oi JOIN orders AS o ON oi.order_id = o.id WHERE o.created_at >= date('2024-06-01') AND o.created_at < date('2024-07-01')",
+    sql: "SELECT p.name AS name, COUNT(o.id) AS commandes, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN orders AS o ON oi.order_id = o.id JOIN producers AS p ON oi.producer_id = p.id GROUP BY p.name ORDER BY revenue DESC LIMIT 5",
     scope: "FULL ACCESS",
     tokens: "1 450",
     latency: "3,1",
     tagLabel: "SQL EXÉCUTÉ",
-    chartTitle: "Répartition du revenu",
+    chartTitle: "Ventes par producteur",
     chartData: [
-      { name: "Brut", value: 4825, display: "4 826 €" },
-      { name: "Commission", value: 579, display: "579 €" },
-      { name: "Net", value: 4246, display: "4 246 €" },
+      { name: "Vallon", value: 1456, display: "1 456 €" },
+      { name: "Bio Soleil", value: 1203, display: "1 203 €" },
+      { name: "Vernet", value: 890, display: "890 €" },
+      { name: "Coteaux", value: 1739, display: "1 739 €" },
+      { name: "Col", value: 542, display: "542 €" },
     ],
     chartColor: "accent",
   },
   {
-    role: "analyste",
-    roleLabel: "Analyste",
-    q: "Quel stock va me manquer samedi ?",
-    summary: "5 produits sont à risque de rupture. Le modèle ML recommande de réapprovisionner les poireaux et courgettes en priorité.",
+    role: "client",
+    roleLabel: "Client",
+    q: "Quelles sont mes dernières commandes ?",
+    summary: "Voici vos 5 dernières commandes. Votre prochaine livraison est prévue samedi 14 juillet.",
     table: {
-      headers: ["Produit", "Risque", "Stock actuel", "Recommandation"],
+      headers: ["Date", "Producteur", "Montant", "Statut"],
       rows: [
-        ["Poireaux", "91%", "2,8 unités", "Réappro urgent"],
-        ["Courgettes", "90%", "0,9 unité", "Réappro urgent"],
-        ["Salade laitue", "84%", "3,3 unités", "Surveiller"],
-        ["Carottes en bottes", "79%", "Épuisé", "Réappro"],
-        ["Tomates cœur de bœuf", "77%", "Épuisé", "Réappro"],
+        ["12/07", "Ferme du Vallon", "48,50 €", "Prête"],
+        ["10/07", "Vignoble des Coteaux", "32,00 €", "Récupérée"],
+        ["07/07", "Maraîchage Bio Soleil", "27,30 €", "Récupérée"],
+        ["05/07", "Fromagerie du Col", "15,80 €", "Récupérée"],
+        ["03/07", "Élevage du Vernet", "63,20 €", "Récupérée"],
       ],
     },
-    sql: null,
+    sql: "SELECT o.created_at AS date, p.name AS producer, ROUND(SUM(oi.line_total_eur), 2) AS amount, o.status FROM orders AS o JOIN order_items AS oi ON oi.order_id = o.id JOIN producers AS p ON oi.producer_id = p.id WHERE o.customer_id = :customer_id GROUP BY o.id ORDER BY o.created_at DESC LIMIT 5",
     scope: "SCOPE VÉRIFIÉ",
-    tokens: "1 580",
-    latency: "4,2",
-    tagLabel: "ML · PRÉVISION",
-    chartTitle: "Risque de rupture par produit",
+    tokens: "980",
+    latency: "1,8",
+    tagLabel: "SQL EXÉCUTÉ",
+    chartTitle: "Montant par commande",
     chartData: [
-      { name: "Poireaux", value: 91, display: "91%" },
-      { name: "Courgettes", value: 90, display: "90%" },
-      { name: "Salade", value: 84, display: "84%" },
-      { name: "Carottes", value: 79, display: "79%" },
-      { name: "Tomates", value: 77, display: "77%" },
+      { name: "12/07", value: 49, display: "49 €" },
+      { name: "10/07", value: 32, display: "32 €" },
+      { name: "07/07", value: 27, display: "27 €" },
+      { name: "05/07", value: 16, display: "16 €" },
+      { name: "03/07", value: 63, display: "63 €" },
     ],
-    chartColor: "amber",
+    chartColor: "accent",
   },
 ];
 
