@@ -78,7 +78,7 @@ function normalizeMembership(m: Partial<TenantMembership> & { id?: string }): Te
     producer_id: m.producer_id ?? null,
     is_demo: m.is_demo ?? false,
     is_active: m.is_active ?? false,
-    onboarded: m.onboarded ?? true,
+    onboarded: m.onboarded ?? false,
   };
 }
 

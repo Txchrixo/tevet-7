@@ -218,13 +218,17 @@ async def get_user_by_id(user_id: int) -> dict[str, Any] | None:
 
 
 async def list_user_memberships(user_id: int) -> list[dict[str, Any]]:
-    """Return all memberships for ``user_id``, joined with tenant info.
+    """Return all memberships for ``user_id``, joined with tenant info + onboarded flag.
 
     Used by ``GET /api/auth/me`` so the frontend can render the tenant
-    switcher. Each item carries ``{tenant_id, name, slug, role, producer_id,
-    is_demo, is_active}``.
+    switcher AND gate on onboarding. Each item carries ``{tenant_id, name,
+    slug, role, producer_id, is_demo, is_active, onboarded}``.
+
+    The ``onboarded`` flag comes from the ``tenant_configs`` table (LEFT JOIN
+    — a freshly created tenant may not have a config row yet, in which case
+    ``onboarded`` defaults to ``False``).
     """
-    from app.db_seed import tenants as tenants_table
+    from app.db_seed import tenants as tenants_table, tenant_configs
     engine = get_engine()
     async with engine.connect() as conn:
         r = await conn.execute(
@@ -237,11 +241,15 @@ async def list_user_memberships(user_id: int) -> list[dict[str, Any]]:
                 tenants_table.c.name.label("tenant_name"),
                 tenants_table.c.slug.label("tenant_slug"),
                 tenants_table.c.is_demo.label("tenant_is_demo"),
+                tenant_configs.c.onboarded.label("tenant_onboarded"),
             )
             .select_from(
                 tenant_memberships.join(
                     tenants_table,
                     tenants_table.c.id == tenant_memberships.c.tenant_id,
+                ).outerjoin(
+                    tenant_configs,
+                    tenant_configs.c.tenant_id == tenants_table.c.id,
                 )
             )
             .where(tenant_memberships.c.user_id == int(user_id))
@@ -257,5 +265,7 @@ async def list_user_memberships(user_id: int) -> list[dict[str, Any]]:
                 "producer_id": row.producer_id,
                 "is_demo": bool(row.tenant_is_demo),
                 "is_active": bool(row.is_active),
+                # onboarded: False if no config row (fresh tenant), else the stored value.
+                "onboarded": bool(row.tenant_onboarded) if row.tenant_onboarded is not None else False,
             })
     return items
