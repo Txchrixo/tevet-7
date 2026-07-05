@@ -45,6 +45,8 @@ _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # token in localStorage and we don't want users to be logged out mid-demo).
 # Production should drop this to 1-2h and add a refresh-token endpoint.
 _DEFAULT_EXPIRY = timedelta(days=7)
+_ACCESS_TOKEN_EXPIRY = timedelta(hours=2)
+_REFRESH_TOKEN_EXPIRY = timedelta(days=30)
 
 
 def hash_password(plain: str) -> str:
@@ -100,3 +102,33 @@ def verify_token(token: str) -> dict[str, Any]:
     """
     settings = get_settings()
     return jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase B2 — Refresh tokens
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def create_refresh_token(data: dict[str, Any]) -> str:
+    """Create a long-lived refresh token (30 days) with type='refresh'."""
+    settings = get_settings()
+    to_encode = dict(data)
+    to_encode["type"] = "refresh"
+    to_encode["exp"] = datetime.now(timezone.utc) + _REFRESH_TOKEN_EXPIRY
+    return jwt.encode(to_encode, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def verify_refresh_token(token: str) -> dict[str, Any]:
+    """Verify a refresh token. Raises JWTError if invalid or not type='refresh'."""
+    claims = verify_token(token)
+    if claims.get("type") != "refresh":
+        from jose import JWTError
+        raise JWTError("not a refresh token")
+    return claims
+
+
+def create_token_pair(data: dict[str, Any]) -> tuple[str, str]:
+    """Create an (access_token, refresh_token) pair."""
+    access = create_access_token(data, expires_delta=_ACCESS_TOKEN_EXPIRY)
+    refresh = create_refresh_token(data)
+    return access, refresh

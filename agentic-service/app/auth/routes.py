@@ -243,6 +243,32 @@ async def me_endpoint(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# POST /api/auth/refresh — Phase B2: exchange refresh token for new access token
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(..., description="The refresh token from login.")
+
+
+@router.post("/auth/refresh")
+async def refresh_endpoint(body: RefreshRequest) -> dict[str, Any]:
+    """Exchange a refresh token for a new access token (2h)."""
+    from jose import JWTError
+    from app.auth.jwt import verify_refresh_token, create_access_token, _ACCESS_TOKEN_EXPIRY
+    try:
+        claims = verify_refresh_token(body.refresh_token)
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"invalid refresh token: {exc}",
+        ) from exc
+    access_claims = {k: v for k, v in claims.items() if k not in ("exp", "type")}
+    new_access = create_access_token(access_claims, expires_delta=_ACCESS_TOKEN_EXPIRY)
+    return {"access_token": new_access, "token_type": "bearer"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # POST /api/auth/demo-token — Phase 6d: public demo access (no credentials)
 # ─────────────────────────────────────────────────────────────────────────────
 
