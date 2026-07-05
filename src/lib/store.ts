@@ -1282,7 +1282,9 @@ async function runBackendAssistant(
   try {
     // Phase A2 — use streaming SSE for real-time answer display.
     const assistantId = makeId("a");
-    // Create a placeholder assistant message that will be updated as chunks arrive.
+    // Create a placeholder assistant message with typing dots.
+    // The content is empty → the ChatMessage component shows bouncing dots.
+    // This gives immediate visual feedback (no delay before the loader appears).
     const placeholderMessage: ChatMessage = {
       id: assistantId,
       role: "assistant",
@@ -1292,6 +1294,8 @@ async function runBackendAssistant(
     };
     set({
       messages: [...get().messages, placeholderMessage],
+      // isStreaming is already true (set above) — this ensures the chat
+      // input is disabled and the scroll follows.
     });
 
     const response = await callBackendChatStream(

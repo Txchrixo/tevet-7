@@ -138,6 +138,10 @@ class SQLGenerator(Protocol):
 # (e.g. a producer asking a cross-producer question).
 REFUSE_MARKER = "__REFUSE__"
 
+# Sentinel for greetings / non-data questions — the orchestrator returns a
+# friendly message instead of running SQL.
+GREETING_MARKER = "__GREETING__"
+
 
 class RuleBasedSQLGenerator:
     """Deterministic keyword-driven SQL generator.

@@ -36,7 +36,7 @@ from app.tools.forecast_tool import (
     render_forecast_chart,
 )
 from app.tools.rag_tool import RagSearchTool, RagResult
-from app.tools.sql_tool import REFUSE_MARKER, SqlReadTool, ToolResult
+from app.tools.sql_tool import REFUSE_MARKER, GREETING_MARKER, SqlReadTool, ToolResult
 from app.tracing.base import Span, TraceContext, Tracer
 
 logger = logging.getLogger("tevet7.orchestrator")
@@ -1109,8 +1109,11 @@ class AgentOrchestrator:
                 refused=True,
             )
         refused_by_generator = raw_sql == REFUSE_MARKER
+        is_greeting = raw_sql == GREETING_MARKER
         gen_detail = (
             "Refusé — question cross-producteur" if refused_by_generator
+            else "Salutation détectée — pas de SQL" if is_greeting
+            else "LLM generator" if self.sql_tool.generator.__class__.__name__ == "LLMSQLGenerator"
             else "Rule-based generator (Phase 1)"
         )
         steps.append(
@@ -1131,6 +1134,66 @@ class AgentOrchestrator:
         # ── Step 4 — sqlglot validation + scoping ──
         span = self.tracer.start_span(ctx, "sqlglot_validation")
         t = time.monotonic()
+
+        # GREETING — return a friendly message without executing SQL.
+        if is_greeting:
+            steps.append(
+                StepTrace(
+                    index=4,
+                    title="Validation sqlglot",
+                    detail="Pas de SQL — salutation détectée.",
+                    status="ok",
+                    duration_ms=int((time.monotonic() - t) * 1000),
+                )
+            )
+            self.tracer.end_span(ctx, span, status="ok", reason="greeting")
+            security_checks = [
+                SecurityCheck("Read-only", "ok", "N/A — pas de SQL"),
+                SecurityCheck("Scope appliqué", "ok", "N/A"),
+                SecurityCheck("Tables autorisées", "ok", "N/A"),
+                SecurityCheck("LIMIT 1000", "ok", "N/A"),
+            ]
+            for step_title in ("Exécution read-only", "Synthèse"):
+                span_s = self.tracer.start_span(ctx, step_title.lower().replace(" ", "_"))
+                steps.append(
+                    StepTrace(
+                        index=5 if step_title == "Exécution read-only" else 6,
+                        title=step_title,
+                        detail="Salutation — pas de requête.",
+                        status="ok",
+                        duration_ms=0,
+                    )
+                )
+                self.tracer.end_span(ctx, span_s, status="ok", reason="greeting")
+            latency_ms = int((time.monotonic() - started_at) * 1000)
+            greeting_name = ""
+            if self.producer_id is not None:
+                greeting_name = await _producer_name(self.producer_id)
+                greeting_name = f" {greeting_name.split()[0]}" if greeting_name else ""
+            return AgentResponse(
+                answer=(
+                    f"Bonjour{greeting_name} ! Je suis votre agent Tevet-7. "
+                    "Posez-moi une question sur vos données — ventes, stock, "
+                    "revenus, statistiques. Chaque réponse est sécurisée par "
+                    "un scope tenant."
+                ),
+                sql=None,
+                scope_clause=None,
+                chart=None,
+                tokens_in=response_tokens_in if False else 200,
+                tokens_out=response_tokens_out if False else 80,
+                latency_ms=latency_ms,
+                tool_calls=[],
+                steps=steps,
+                security_checks=[s.__dict__ if hasattr(s, '__dict__') else s for s in security_checks],
+                refused=False,
+                tables_touched=[],
+                sources=[],
+                ops_analysis=None,
+                forecast_predictions=None,
+                trace_id=trace_id,
+            )
+
         if refused_by_generator:
             steps.append(
                 StepTrace(

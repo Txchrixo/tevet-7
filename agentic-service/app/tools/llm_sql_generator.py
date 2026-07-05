@@ -32,7 +32,7 @@ import logging
 import os
 from typing import Any
 
-from app.tools.sql_tool import RuleBasedSQLGenerator, REFUSE_MARKER
+from app.tools.sql_tool import RuleBasedSQLGenerator, REFUSE_MARKER, GREETING_MARKER
 
 logger = logging.getLogger("tevet7.llm_sql_generator")
 
@@ -144,7 +144,6 @@ RULES (CRITICAL — violations will be rejected):
    - Do NOT use EXTRACT(), use strftime('%m', column) instead.
    - Example: "this month" → WHERE date_column >= date('now', 'start of month')
    - Example: "last 7 days" → WHERE date_column >= date('now', '-7 days')
-   - Example: "last 30 days" → WHERE date_column >= date('now', '-30 days')
 5. Keep the query simple and efficient. Avoid subqueries unless necessary.
 6. If the question is about "top" or "best", use ORDER BY ... DESC LIMIT.
 7. If the question is about a total/sum, use SUM() with ROUND(..., 2).
@@ -155,9 +154,12 @@ RULES (CRITICAL — violations will be rejected):
     add a WHERE clause on the date column using SQLite date functions.
 12. If the question is about another producer's data or a cross-tenant query,
     return "REFUSE" (the user is not authorized).
-13. If you cannot generate SQL for the question, return "CANNOT_GENERATE".
-14. Do NOT add a semicolon at the end.
-15. Do NOT include the scope column in your WHERE clause (e.g. do NOT add
+13. If the question is a GREETING, small talk, or NOT a data question
+    (e.g., "salut", "bonjour", "merci", "comment ça va", "aide"),
+    return "GREETING".
+14. If you cannot generate SQL for the question, return "CANNOT_GENERATE".
+15. Do NOT add a semicolon at the end.
+16. Do NOT include the scope column in your WHERE clause (e.g. do NOT add
     WHERE producer_id = X — the system adds it automatically).
 
 USER CONTEXT:
@@ -165,7 +167,8 @@ USER CONTEXT:
 - Scope column: {scope_column or "none (admin — full access)"}
 
 Return ONLY the SQL query (no markdown, no explanation, no semicolons).
-If you must refuse or cannot generate, return exactly "REFUSE" or "CANNOT_GENERATE"."""
+If you must refuse, cannot generate, or it's a greeting, return exactly
+"REFUSE", "CANNOT_GENERATE", or "GREETING"."""
 
     # ── Entry point ───────────────────────────────────────────────────────
 
@@ -200,10 +203,12 @@ If you must refuse or cannot generate, return exactly "REFUSE" or "CANNOT_GENERA
             raw = response.choices[0].message.content or ""
             raw = raw.strip()
 
-            # Check for refusal / cannot generate.
-            if raw.upper() in ("REFUSE", "CANNOT_GENERATE", "REFUSE."):
-                if "REFUSE" in raw.upper():
-                    return REFUSE_MARKER
+            # Check for greeting / refusal / cannot generate.
+            if raw.upper().strip() in ("GREETING", "GREETING."):
+                return GREETING_MARKER
+            if raw.upper().strip() in ("REFUSE", "REFUSE."):
+                return REFUSE_MARKER
+            if raw.upper().strip() in ("CANNOT_GENERATE", "CANNOT_GENERATE."):
                 return None
 
             # Strip markdown code fences if present.
