@@ -632,6 +632,13 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 response = await orchestrator.run(req.message)
 
             # Build the full envelope (same as /chat).
+            # Convert StepTrace objects to dicts for JSON serialization.
+            _steps_dicts = [
+                {"index": s.index, "title": s.title, "detail": s.detail,
+                 "status": s.status, "duration_ms": s.duration_ms}
+                if hasattr(s, 'index') else s
+                for s in (response.steps or [])
+            ]
             envelope = {
                 "answer": response.answer,
                 "sql": response.sql,
@@ -641,7 +648,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 "tokens_out": response.tokens_out,
                 "latency_ms": response.latency_ms,
                 "tool_calls": response.tool_calls,
-                "steps": response.steps,
+                "steps": _steps_dicts,
                 "security_checks": response.security_checks,
                 "refused": response.refused,
                 "tables_touched": response.tables_touched,
