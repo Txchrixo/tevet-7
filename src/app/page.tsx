@@ -23,8 +23,9 @@ import { OnboardingWizard } from "@/components/producer-copilot/onboarding-wizar
 import { Sidebar } from "@/components/producer-copilot/sidebar";
 import { BrandMark } from "@/components/producer-copilot/brand-mark";
 import { CreateWorkspace } from "@/components/producer-copilot/create-workspace";
+import { ErrorBoundary } from "@/components/error-boundary";
 
-export default function Home() {
+function Home() {
   const adminView = useCopilotStore((s) => s.adminView);
   const authMode = useCopilotStore((s) => s.authMode);
   const bootstrap = useCopilotStore((s) => s.bootstrap);
@@ -336,5 +337,13 @@ function WelcomeState({
         </div>
       )}
     </motion.div>
+  );
+}
+
+export default function WrappedHome() {
+  return (
+    <ErrorBoundary>
+      <Home />
+    </ErrorBoundary>
   );
 }
