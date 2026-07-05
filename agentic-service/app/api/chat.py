@@ -116,6 +116,17 @@ class ChatRequest(BaseModel):
             "when Authorization: Bearer is present."
         ),
     )
+    conversation_id: str | None = Field(
+        default=None, description="Conversation ID (future, for persistence)."
+    )
+    history: list[dict[str, str]] | None = Field(
+        default=None,
+        description=(
+            "Conversation history (last N messages) for the LLM orchestrator. "
+            "Each item: {role: 'user'|'assistant', content: '...'}. "
+            "Phase A3: enables conversation memory ('et le mois dernier ?')."
+        ),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -255,20 +266,53 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             role=role,
             tracer=get_tracer(),
         )
-        orchestrator = AgentOrchestrator(
-            sql_tool=sql_tool,
-            role=role,
-            producer_id=producer_id,
-            identity_id=identity_id,
-            tracer=get_tracer(),
-            rag_tool=rag_tool,
-            forecast_tool=forecast_tool,
-        )
-        response = await orchestrator.run(req.message)
+        # ── Phase A1: LLM orchestrator (function calling) with fallback ──
+        from app.config import get_settings
+        settings = get_settings()
 
-        # Serialise to the API contract (snake_case → snake_case as is,
-        # but `sql` is the public name; the orchestrator stores `sql_used`
-        # internally as `sql` already).
+        response = None
+        if settings.openai_api_key and settings.openai_api_key != "sk-replace-me":
+            try:
+                from openai import AsyncOpenAI
+                from app.agents.llm_orchestrator import LLMOrchestrator
+
+                llm_kwargs: dict[str, Any] = {"api_key": settings.openai_api_key}
+                if settings.llm_base_url:
+                    llm_kwargs["base_url"] = settings.llm_base_url
+                llm_client = AsyncOpenAI(**llm_kwargs)
+
+                llm_orch = LLMOrchestrator(
+                    sql_tool=sql_tool,
+                    rag_tool=rag_tool,
+                    forecast_tool=forecast_tool,
+                    role=role,
+                    producer_id=producer_id,
+                    identity_id=identity_id,
+                    tracer=get_tracer(),
+                    schema=schema,
+                    llm_client=llm_client,
+                    model=settings.llm_model,
+                )
+                response = await llm_orch.run(req.message, history=req.history)
+                logger.info("LLM orchestrator succeeded — tokens=%d/%d latency=%dms",
+                            response.tokens_in, response.tokens_out, response.latency_ms)
+            except Exception as exc:
+                logger.warning("LLM orchestrator failed (%s) — falling back to rule-based", exc)
+                response = None
+
+        if response is None:
+            # Rule-based fallback.
+            orchestrator = AgentOrchestrator(
+                sql_tool=sql_tool,
+                role=role,
+                producer_id=producer_id,
+                identity_id=identity_id,
+                tracer=get_tracer(),
+                rag_tool=rag_tool,
+                forecast_tool=forecast_tool,
+            )
+            response = await orchestrator.run(req.message)
+
         return {
             "answer": response.answer,
             "sql": response.sql,

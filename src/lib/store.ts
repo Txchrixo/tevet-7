@@ -397,6 +397,14 @@ async function callBackendChat(message: string): Promise<AssistantResponse> {
     body.producer_id = override.producerId;
     body.role = override.kind;
   }
+  // Phase A3: send conversation history (last 6 messages) for LLM memory.
+  const msgs = useCopilotStore.getState().messages;
+  if (msgs.length > 0) {
+    body.history = msgs.slice(-6).map((m) => ({
+      role: m.role,
+      content: m.content.slice(0, 500), // Truncate to save tokens.
+    }));
+  }
 
   const res = await fetch("/api/chat", {
     method: "POST",
@@ -447,6 +455,14 @@ async function callBackendChatStream(
     body.identity_id = override.id;
     body.producer_id = override.producerId;
     body.role = override.kind;
+  }
+  // Phase A3: send conversation history (last 6 messages) for LLM memory.
+  const streamMsgs = useCopilotStore.getState().messages;
+  if (streamMsgs.length > 0) {
+    body.history = streamMsgs.slice(-6).map((m) => ({
+      role: m.role,
+      content: m.content.slice(0, 500),
+    }));
   }
 
   const res = await fetch("/api/chat/stream", {
