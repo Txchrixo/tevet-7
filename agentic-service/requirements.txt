@@ -16,6 +16,7 @@ pydantic-settings==2.7.1
 # ── Database (async stack) ──────────────────────────────────────────────────
 SQLAlchemy[asyncio]==2.0.36
 asyncpg==0.30.0                    # async Postgres driver
+aiosqlite==0.20.0                  # async SQLite driver (dev DB)
 pgvector==0.3.6                    # pgvector type support for SQLAlchemy
 
 # ── LLM provider ────────────────────────────────────────────────────────────
@@ -42,6 +43,9 @@ numpy==2.2.1
 
 # ── Auth ────────────────────────────────────────────────────────────────────
 PyJWT==2.10.1                      # JWT verification for /chat (tenant + role claims)
+python-jose[cryptography]==3.3.0   # JWT encode/decode (FastAPI dependency)
+passlib[bcrypt]==1.7.4             # password hashing (bcrypt)
+bcrypt==4.2.1                      # pinned: 5.x breaks passlib (no __about__ attr)
 cryptography==44.0.0               # PyJWT[crypto] dependency for RS256 support
 
 # ── Dev / test only ─────────────────────────────────────────────────────────
