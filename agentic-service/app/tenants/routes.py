@@ -268,6 +268,54 @@ async def add_member_endpoint(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# DELETE /api/tenants/{tenant_id}/members/{user_id} — remove a member (Phase C2)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@router.delete("/tenants/{tenant_id}/members/{user_id}")
+async def remove_member_endpoint(
+    tenant_id: str,
+    user_id: int,
+    current_user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Remove a user from a tenant. Admin-only.
+
+    Prevents removing the last admin (a tenant must always have ≥1 admin).
+    """
+    members = await get_tenant_members(tenant_id)
+    caller = next((m for m in members if m["user_id"] == current_user["id"]), None)
+    if caller is None or caller["role"] != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="only tenant admins can remove members",
+        )
+    target = next((m for m in members if m["user_id"] == user_id), None)
+    if target is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"user {user_id} is not a member of tenant {tenant_id}",
+        )
+    # Prevent removing the last admin.
+    admins = [m for m in members if m["role"] == "admin"]
+    if target["role"] == "admin" and len(admins) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="cannot remove the last admin",
+        )
+    from app.db_seed import get_engine, tenant_memberships
+    from sqlalchemy import delete
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            tenant_memberships.delete().where(
+                (tenant_memberships.c.tenant_id == tenant_id)
+                & (tenant_memberships.c.user_id == user_id)
+            )
+        )
+    return {"removed": True, "user_id": user_id}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Phase 6b — Onboarding endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 # Multi-step wizard that turns a freshly-created tenant into an agent-ready
