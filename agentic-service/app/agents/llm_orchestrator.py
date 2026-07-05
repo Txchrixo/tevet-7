@@ -370,6 +370,33 @@ class LLMOrchestrator:
         total_tokens_in = 0
         total_tokens_out = 0
 
+        # ── Guardrails (Phase A4) — run BEFORE the LLM is called ──
+        from app.agents.guardrails import check_message, redact_pii
+        guardrail_result = check_message(user_message)
+        if guardrail_result.blocked:
+            latency_ms = int((time.monotonic() - started_at) * 1000)
+            steps.append(StepTrace(
+                index=1, title="Garde-fou — blocage",
+                detail=guardrail_result.reason,
+                status="blocked", duration_ms=latency_ms,
+            ))
+            return AgentResponse(
+                answer=guardrail_result.reason,
+                sql=None, scope_clause=None, chart=None,
+                tokens_in=0, tokens_out=0, latency_ms=latency_ms,
+                tool_calls=[], steps=steps,
+                security_checks=[
+                    {"label": "Garde-fou", "status": "blocked", "detail": guardrail_result.category},
+                    {"label": "Read-only", "status": "ok", "detail": "N/A"},
+                    {"label": "Scope appliqué", "status": "ok", "detail": "N/A"},
+                    {"label": "LIMIT 1000", "status": "ok", "detail": "N/A"},
+                ],
+                refused=True, tables_touched=[], sources=[],
+                ops_analysis=None, forecast_predictions=None, trace_id=None,
+            )
+        # PII redaction — replace PII before sending to the LLM.
+        safe_message = redact_pii(user_message)
+
         # ── Build messages ──
         system_prompt = self._build_system_prompt()
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
