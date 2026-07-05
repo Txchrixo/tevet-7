@@ -48,15 +48,28 @@ function Home() {
   if (authMode === "loading") {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background">
-        <div
-          className="animate-pulse"
-          style={{ animationDuration: "1.5s" }}
+        <svg
+          width="48"
+          height="48"
+          viewBox="0 0 24 24"
+          fill="none"
+          className="animate-spin"
+          style={{ animationDuration: "2s", animationTimingFunction: "linear" }}
         >
-          <BrandMark size={48} />
-        </div>
-        <p className="mt-5 text-[11px] uppercase tracking-wide text-muted-foreground">
-          {APP_NAME} · chargement
-        </p>
+          <path
+            d="M 12 3 L 19.04 6.39 L 20.77 14 L 15.91 20.11 L 8.09 20.11 L 3.23 14 L 4.96 6.39 Z"
+            stroke="var(--accent, #A8C090)"
+            strokeWidth="1.75"
+            strokeLinejoin="round"
+            opacity="0.3"
+          />
+          <path
+            d="M 12 3 L 19.04 6.39"
+            stroke="var(--accent, #A8C090)"
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </svg>
       </div>
     );
   }
