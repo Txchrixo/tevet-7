@@ -1,4 +1,4 @@
-"""Groq adapter — Groq Cloud (Llama models, fast inference)."""
+"""Groq adapter - Groq Cloud (Llama models, fast inference)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from app.agents.llm_adapters.base import BaseOpenAIAdapter
 
 
 class GroqAdapter(BaseOpenAIAdapter):
-    """Groq Cloud — Llama models, 14k req/day free, 500 tok/s.
+    """Groq Cloud - Llama models, 14k req/day free, 500 tok/s.
 
     NOTE: geo-blocked from Hong Kong (sandbox IP). Circuit-breaks fast.
     """

@@ -29,7 +29,7 @@ function buildTargetUrl(req: NextRequest, segments: string[] | undefined): strin
 async function forward(req: NextRequest, segments: string[] | undefined) {
   const target = buildTargetUrl(req, segments);
 
-  // Forward only safe headers — Authorization carries the JWT.
+  // Forward only safe headers - Authorization carries the JWT.
   const headers = new Headers();
   const auth = req.headers.get("authorization");
   if (auth) headers.set("authorization", auth);
@@ -59,7 +59,7 @@ async function forward(req: NextRequest, segments: string[] | undefined) {
       headers: respHeaders,
     });
   } catch (err) {
-    // Backend not reachable — return a structured 502 so the admin UI can
+    // Backend not reachable - return a structured 502 so the admin UI can
     // surface a meaningful empty state instead of crashing.
     const message =
       err instanceof Error ? err.message : "Admin backend unreachable";

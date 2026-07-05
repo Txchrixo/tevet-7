@@ -93,7 +93,7 @@ function normalizeMemberships(
 
 export type AdminView = "none" | "tenant" | "platform";
 
-/** Auth mode — controls which surface is rendered (AuthScreen vs chat). */
+/** Auth mode - controls which surface is rendered (AuthScreen vs chat). */
 export type AuthMode = "loading" | "anonymous" | "authenticated" | "demo";
 
 interface AdminData {
@@ -105,7 +105,7 @@ interface AdminData {
   stats: TenantStats | null;
   tenants: PlatformTenant[];
   platformStats: PlatformStats | null;
-  /** Set when an admin API call fails — surfaces in the admin UI banner. */
+  /** Set when an admin API call fails - surfaces in the admin UI banner. */
   error: string | null;
 }
 
@@ -130,11 +130,13 @@ interface CopilotState {
   /** True when the session is a public demo. Shows the
    * "DÉMO PUBLIQUE" badge + blocks destructive actions. */
   isDemoSession: boolean;
+  /** Global language (en/fr). Default: en. */
+  lang: "en" | "fr";
 
   // --- Chat identity + messages ---
   identityId: string;
   identity: Identity;
-  /** Demo identity override (Marie/Pierre/Admin) — when set, chat calls send
+  /** Demo identity override (Marie/Pierre/Admin) - when set, chat calls send
    * body identity instead of JWT so the user can switch without re-login. */
   demoIdentityOverride: Identity | null;
   messages: ChatMessage[];
@@ -149,8 +151,9 @@ interface CopilotState {
   /** When true, the AuthScreen shows the IdentityPicker instead of the login form. */
   showIdentityPicker: boolean;
   setShowIdentityPicker: (show: boolean) => void;
+  setLang: (lang: "en" | "fr") => void;
 
-  // --- Example questions (Phase 6d — dynamic, schema-driven) ---
+  // --- Example questions (Phase 6d - dynamic, schema-driven) ---
   /** Questions shown in the sidebar's "Exemples" section. Initialised to
    * `FALLBACK_QUESTIONS` so the sidebar always has something to show
    * before the first `/api/tenants/{id}/example-questions` call resolves.
@@ -161,7 +164,7 @@ interface CopilotState {
   // --- Onboarding wizard ---
   /** Current onboarding step. 0 = not started, 1-4 = wizard steps. */
   onboardingStep: number;
-  /** Wizard draft state — committed between steps so navigation away + back
+  /** Wizard draft state - committed between steps so navigation away + back
    * preserves the user's progress. */
   onboardingData: OnboardingData;
   /** Tenant id the wizard is currently active for. Null when no wizard is
@@ -230,10 +233,10 @@ interface CopilotState {
   resetDemo: () => Promise<void>;
 }
 
-/** Wizard draft state — kept in the store so navigation away + back preserves
+/** Wizard draft state - kept in the store so navigation away + back preserves
  * the user's progress (connection URL, schema selection, roles config). */
 interface OnboardingData {
-  /** "postgres" | "csv" | null — picked in step 1. */
+  /** "postgres" | "csv" | null - picked in step 1. */
   connectorType: "postgres" | "csv" | null;
   /** Postgres connection URL (only when connectorType === "postgres"). */
   connectionUrl: string;
@@ -262,7 +265,7 @@ function identityById(id: string): Identity {
 }
 
 /**
- * Heuristic — the platform owner is the DP Admin identity. The real backend
+ * Heuristic - the platform owner is the DP Admin identity. The real backend
  * `/api/auth/me` response carries `is_platform_owner: true` for that account,
  * but the local mock identities do not have a backend yet so we use the
  * identity `kind` as the source of truth.
@@ -271,7 +274,7 @@ export function isPlatformOwner(identity: Identity): boolean {
   return identity.kind === "admin";
 }
 
-/** Tenant admins — also the DP Admin identity in the demo mock model. */
+/** Tenant admins - also the DP Admin identity in the demo mock model. */
 export function isTenantAdmin(identity: Identity): boolean {
   return identity.kind === "admin";
 }
@@ -279,7 +282,7 @@ export function isTenantAdmin(identity: Identity): boolean {
 function describeAdminError(err: unknown): string {
   if (err instanceof AdminApiError) {
     if (err.status === 401 || err.status === 403) {
-      return "Accès refusé — permissions insuffisantes pour la console admin.";
+      return "Accès refusé - permissions insuffisantes pour la console admin.";
     }
     return err.message;
   }
@@ -287,7 +290,7 @@ function describeAdminError(err: unknown): string {
   return "Erreur inconnue";
 }
 
-/** Returns "MD" for "Marie Dubois" etc. — used to derive initials from a real user name. */
+/** Returns "MD" for "Marie Dubois" etc. - used to derive initials from a real user name. */
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "?";
@@ -442,7 +445,7 @@ async function callBackendChat(message: string): Promise<AssistantResponse> {
 }
 
 /**
- * Phase A2 — SSE streaming chat. Reads the stream chunk by chunk and
+ * Phase A2 - SSE streaming chat. Reads the stream chunk by chunk and
  * updates the assistant message progressively. Falls back to the
  * non-streaming callBackendChat if the stream fails.
  */
@@ -543,6 +546,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   activeTenant: null,
   authLoading: false,
   isDemoSession: false,
+  lang: "en",
 
   identityId: DEFAULT_IDENTITY_ID,
   identity: identityById(DEFAULT_IDENTITY_ID),
@@ -594,7 +598,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       const tenants = normalizeMemberships(me.memberships);
       const activeTenant = pickActiveTenant(tenants);
       // Check onboarding status for the active tenant (the /me endpoint
-      // doesn't include `onboarded` — we fetch it separately).
+      // doesn't include `onboarded` - we fetch it separately).
       if (activeTenant && !activeTenant.is_demo) {
         try {
           const status = await getOnboardingStatus(activeTenant.tenant_id);
@@ -606,23 +610,24 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       set({
         authMode: "authenticated",
         isDemoSession: false,
+  lang: "en",
         user: me.user,
         tenants,
         activeTenant,
         identity: identityFromAuthUser(me.user, activeTenant),
       });
-      // Phase 6d — load schema-driven example questions for the active
+      // Phase 6d - load schema-driven example questions for the active
       // tenant. Fire-and-forget; loadExampleQuestions falls back to
       // FALLBACK_QUESTIONS on any error so the sidebar never breaks.
       void get().loadExampleQuestions();
     } catch (err) {
-      // Stale or invalid JWT — clear it and show the auth screen.
+      // Stale or invalid JWT - clear it and show the auth screen.
       setAuthToken(null);
     setRefreshToken(null);
       setActiveTenantId(null);
       set({ authMode: "anonymous", user: null, tenants: [], activeTenant: null });
       if (err instanceof AuthApiError && !err.unreachable) {
-        // 401 / 403 etc. — silently clear. Other errors (502) are also silent
+        // 401 / 403 etc. - silently clear. Other errors (502) are also silent
         // so the user just sees the auth screen.
       }
     }
@@ -650,6 +655,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       set({
         authMode: "authenticated",
         isDemoSession: false,
+  lang: "en",
         authLoading: false,
         user,
         tenants,
@@ -661,7 +667,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         inspectorOpen: false,
         adminView: "none",
       });
-      // Phase 6d — load schema-driven example questions for the active tenant.
+      // Phase 6d - load schema-driven example questions for the active tenant.
       void get().loadExampleQuestions();
       return { ok: true as const };
     } catch (err) {
@@ -686,10 +692,11 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       const { user, token, refresh_token } = await authSignup(email, password, name);
       setAuthToken(token);
       if (refresh_token) setRefreshToken(refresh_token);
-      // New user has no memberships yet — they'll create a tenant next.
+      // New user has no memberships yet - they'll create a tenant next.
       set({
         authMode: "authenticated",
         isDemoSession: false,
+  lang: "en",
         authLoading: false,
         user,
         tenants: [],
@@ -733,7 +740,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         });
         return;
       }
-      // Login failed for a non-network reason (401, etc.) — surface the error
+      // Login failed for a non-network reason (401, etc.) - surface the error
       // and fall back to demo mode so the user still sees the prototype.
       set({ authLoading: false, isDemoSession: true });
       get().enterDemoMode();
@@ -756,7 +763,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   },
 
   /**
-   * Skips the backend entirely — runs the prototype against the mock data
+   * Skips the backend entirely - runs the prototype against the mock data
    * layer. Used when the user explicitly chooses the demo path or when the
    * backend is unreachable.
    */
@@ -791,6 +798,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       authMode: "anonymous",
       authLoading: false,
       isDemoSession: false,
+  lang: "en",
       user: null,
       tenants: [],
       activeTenant: null,
@@ -840,7 +848,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         isStreaming: false,
         inspectorOpen: false,
         adminView: "none",
-        // Reset the wizard whenever the user switches tenants — the wizard
+        // Reset the wizard whenever the user switches tenants - the wizard
         // is per-tenant state, switching mid-wizard would be incoherent.
         onboardingStep: 0,
         onboardingData: initialOnboardingData,
@@ -849,7 +857,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         onboardingError: null,
       });
       toast.success(`Tenant activé : ${activeTenant?.name ?? tenantId}`);
-      // Phase 6d — refresh the example questions for the new tenant so the
+      // Phase 6d - refresh the example questions for the new tenant so the
       // sidebar immediately reflects the new schema (not the previous
       // tenant's questions).
       void get().loadExampleQuestions();
@@ -871,7 +879,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       const { tenant, token: newToken } = await authCreateTenant(name, slug);
       setAuthToken(newToken);
       const fresh = normalizeMembership(tenant);
-      // New tenants are NOT onboarded by default — the wizard will appear.
+      // New tenants are NOT onboarded by default - the wizard will appear.
       fresh.onboarded = false;
       setActiveTenantId(fresh.tenant_id);
       const tenants = [...get().tenants, { ...fresh, is_active: true }];
@@ -888,7 +896,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         adminView: "none",
       });
       toast.success(`Workspace créé : ${name}`);
-      // Phase 6d — a freshly-created tenant is not onboarded yet, so the
+      // Phase 6d - a freshly-created tenant is not onboarded yet, so the
       // example-questions endpoint will return the 3 generic questions.
       // Load them anyway so the sidebar matches the new tenant's state.
       void get().loadExampleQuestions();
@@ -917,7 +925,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
    * fails or returns an empty list (backend unreachable, tenant not
    * onboarded, etc.) so the sidebar always has something to render.
    *
-   * No-op when there is no active tenant (demo mode / pre-login) — the
+   * No-op when there is no active tenant (demo mode / pre-login) - the
    * fallback list stays in place.
    */
   loadExampleQuestions: async () => {
@@ -975,7 +983,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     }),
 
   /**
-   * Final wizard action — calls `POST /api/tenants/{id}/onboarding/complete`,
+   * Final wizard action - calls `POST /api/tenants/{id}/onboarding/complete`,
    * then refreshes `/api/auth/me` so the active tenant's `onboarded` flag is
    * flipped to `true` in the local state. After this the page gate lets the
    * user through to the chat surface.
@@ -1023,7 +1031,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
         onboardingData: initialOnboardingData,
         onboardingError: null,
       });
-      // Phase 6d — now that the tenant is onboarded with a real schema,
+      // Phase 6d - now that the tenant is onboarded with a real schema,
       // refresh the example questions so the sidebar shows schema-driven
       // ones instead of the 3 generic questions.
       void get().loadExampleQuestions();
@@ -1057,7 +1065,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
       selectedMessageId: null,
       isStreaming: false,
       inspectorOpen: false,
-      // Non-admins cannot stay in an admin view — bounce back to the agent.
+      // Non-admins cannot stay in an admin view - bounce back to the agent.
       adminView: identity.kind === "admin" ? get().adminView : "none",
     });
     const scope = identity.producerNumber
@@ -1093,7 +1101,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   },
 
   sendExample: (questionId, label) => {
-    // Backend path — when authenticated, the example question is sent as a
+    // Backend path - when authenticated, the example question is sent as a
     // plain message and the agent answers from the real DB.
     if (get().authMode === "authenticated") {
       void runBackendAssistant(get, set, label);
@@ -1122,6 +1130,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
 
   toggleInspector: () => set((s) => ({ inspectorOpen: !s.inspectorOpen })),
   setShowIdentityPicker: (show) => set({ showIdentityPicker: show }),
+  setLang: (lang) => set({ lang }),
   setInspectorOpen: (open) => set({ inspectorOpen: open }),
   setCurrentConversationId: (convId) => {
     if (typeof window !== "undefined") {
@@ -1289,7 +1298,7 @@ function runAssistant(
       streaming: false,
     };
     // If the inspector is already open, live-update it with the new trace.
-    // Otherwise leave it closed — the user can click the answer to inspect.
+    // Otherwise leave it closed - the user can click the answer to inspect.
     const inspectorWasOpen = get().inspectorOpen;
     set({
       messages: [...get().messages, assistantMessage],
@@ -1328,7 +1337,7 @@ async function runBackendAssistant(
   });
 
   try {
-    // Phase A2 — use streaming SSE for real-time answer display.
+    // Phase A2 - use streaming SSE for real-time answer display.
     const assistantId = makeId("a");
     // Create a placeholder assistant message with typing dots.
     // The content is empty → the ChatMessage component shows bouncing dots.
@@ -1342,13 +1351,13 @@ async function runBackendAssistant(
     };
     set({
       messages: [...get().messages, placeholderMessage],
-      // isStreaming is already true (set above) — this ensures the chat
+      // isStreaming is already true (set above) - this ensures the chat
       // input is disabled and the scroll follows.
     });
 
     const response = await callBackendChatStream(
       userText,
-      // onChunk — append text to the streaming message.
+      // onChunk - append text to the streaming message.
       (chunk) => {
         const msgs = get().messages;
         const idx = msgs.findIndex((m) => m.id === assistantId);
@@ -1358,7 +1367,7 @@ async function runBackendAssistant(
           set({ messages: updated });
         }
       },
-      // onStep — could show step progress in the UI (future enhancement).
+      // onStep - could show step progress in the UI (future enhancement).
       () => {},
     );
 

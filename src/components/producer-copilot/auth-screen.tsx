@@ -4,12 +4,11 @@ import * as React from "react";
 import { motion } from "framer-motion";
 
 import { cn } from "@/lib/utils";
-import { useCopilotStore } from "@/lib/store";
 import { ArrowRight, Lock, Mail, User, Zap } from "@/components/ui/feather-icons";
 
 import { BrandMark } from "./brand-mark";
+import { useCopilotStore } from "@/lib/store";
 import { IdentityPicker } from "./identity-picker";
-import { APP_PHASE } from "@/lib/constants";
 
 /**
  * Tevet-7 authentication screen.
@@ -29,7 +28,7 @@ export function AuthScreen() {
   const showIdentityPicker = useCopilotStore((s) => s.showIdentityPicker);
   const setShowIdentityPicker = useCopilotStore((s) => s.setShowIdentityPicker);
 
-  // Phase 6d: identity picker — the user chooses their demo role BEFORE
+  // Phase 6d: identity picker - the user chooses their demo role BEFORE
   // entering the product, not after. Better UX, sets expectations.
   if (showIdentityPicker) {
     return <IdentityPicker onBack={() => setShowIdentityPicker(false)} />;
@@ -45,6 +44,8 @@ function AuthForm() {
   const authLoading = useCopilotStore((s) => s.authLoading);
   const setShowIdentityPicker = useCopilotStore((s) => s.setShowIdentityPicker);
 
+  const lang = useCopilotStore((s) => s.lang);
+  const t = AUTH_T[lang];
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [name, setName] = React.useState("");
@@ -99,7 +100,7 @@ function AuthForm() {
             </h1>
             <p className="mt-2 max-w-sm font-body text-sm leading-relaxed text-muted-foreground">
               Plateforme d&apos;agents IA configurable. Connectez-vous pour
-              accéder à votre agent — chaque question est sécurisée par un
+              accéder à votre agent - chaque question est sécurisée par un
               scope tenant.
             </p>
           </div>
@@ -111,7 +112,7 @@ function AuthForm() {
           >
             {isSignup && (
               <Field
-                label="Nom"
+                label={t.name}
                 icon={<User size={14} className="text-muted-foreground" />}
               >
                 <input
@@ -119,13 +120,13 @@ function AuthForm() {
                   autoComplete="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Jean Dupont"
+                  placeholder={t.namePlaceholder}
                   className="w-full bg-transparent px-2 py-2 font-body text-sm text-foreground outline-none placeholder:text-muted-foreground"
                 />
               </Field>
             )}
             <Field
-              label="Email"
+              label={t.email}
               icon={<Mail size={14} className="text-muted-foreground" />}
             >
               <input
@@ -138,7 +139,7 @@ function AuthForm() {
               />
             </Field>
             <Field
-              label="Mot de passe"
+              label={t.password}
               icon={<Lock size={14} className="text-muted-foreground" />}
             >
               <input
@@ -168,7 +169,7 @@ function AuthForm() {
                 "hover:bg-accent hover:text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50",
               )}
             >
-              {authLoading ? "Connexion…" : isSignup ? "Créer mon compte" : "Se connecter"}
+              {authLoading ? t.loading : isSignup ? t.signup : t.signin}
               {!authLoading && <ArrowRight size={15} />}
             </button>
           </form>
@@ -180,8 +181,8 @@ function AuthForm() {
             className="mt-3 w-full text-center text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             {isSignup
-              ? "Déjà un compte ? Se connecter"
-              : "Pas de compte ? Créer un compte"}
+              ? t.hasAccount
+              : t.noAccount}
           </button>
           <div className="mt-3 space-y-2">
             <button
@@ -194,7 +195,7 @@ function AuthForm() {
               )}
             >
               <Zap size={14} className="text-accent" />
-              {authLoading ? "Connexion…" : "Essayer la démo"}
+              {authLoading ? t.demoLoading : t.demo}
             </button>
             <p className="text-center text-[11px] uppercase tracking-wide text-muted-foreground">
               Marie Dubois · producer #42 · tenant Drive Producteur
@@ -209,13 +210,11 @@ function AuthForm() {
               disabled={authLoading}
               className="text-[11px] uppercase tracking-wide text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Continuer sans backend (mock data)
+              {t.mockBackend}
             </button>
           </div>
         </motion.div>
       </main>
-
-      <Footer />
     </div>
   );
 }
@@ -239,24 +238,5 @@ function Field({
         {children}
       </div>
     </label>
-  );
-}
-
-function Footer() {
-  return (
-    <footer className="mt-auto border-t border-border bg-background">
-      <div className="flex h-9 items-center justify-between gap-2 px-3 text-[11px] text-muted-foreground sm:px-4">
-        <span className="truncate font-body uppercase tracking-wide">
-          Tevet-7 <span className="text-muted-foreground/50">·</span> Plateforme
-          d&apos;agents IA
-        </span>
-        <span className="hidden truncate text-center font-body uppercase tracking-wide sm:inline">
-          Premier tenant : Drive Producteur
-        </span>
-        <span className="shrink-0 font-body uppercase tracking-wide">
-          {APP_PHASE}
-        </span>
-      </div>
-    </footer>
   );
 }

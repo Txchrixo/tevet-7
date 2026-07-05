@@ -3,10 +3,10 @@
 Tables (defined in ``app.db_seed``)
 -----------------------------------
 
-* ``users`` — id, email, name, password_hash, created_at.
-* ``tenants`` — id (str, e.g. ``"dp"``), name, slug (unique), is_demo,
+* ``users`` - id, email, name, password_hash, created_at.
+* ``tenants`` - id (str, e.g. ``"dp"``), name, slug (unique), is_demo,
   created_at, owner_user_id (FK→users.id).
-* ``tenant_memberships`` — id, user_id, tenant_id, role, producer_id,
+* ``tenant_memberships`` - id, user_id, tenant_id, role, producer_id,
   is_active, created_at. UNIQUE(user_id, tenant_id). A user has at most
   one ``is_active=True`` row at a time (enforced by
   ``set_active_membership`` which flips the others to False first).
@@ -14,16 +14,16 @@ Tables (defined in ``app.db_seed``)
 Public functions
 ----------------
 
-* :func:`create_tenant` — create a tenant + make the owner an admin
+* :func:`create_tenant` - create a tenant + make the owner an admin
   member. Returns the tenant row.
-* :func:`list_user_tenants` — the tenants the user belongs to (with role
+* :func:`list_user_tenants` - the tenants the user belongs to (with role
   + producer_id + is_active flags).
-* :func:`get_tenant` — single tenant lookup by id.
-* :func:`add_tenant_member` — add a user to a tenant with a given role.
-* :func:`set_active_membership` — flip the user's active membership,
+* :func:`get_tenant` - single tenant lookup by id.
+* :func:`add_tenant_member` - add a user to a tenant with a given role.
+* :func:`set_active_membership` - flip the user's active membership,
   return a NEW JWT with the updated tenant context (the frontend stores
   this JWT in place of the old one).
-* :func:`seed_demo_tenant` — idempotent: create the ``dp`` demo tenant +
+* :func:`seed_demo_tenant` - idempotent: create the ``dp`` demo tenant +
   3 demo users (marie/pierre/admin) + their memberships. Called from
   ``init_db()`` on every startup.
 """
@@ -72,11 +72,11 @@ async def create_tenant(
 ) -> dict[str, Any]:
     """Create a tenant + make the owner an admin member.
 
-    The slug must be unique — raises ``ValueError`` if it's already
+    The slug must be unique - raises ``ValueError`` if it's already
     taken. The owner gets a membership with ``role="admin"`` and
     ``producer_id=None`` (admins see all rows in the tenant). The new
     membership is marked ``is_active=True`` (and any other membership the
-    owner had is flipped to ``is_active=False`` — see
+    owner had is flipped to ``is_active=False`` - see
     :func:`set_active_membership`).
     """
     name = (name or "").strip()
@@ -121,7 +121,7 @@ async def create_tenant(
     # has at most one active membership at a time).
     await _deactivate_other_memberships(owner_user_id, except_tenant_id=slug)
     logger.info(
-        "create_tenant — tenant=%s name=%s owner_user_id=%d (admin)",
+        "create_tenant - tenant=%s name=%s owner_user_id=%d (admin)",
         slug, name, owner_user_id,
     )
     return _row_to_tenant(row)
@@ -259,7 +259,7 @@ async def add_tenant_member(
         )
         membership_id = int(result.scalar_one())
     logger.info(
-        "add_tenant_member — tenant=%s user_id=%d role=%s producer_id=%s",
+        "add_tenant_member - tenant=%s user_id=%d role=%s producer_id=%s",
         tenant_id, user_id, role, producer_id,
     )
     return {
@@ -357,7 +357,7 @@ async def set_active_membership(
         "is_demo": is_demo,
     })
     logger.info(
-        "set_active_membership — user_id=%d tenant=%s role=%s producer_id=%s",
+        "set_active_membership - user_id=%d tenant=%s role=%s producer_id=%s",
         user_id, tenant_id, row.role, row.producer_id,
     )
     return membership, token
@@ -399,7 +399,7 @@ async def seed_demo_tenant() -> None:
     """Create the ``dp`` demo tenant + 3 demo users (idempotent).
 
     Called by ``init_db()`` on every startup. Safe to call multiple
-    times — checks for existence before each insert.
+    times - checks for existence before each insert.
 
     Demo accounts (password ``tevet7demo`` for all three):
       - marie@tevet7.dev  → role=producer,  producer_id=42
@@ -431,7 +431,7 @@ async def seed_demo_tenant() -> None:
                         owner_user_id=None,  # filled below once the admin user exists
                     )
                 )
-            logger.info("seed_demo_tenant — created tenant 'dp' (is_demo=True)")
+            logger.info("seed_demo_tenant - created tenant 'dp' (is_demo=True)")
 
     # 2) Create the 3 demo users (idempotent).
     user_ids: dict[str, int] = {}
@@ -457,7 +457,7 @@ async def seed_demo_tenant() -> None:
                 .returning(users.c.id)
             )
             user_ids[email] = int(result.scalar_one())
-        logger.info("seed_demo_tenant — created user %s (id=%d)", email, user_ids[email])
+        logger.info("seed_demo_tenant - created user %s (id=%d)", email, user_ids[email])
 
     # 3) Set the tenant's owner_user_id (to the admin demo user) if it's
     #    still NULL.
@@ -474,7 +474,7 @@ async def seed_demo_tenant() -> None:
             await txn.execute(
                 update(users).where(users.c.id == admin_id).values(is_platform_owner=True)
             )
-        logger.info("seed_demo_tenant — admin@tevet7.dev marked as platform_owner")
+        logger.info("seed_demo_tenant - admin@tevet7.dev marked as platform_owner")
 
     # 4) Create the memberships (idempotent). Marie gets is_active=True
     #    so the first demo login yields a fully-contextualised JWT.
@@ -505,10 +505,10 @@ async def seed_demo_tenant() -> None:
                 )
             )
         logger.info(
-            "seed_demo_tenant — membership user=%s tenant=dp role=%s producer_id=%s is_active=%s",
+            "seed_demo_tenant - membership user=%s tenant=dp role=%s producer_id=%s is_active=%s",
             email, u["role"], u["producer_id"], is_first_demo_user,
         )
 
     logger.info(
-        "seed_demo_tenant — done (3 demo users: marie/pierre/admin, password 'tevet7demo')"
+        "seed_demo_tenant - done (3 demo users: marie/pierre/admin, password 'tevet7demo')"
     )

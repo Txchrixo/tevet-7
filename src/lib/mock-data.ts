@@ -161,7 +161,7 @@ function blockedSteps(): TraceStep[] {
     {
       index: 4,
       title: "Exécution read-only",
-      detail: "Exécution annulée — la requête a été rejetée par la couche de sécurité avant l'exécution.",
+      detail: "Exécution annulée - la requête a été rejetée par la couche de sécurité avant l'exécution.",
       status: "blocked",
       durationMs: 0,
     },
@@ -176,24 +176,24 @@ function blockedSteps(): TraceStep[] {
 }
 
 const PRODUCER_SECURITY: SecurityCheck[] = [
-  { label: "Read-only", status: "ok", detail: "Utilisateur PG `dp_readonly` — SELECT uniquement." },
+  { label: "Read-only", status: "ok", detail: "Utilisateur PG `dp_readonly` - SELECT uniquement." },
   { label: "Scope producer_id appliqué", status: "ok", detail: "Clause injectée au niveau AST, non contournable." },
   { label: "Tables autorisées", status: "ok", detail: "orders, order_items, products, stocks, payments, pickup_bookings." },
   { label: "LIMIT 1000", status: "ok", detail: "Garantie par le wrapper d'exécution." },
 ];
 
 const ADMIN_SECURITY: SecurityCheck[] = [
-  { label: "Read-only", status: "ok", detail: "Utilisateur PG `dp_admin_readonly` — SELECT uniquement." },
-  { label: "Scope : full access (rôle admin)", status: "warning", detail: "Aucun filtre producer_id — accès à tous les producteurs du tenant." },
+  { label: "Read-only", status: "ok", detail: "Utilisateur PG `dp_admin_readonly` - SELECT uniquement." },
+  { label: "Scope : full access (rôle admin)", status: "warning", detail: "Aucun filtre producer_id - accès à tous les producteurs du tenant." },
   { label: "Tables autorisées", status: "ok", detail: "orders, order_items, products, stocks, payments, pickup_bookings, producers." },
   { label: "LIMIT 1000", status: "ok", detail: "Garantie par le wrapper d'exécution." },
 ];
 
 const REFUSAL_SECURITY: SecurityCheck[] = [
   { label: "Read-only", status: "ok", detail: "Vérifié avant parsing." },
-  { label: "Scope producer_id requis", status: "blocked", detail: "La requête agrège sur l'ensemble des producteurs — non autorisé pour un rôle producer." },
+  { label: "Scope producer_id requis", status: "blocked", detail: "La requête agrège sur l'ensemble des producteurs - non autorisé pour un rôle producer." },
   { label: "Tables autorisées", status: "ok", detail: "Vérification statique passée." },
-  { label: "Exécution SQL", status: "blocked", detail: "Skippée — requête rejetée par sqlglot." },
+  { label: "Exécution SQL", status: "blocked", detail: "Skippée - requête rejetée par sqlglot." },
 ];
 
 // ---------------------------------------------------------------------------
@@ -207,11 +207,11 @@ type ResponseMap = Record<string, AssistantResponse>;
 const p42TopProducts: AssistantResponse = {
   answer:
     "Vos **5 produits les plus vendus ce mois-ci** (Ferme du Vallon) :\n\n" +
-    "1. **Tomates cœur de bœuf** — 142 unités · 565,80 €\n" +
-    "2. **Courgettes** — 98 unités · 245,00 €\n" +
-    "3. **Carottes en bottes** — 87 unités · 217,50 €\n" +
-    "4. **Salade laitue** — 76 unités · 152,00 €\n" +
-    "5. **Poireaux** — 64 unités · 192,00 €\n\n" +
+    "1. **Tomates cœur de bœuf** - 142 unités · 565,80 €\n" +
+    "2. **Courgettes** - 98 unités · 245,00 €\n" +
+    "3. **Carottes en bottes** - 87 unités · 217,50 €\n" +
+    "4. **Salade laitue** - 76 unités · 152,00 €\n" +
+    "5. **Poireaux** - 64 unités · 192,00 €\n\n" +
     "Les tomates représentent **33 %** de votre chiffre d'affaires du mois. Pensez à anticiper le réassort pour le week-end.",
   sql:
     "SELECT p.name,\n" +
@@ -229,7 +229,7 @@ const p42TopProducts: AssistantResponse = {
   scopeClause: "WHERE p.producer_id = 42",
   chart: {
     type: "bar",
-    title: "Top 5 produits — ce mois-ci",
+    title: "Top 5 produits - ce mois-ci",
     xKey: "name",
     series: [
       { key: "units", label: "Unités vendues", color: "accent" },
@@ -379,11 +379,11 @@ const p42Weekly: AssistantResponse = {
 const p99TopProducts: AssistantResponse = {
   answer:
     "Vos **5 produits les plus vendus ce mois-ci** (Verger de la Côte) :\n\n" +
-    "1. **Pommes Gala** — 210 unités · 630,00 €\n" +
-    "2. **Pommes Reinette** — 165 unités · 577,50 €\n" +
-    "3. **Jus de pomme 1L** — 76 unités · 342,00 €\n" +
-    "4. **Poires Conférence** — 88 unités · 308,00 €\n" +
-    "5. **Mirabelles** — 54 unités · 270,00 €\n\n" +
+    "1. **Pommes Gala** - 210 unités · 630,00 €\n" +
+    "2. **Pommes Reinette** - 165 unités · 577,50 €\n" +
+    "3. **Jus de pomme 1L** - 76 unités · 342,00 €\n" +
+    "4. **Poires Conférence** - 88 unités · 308,00 €\n" +
+    "5. **Mirabelles** - 54 unités · 270,00 €\n\n" +
     "Les pommes (Gala + Reinette) représentent **48 %** du CA du mois. Le jus de pomme transformé affiche une belle marge.",
   sql:
     "SELECT p.name,\n" +
@@ -401,7 +401,7 @@ const p99TopProducts: AssistantResponse = {
   scopeClause: "WHERE p.producer_id = 99",
   chart: {
     type: "bar",
-    title: "Top 5 produits — ce mois-ci",
+    title: "Top 5 produits - ce mois-ci",
     xKey: "name",
     series: [{ key: "units", label: "Unités vendues", color: "primary" }],
     data: [
@@ -503,7 +503,7 @@ const p99Weekly: AssistantResponse = {
     "- **135 commandes** au total\n" +
     "- **4 710 €** de chiffre d'affaires brut\n" +
     "- Panier moyen : **34,89 €**\n\n" +
-    "Le pic est le samedi (32 commandes, 1 240 €). Volume régulier toute la semaine — bon dynamisme sur les pommes transformées (jus).",
+    "Le pic est le samedi (32 commandes, 1 240 €). Volume régulier toute la semaine - bon dynamisme sur les pommes transformées (jus).",
   sql:
     "SELECT date_trunc('day', o.created_at)         AS day,\n" +
     "       COUNT(DISTINCT o.id)                     AS orders,\n" +
@@ -549,14 +549,14 @@ const p99Weekly: AssistantResponse = {
 const adminTopProducers: AssistantResponse = {
   answer:
     "Voici les **7 producteurs avec le plus de commandes** ce mois-ci, tous producteurs confondus :\n\n" +
-    "1. **Ferme du Vallon** (#42) — 312 commandes\n" +
-    "2. **Verger de la Côte** (#99) — 298 commandes\n" +
-    "3. **Maraîchers du Soleil** (#17) — 245 commandes\n" +
-    "4. **Élevage des Prés** (#58) — 198 commandes\n" +
-    "5. **Fromagerie du Col** (#23) — 176 commandes\n" +
-    "6. **Apiculteur des Cimes** (#71) — 142 commandes\n" +
-    "7. **Vignoble des Bruyères** (#34) — 128 commandes\n\n" +
-    "Les deux premiers représentent **22 %** du volume mensuel. Aucune clause `producer_id` n'est appliquée — votre rôle admin donne un accès complet au tenant Drive Producteur.",
+    "1. **Ferme du Vallon** (#42) - 312 commandes\n" +
+    "2. **Verger de la Côte** (#99) - 298 commandes\n" +
+    "3. **Maraîchers du Soleil** (#17) - 245 commandes\n" +
+    "4. **Élevage des Prés** (#58) - 198 commandes\n" +
+    "5. **Fromagerie du Col** (#23) - 176 commandes\n" +
+    "6. **Apiculteur des Cimes** (#71) - 142 commandes\n" +
+    "7. **Vignoble des Bruyères** (#34) - 128 commandes\n\n" +
+    "Les deux premiers représentent **22 %** du volume mensuel. Aucune clause `producer_id` n'est appliquée - votre rôle admin donne un accès complet au tenant Drive Producteur.",
   sql:
     "SELECT p.producer_id,\n" +
     "       pr.farm_name,\n" +
@@ -573,7 +573,7 @@ const adminTopProducers: AssistantResponse = {
   scopeClause: null,
   chart: {
     type: "bar",
-    title: "Top producteurs — commandes du mois",
+    title: "Top producteurs - commandes du mois",
     xKey: "farm",
     series: [{ key: "orders", label: "Commandes", color: "foreground" }],
     data: [
@@ -601,11 +601,11 @@ const adminTopProducers: AssistantResponse = {
 const adminTopProducts: AssistantResponse = {
   answer:
     "Voici les **5 produits les plus vendus ce mois-ci, tous producteurs confondus** :\n\n" +
-    "1. **Pommes Gala** (Verger de la Côte) — 210 unités\n" +
-    "2. **Pommes Reinette** (Verger de la Côte) — 165 unités\n" +
-    "3. **Tomates cœur de bœuf** (Ferme du Vallon) — 142 unités\n" +
-    "4. **Courgettes** (Ferme du Vallon) — 98 unités\n" +
-    "5. **Jus de pomme 1L** (Verger de la Côte) — 76 unités\n\n" +
+    "1. **Pommes Gala** (Verger de la Côte) - 210 unités\n" +
+    "2. **Pommes Reinette** (Verger de la Côte) - 165 unités\n" +
+    "3. **Tomates cœur de bœuf** (Ferme du Vallon) - 142 unités\n" +
+    "4. **Courgettes** (Ferme du Vallon) - 98 unités\n" +
+    "5. **Jus de pomme 1L** (Verger de la Côte) - 76 unités\n\n" +
     "Accès admin : aucune clause `producer_id` appliquée.",
   sql:
     "SELECT p.name,\n" +
@@ -623,7 +623,7 @@ const adminTopProducts: AssistantResponse = {
   scopeClause: null,
   chart: {
     type: "bar",
-    title: "Top 5 produits — tous producteurs",
+    title: "Top 5 produits - tous producteurs",
     xKey: "name",
     series: [{ key: "units", label: "Unités vendues", color: "foreground" }],
     data: [
@@ -683,11 +683,11 @@ const adminStock: AssistantResponse = {
 
 const adminRevenue: AssistantResponse = {
   answer:
-    "Vue **admin agrégée** — chiffre d'affaires net perçu par Drive Producteur en juin 2025 :\n\n" +
+    "Vue **admin agrégée** - chiffre d'affaires net perçu par Drive Producteur en juin 2025 :\n\n" +
     "- Brut capturé (tous producteurs) : **28 640,00 €**\n" +
     "- Commissions perçues (12 %) : **3 436,80 €**\n" +
     "- Net reversé aux producteurs : **25 203,20 €**\n\n" +
-    "Aucune clause `producer_id` — votre rôle admin couvre tout le tenant.",
+    "Aucune clause `producer_id` - votre rôle admin couvre tout le tenant.",
   sql:
     "SELECT\n" +
     "  SUM(pay.amount)                       AS gross,\n" +
@@ -728,7 +728,7 @@ const adminWeekly: AssistantResponse = {
   scopeClause: null,
   chart: {
     type: "line",
-    title: "Ventes du tenant — 7 derniers jours",
+    title: "Ventes du tenant - 7 derniers jours",
     xKey: "day",
     series: [
       { key: "orders", label: "Commandes", color: "foreground" },
@@ -828,7 +828,7 @@ function fallbackResponse(identity: Identity): AssistantResponse {
       `- **84 commandes** traitées\n` +
       `- **3 120 €** de chiffre d'affaires brut\n` +
       `- Panier moyen : **37,14 €**\n\n` +
-      `Votre scope est limité à \`producer_id = ${identity.producerId}\` — les autres producteurs ne sont jamais visibles.`
+      `Votre scope est limité à \`producer_id = ${identity.producerId}\` - les autres producteurs ne sont jamais visibles.`
     : "Synthèse des 7 derniers jours pour l'ensemble du tenant Drive Producteur :\n\n" +
       "- **387 commandes** traitées\n- **15 240 €** de chiffre d'affaires brut\n\n" +
       "Accès admin : aucune clause `producer_id` appliquée.";

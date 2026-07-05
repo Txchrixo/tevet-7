@@ -4,9 +4,9 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster as SonnerToaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
-  title: "Tevet-7 — Configurable AI Agent Platform",
+  title: "Tevet-7 - Configurable AI Agent Platform",
   description:
-    "Tevet-7 — plateforme d'agents IA configurable. Premier tenant : Drive Producteur. Chaque question est sécurisée par un scope tenant.",
+    "Tevet-7 - plateforme d'agents IA configurable. Premier tenant : Drive Producteur. Chaque question est sécurisée par un scope tenant.",
 };
 
 export default function RootLayout({

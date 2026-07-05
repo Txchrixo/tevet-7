@@ -1,4 +1,4 @@
-"""Admin service — business logic for the admin console.
+"""Admin service - business logic for the admin console.
 
 Two surfaces:
   - **Tenant admin** (a member with role "admin" on a tenant): list users,
@@ -6,7 +6,7 @@ Two surfaces:
   - **Platform owner** (a user with ``is_platform_owner=True``): list ALL
     tenants, global stats, reset the demo tenant.
 
-All functions are pure-async + take a session — no FastAPI deps. Routes
+All functions are pure-async + take a session - no FastAPI deps. Routes
 in ``app/admin/routes.py`` handle auth + tracing.
 """
 
@@ -147,7 +147,7 @@ async def get_tenant_stats(
             func.coalesce(func.sum(traces.c.tokens_in + traces.c.tokens_out), 0).label("total_tokens"),
             func.coalesce(func.sum(traces.c.cost_usd), 0.0).label("total_cost_usd"),
             func.coalesce(func.avg(traces.c.latency_ms), 0.0).label("avg_latency_ms"),
-            # SQLite stores booleans as 0/1 — SUM gives the refused count.
+            # SQLite stores booleans as 0/1 - SUM gives the refused count.
             func.coalesce(func.sum(traces.c.refused), 0).label("total_refused"),
             func.max(traces.c.created_at).label("last_activity_at"),
         ).where(traces.c.tenant_id == tenant_id)

@@ -1,4 +1,4 @@
-"""Tracer factory — returns the right tracer based on environment.
+"""Tracer factory - returns the right tracer based on environment.
 
 Selection rule
 --------------
@@ -8,7 +8,7 @@ Selection rule
   :class:`LangfuseTracer`.
 * Otherwise return a :class:`LocalTracer` (default, dev mode).
 
-The result is cached as a process-wide singleton — every ``/api/chat``
+The result is cached as a process-wide singleton - every ``/api/chat``
 request gets the same tracer instance, so the in-memory ring buffer is
 shared. Reset with ``get_tracer.cache_clear()`` in tests.
 """
@@ -42,13 +42,13 @@ def get_tracer() -> Tracer:
         logger.info("Tracer=LocalTracer (langfuse keys not configured)")
         return LocalTracer()
 
-    # Try to import langfuse — if it's missing, fall back to LocalTracer.
+    # Try to import langfuse - if it's missing, fall back to LocalTracer.
     try:
-        from langfuse import Langfuse  # noqa: F401  — import-probe
+        from langfuse import Langfuse  # noqa: F401  - import-probe
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "langfuse keys set but langfuse package not importable (%s) "
-            "— falling back to LocalTracer",
+            "- falling back to LocalTracer",
             exc,
         )
         return LocalTracer()

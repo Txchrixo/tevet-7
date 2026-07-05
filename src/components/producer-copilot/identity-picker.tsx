@@ -9,7 +9,7 @@ import { ArrowLeft, ArrowRight, Shield, User } from "@/components/ui/feather-ico
 import { BrandMark } from "./brand-mark";
 
 /**
- * Identity selection screen — shown when the user clicks "Essayer la démo".
+ * Identity selection screen - shown when the user clicks "Essayer la démo".
  *
  * Best practice for demo flows: let the user pick their role BEFORE entering
  * the product, not after. This sets expectations and makes the scoping demo
@@ -17,9 +17,9 @@ import { BrandMark } from "./brand-mark";
  * they can't see other producers' data).
  *
  * Three cards:
- *   - Marie Dubois — Producer #42 (Ferme du Vallon) — vegetables
- *   - Pierre Martin — Producer #99 (Verger de la Côte) — apples/cider
- *   - DP Admin — Ops team — full tenant access
+ *   - Marie Dubois - Producer #42 (Ferme du Vallon) - vegetables
+ *   - Pierre Martin - Producer #99 (Verger de la Côte) - apples/cider
+ *   - DP Admin - Ops team - full tenant access
  *
  * Each card logs in as the corresponding demo user via the real backend.
  */
@@ -38,7 +38,7 @@ const DEMO_IDENTITIES: DemoIdentity[] = [
     email: "marie@tevet7.dev",
     name: "Marie Dubois",
     role: "Productrice #42",
-    description: "Ferme du Vallon — légumes, tomates, courgettes. Voyez vos ventes, votre stock, vos revenus.",
+    description: "Ferme du Vallon - légumes, tomates, courgettes. Voyez vos ventes, votre stock, vos revenus.",
     icon: User,
     accent: "accent",
   },
@@ -46,7 +46,7 @@ const DEMO_IDENTITIES: DemoIdentity[] = [
     email: "pierre@tevet7.dev",
     name: "Pierre Martin",
     role: "Producteur #99",
-    description: "Verger de la Côte — pommes, poires, cidre. Mêmes questions, données différentes.",
+    description: "Verger de la Côte - pommes, poires, cidre. Mêmes questions, données différentes.",
     icon: User,
     accent: "primary",
   },
@@ -95,7 +95,7 @@ export function IdentityPicker({ onBack }: IdentityPickerProps) {
             </h1>
             <p className="mt-2 max-w-md font-body text-sm leading-relaxed text-muted-foreground">
               Vous explorez la démo publique de Tevet-7 sur le tenant Drive
-              Producteur. Chaque identité voit des données différentes — le
+              Producteur. Chaque identité voit des données différentes - le
               scoping est appliqué serveur.
             </p>
           </div>

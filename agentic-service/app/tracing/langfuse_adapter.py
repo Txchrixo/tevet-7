@@ -2,7 +2,7 @@
 
 Only imported lazily by ``factory.py`` when the ``langfuse`` package is
 installed AND the env keys are configured. Phase 6c keeps the demo
-self-contained — this module is here for production deployments.
+self-contained - this module is here for production deployments.
 
 The adapter delegates persistence to Langfuse Cloud AND ALSO writes to the
 local ``traces`` table (via composition with ``LocalTracer``) so the admin

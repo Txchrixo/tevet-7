@@ -45,7 +45,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const tenants = useCopilotStore((s) => s.tenants);
   const activeTenant = useCopilotStore((s) => s.activeTenant);
   const switchTenant = useCopilotStore((s) => s.switchTenant);
-  // Phase 6d — example questions are now dynamic, fetched per-tenant from
+  // Phase 6d - example questions are now dynamic, fetched per-tenant from
   // `/api/tenants/{id}/example-questions` (see `loadExampleQuestions` in
   // the store). The store initialises this to the hardcoded
   // `FALLBACK_QUESTIONS` so the sidebar always has something to render
@@ -58,7 +58,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
       {/*
        * Top bar: identity/tenant panel + close button (mobile only).
        * The close button is a feather X icon that calls onNavigate (which
-       * closes the mobile Sheet). On desktop it's hidden — the sidebar is
+       * closes the mobile Sheet). On desktop it's hidden - the sidebar is
        * always visible.
        */}
       <div className="shrink-0 p-3">
@@ -95,7 +95,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
        * ScrollArea fills ALL the remaining vertical space (min-h-0 lets it
        * shrink below content height so the viewport becomes scrollable).
        * Order inside: Quick actions → Examples → Demo identity switcher.
-       * This is the only scrollable region — the user panel above is fixed.
+       * This is the only scrollable region - the user panel above is fixed.
        */}
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-4 px-3 pb-4">
@@ -189,7 +189,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
 
           <SectionSeparator />
 
-          {/* Documents panel — upload + list (Phase 6b / Priority 4) */}
+          {/* Documents panel - upload + list (Phase 6b / Priority 4) */}
           <DocumentsPanel />
         </div>
       </ScrollArea>
@@ -221,7 +221,7 @@ function SectionLabel({
 }
 
 /**
- * Authenticated-mode sidebar panel — shows the logged-in user + a tenant
+ * Authenticated-mode sidebar panel - shows the logged-in user + a tenant
  * switcher (if the user has multiple memberships). Replaces the demo
  * IdentitySwitcher when the user is logged in via the real backend.
  */
@@ -264,7 +264,7 @@ function TenantUserPanel({
               </div>
               <div className="flex items-center gap-1 truncate text-[11px] leading-tight text-muted-foreground">
                 <Layers size={10} />
-                <span className="truncate">{activeTenant?.name ?? "—"}</span>
+                <span className="truncate">{activeTenant?.name ?? "-"}</span>
               </div>
             </div>
           </div>

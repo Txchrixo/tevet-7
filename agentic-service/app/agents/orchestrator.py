@@ -1,4 +1,4 @@
-"""Agent orchestrator — Phase 1 (no LLM, rule-based).
+"""Agent orchestrator - Phase 1 (no LLM, rule-based).
 
 Phase 1 deliberately avoids an LLM so the demo is deterministic and the
 security argument (sqlglot row-level scoping) is the real focus. The
@@ -43,13 +43,13 @@ logger = logging.getLogger("tevet7.orchestrator")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Ops Copilot — known onboarding dossier names (Phase 4)
+# Ops Copilot - known onboarding dossier names (Phase 4)
 # ─────────────────────────────────────────────────────────────────────────────
 # Used by ``_run_ops_copilot`` to map a free-text question like
 # "Analyse le dossier d'onboarding de Ferme des Collines" to a
 # producer_onboardings row. Loaded lazily on the first ops_analysis request.
 #
-# We don't ship a hardcoded list — we load the names from the DB so new
+# We don't ship a hardcoded list - we load the names from the DB so new
 # dossiers submitted after startup are also resolvable through chat.
 _OPS_ONBOARDING_NAMES: list[tuple[int, str]] | None = None
 
@@ -60,7 +60,7 @@ _OPS_ONBOARDING_NAMES: list[tuple[int, str]] | None = None
 
 
 class _NoopTracer:
-    """Fallback tracer that does nothing — used when callers don't supply one.
+    """Fallback tracer that does nothing - used when callers don't supply one.
 
     The chat API always passes a real tracer (LocalTracer or LangfuseTracer
     via :func:`app.tracing.get_tracer`); this class only exists so the
@@ -156,16 +156,16 @@ class AgentResponse:
     tables_touched: list[str] = field(default_factory=list)
     sources: list[dict[str, Any]] = field(default_factory=list)
     trace_url: str | None = None
-    # Phase 4 — Ops Copilot HITL: when the intent is ``ops_analysis``, this
+    # Phase 4 - Ops Copilot HITL: when the intent is ``ops_analysis``, this
     # field carries the full ``OpsAnalysis.to_dict()`` (issues,
     # proposed_decision, proposed_reason, confidence, checks, …) so the
     # chat endpoint can surface it in the JSON response. ``None`` for all
     # other intents.
     ops_analysis: dict[str, Any] | None = None
-    # Phase 2 tracing — id of the row written to the ``traces`` table (and
+    # Phase 2 tracing - id of the row written to the ``traces`` table (and
     # optionally to Langfuse). ``None`` means tracing was disabled.
     trace_id: str | None = None
-    # Phase 5 — ML forecast. When the intent is ``stock_shortfall`` and the
+    # Phase 5 - ML forecast. When the intent is ``stock_shortfall`` and the
     # forecast_tool produced predictions, this carries the full ForecastResult
     # (top-k predictions, probability per product, top_factor, latency). Null
     # for all other intents and for the SQL-fallback path.
@@ -182,18 +182,18 @@ def classify_question(question: str, role: str) -> str:
     net_revenue | weekly_sales | cross_producer | documentary | unknown.
 
     Used by the formatter to pick the right answer template. The
-    RuleBasedSQLGenerator mirrors this branching — keep them in sync.
+    RuleBasedSQLGenerator mirrors this branching - keep them in sync.
 
     Classification priority (Phase 4):
-        1. cross_producer  — admin-only aggregation across producers.
-        2. ops_analysis    — admin-only Ops Copilot onboarding analysis
+        1. cross_producer  - admin-only aggregation across producers.
+        2. ops_analysis    - admin-only Ops Copilot onboarding analysis
                              ("analyse le dossier", "valider un producteur",
                              "dossier d'onboarding", …).
-        3. analytical (strong signals) — top_products, stock_shortfall,
+        3. analytical (strong signals) - top_products, stock_shortfall,
                                           weekly_sales.
-        4. documentary     — CGV / FAQ / onboarding / retrait questions.
-        5. net_revenue     — money questions ("commission", "gagné", …).
-        6. unknown         — fallback.
+        4. documentary     - CGV / FAQ / onboarding / retrait questions.
+        5. net_revenue     - money questions ("commission", "gagné", …).
+        6. unknown         - fallback.
 
     The ``ops_analysis`` intent is checked ABOVE documentary so a question
     like "Analyse le dossier d'onboarding de Ferme des Collines" routes to
@@ -206,7 +206,7 @@ def classify_question(question: str, role: str) -> str:
     "qui peut", "policy", "règle", "conditions") AND does NOT contain
     strong analytical signals ("combien j'ai vendu", "top produits",
     "stock", "gagné"). If ambiguous (e.g. "combien de temps pour être
-    payé" — could be revenue or doc), prefer documentary.
+    payé" - could be revenue or doc), prefer documentary.
 
     The net_revenue intent is checked AFTER documentary so that a question
     like "Comment fonctionnent les commissions ?" (which contains
@@ -215,18 +215,18 @@ def classify_question(question: str, role: str) -> str:
     """
     q = question.lower()
 
-    # 1. cross-producer ranking — admin-only.
+    # 1. cross-producer ranking - admin-only.
     if "producteur" in q and ("commande" in q or "vente" in q):
         return "cross_producer"
 
-    # 2. ops_analysis — admin-only Ops Copilot onboarding pre-analysis.
+    # 2. ops_analysis - admin-only Ops Copilot onboarding pre-analysis.
     #    Trigger phrases:
     #      - "analyse le dossier" / "analyser le dossier" / "analyse du dossier"
     #      - "dossier d onboarding" / "dossier d'onboarding"
     #      - "analyse le producteur" / "analyser le producteur"
     #      - "pré-analyse" / "pre-analyse" / "preanalyse"
     #    We deliberately do NOT trigger on bare "valider un producteur" or
-    #    bare "onboarding" — those are documentary keywords ("Quelles pièces
+    #    bare "onboarding" - those are documentary keywords ("Quelles pièces
     #    sont nécessaires pour valider un producteur ?" is a doc question
     #    about the onboarding procedure, NOT an ops analysis request). The
     #    distinguishing factor is the verb "analyse" / "analyser" or the
@@ -255,7 +255,7 @@ def classify_question(question: str, role: str) -> str:
     if any(k in q for k in ("résumé", "resume", "semaine", "synthèse", "synthese", "7 jours", "hebdo", "bilan")):
         return "weekly_sales"
 
-    # 3b. broader analytical signals — short or colloquial questions that
+    # 3b. broader analytical signals - short or colloquial questions that
     # don't match the strict patterns above but are clearly data questions.
     # "mes ventes", "commandes", "argent", "juin" → these are analytical.
     if any(k in q for k in (
@@ -268,10 +268,10 @@ def classify_question(question: str, role: str) -> str:
             return "net_revenue"
         return "weekly_sales"
 
-    # 4. documentary — policy / FAQ / procedure questions.
+    # 4. documentary - policy / FAQ / procedure questions.
     #    Checked BEFORE net_revenue so "Comment fonctionnent les
     #    commissions ?" routes to RAG (not to the revenue SQL).
-    #    NOTE: we deliberately do NOT include "quel"/"quelle" here — too
+    #    NOTE: we deliberately do NOT include "quel"/"quelle" here - too
     #    broad (it would catch "Quel est mon chiffre d'affaires ?" and
     #    route a revenue question to RAG). The specific question words
     #    "comment", "que faire", "combien de temps", "quand" are enough
@@ -289,7 +289,7 @@ def classify_question(question: str, role: str) -> str:
     if any(k in q for k in doc_keywords):
         return "documentary"
 
-    # 5. net_revenue — money questions without a documentary keyword.
+    # 5. net_revenue - money questions without a documentary keyword.
     if any(
         k in q for k in
         ("gagné", "gagne", "net", "commission", "chiffre", "ca ", "revenu", "recette")
@@ -301,7 +301,7 @@ def classify_question(question: str, role: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Formatter — turns SQL rows into natural-language French + a ChartSpec
+# Formatter - turns SQL rows into natural-language French + a ChartSpec
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -327,7 +327,7 @@ async def _producer_name(producer_id: int) -> str:
                 r = await conn.execute(select(producers.c.id, producers.c.display_name))
                 for pid, name in r.fetchall():
                     _PRODUCER_NAMES[pid] = name
-        except Exception:  # noqa: BLE001 — fallback to a generic label
+        except Exception:  # noqa: BLE001 - fallback to a generic label
             pass
     return _PRODUCER_NAMES.get(producer_id, f"producteur #{producer_id}")
 
@@ -357,7 +357,7 @@ async def _format_top_products(
 ) -> tuple[str, dict[str, Any] | None]:
     """Top-products answer + bar chart spec (markdown-formatted).
 
-    Phase A1: column-name agnostic — finds the name/label column and the
+    Phase A1: column-name agnostic - finds the name/label column and the
     numeric columns by type, not by hardcoded alias names. Works with both
     the rule-based generator (AS units_sold, AS revenue) and the LLM
     generator (AS total_quantity, AS total_amount, etc.).
@@ -418,11 +418,11 @@ async def _format_top_products(
         units = int(float(row.get(units_key, 0))) if units_key else 0
         revenue = float(row.get(revenue_key, 0)) if revenue_key else 0
         if revenue_key and units_key:
-            lines.append(f"{i}. **{name}** — {units} unités · {_format_eur(revenue)}")
+            lines.append(f"{i}. **{name}** - {units} unités · {_format_eur(revenue)}")
         elif units_key:
-            lines.append(f"{i}. **{name}** — {units}")
+            lines.append(f"{i}. **{name}** - {units}")
         elif revenue_key:
-            lines.append(f"{i}. **{name}** — {_format_eur(revenue)}")
+            lines.append(f"{i}. **{name}** - {_format_eur(revenue)}")
         else:
             lines.append(f"{i}. **{name}**")
         chart_data.append({"name": name, "units_sold": float(units), "revenue": revenue})
@@ -433,7 +433,7 @@ async def _format_top_products(
     answer = intro + "\n".join(lines) + insight
     chart = {
         "type": "bar",
-        "title": "Top 5 — ce mois-ci",
+        "title": "Top 5 - ce mois-ci",
         "xKey": "name",
         "series": [
             {"key": "units_sold", "label": "Unités vendues", "color": "#A8C090"}
@@ -483,7 +483,7 @@ async def _format_stock_shortfall(
     answer = intro + table + reco
     chart = {
         "type": "bar",
-        "title": "Stock disponible — produits à risque",
+        "title": "Stock disponible - produits à risque",
         "xKey": "name",
         "series": [
             {"key": "available", "label": "Stock disponible", "color": "#A8C090"},
@@ -509,9 +509,9 @@ async def _format_net_revenue(
     avg_basket = (gross / n_orders) if n_orders > 0 else 0.0
     prod_name = ""
     if producer_id is not None:
-        prod_name = f" — {await _producer_name(producer_id)}"
+        prod_name = f" - {await _producer_name(producer_id)}"
     answer = (
-        f"**Synthèse de vos revenus** — {month_label}{prod_name}\n\n"
+        f"**Synthèse de vos revenus** - {month_label}{prod_name}\n\n"
         f"- **Brut** : {_format_eur(gross)} ({n_orders} commandes)\n"
         f"- **Commission marketplace** (12 %) : {_format_eur(commission)}\n"
         f"- **Net perçu** : {_format_eur(net)}\n\n"
@@ -531,7 +531,7 @@ async def _format_weekly_sales(
     avg_basket = (total_rev / total_orders) if total_orders > 0 else 0.0
     prod_name = ""
     if producer_id is not None:
-        prod_name = f" — {await _producer_name(producer_id)}"
+        prod_name = f" - {await _producer_name(producer_id)}"
     answer = (
         f"**Résumé de vos ventes de la semaine**{prod_name}\n\n"
         f"- **{total_orders} commandes** sur {len(rows)} jours d'activité\n"
@@ -541,7 +541,7 @@ async def _format_weekly_sales(
     )
     chart = {
         "type": "line",
-        "title": "Ventes — cette semaine",
+        "title": "Ventes - cette semaine",
         "xKey": "day",
         "series": [
             {"key": "revenue", "label": "Chiffre d'affaires (€)", "color": "#A8C090"},
@@ -575,7 +575,7 @@ async def _format_cross_producer(
         name = row.get("producer_name", "?")
         n = int(row.get("order_count", 0))
         rev = float(row.get("revenue_eur", 0))
-        lines.append(f"{i}. **{name}** — {n} commandes · {_format_eur(rev)}")
+        lines.append(f"{i}. **{name}** - {n} commandes · {_format_eur(rev)}")
         chart_data.append({"producer_name": name, "order_count": n, "revenue_eur": rev})
     answer = (
         "**Classement des producteurs** par nombre de commandes ce mois-ci :\n\n"
@@ -584,7 +584,7 @@ async def _format_cross_producer(
     )
     chart = {
         "type": "bar",
-        "title": "Classement producteurs — commandes ce mois-ci",
+        "title": "Classement producteurs - commandes ce mois-ci",
         "xKey": "producer_name",
         "series": [
             {"key": "order_count", "label": "Commandes", "color": "#A8C090"},
@@ -711,7 +711,7 @@ async def format_answer(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Documentary RAG formatter — turns FTS5 chunks into a cited French answer
+# Documentary RAG formatter - turns FTS5 chunks into a cited French answer
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -756,7 +756,7 @@ def format_documentary_answer(
     for i, chunk in enumerate(chunks, start=1):
         body = _truncate_chunk(chunk.content, max_chars=480)
         parts.append(
-            f"{i}. {body}\n   — *source : {chunk.document_title}* "
+            f"{i}. {body}\n   - *source : {chunk.document_title}* "
             f"(chunk {chunk.chunk_index})"
         )
         if chunk.document_id not in seen_doc_ids:
@@ -795,7 +795,7 @@ def format_refusal(producer_id: int | None, reason: str = "cross_producer") -> s
         return (
             "Votre question a déclenché une alerte de sécurité (tentative de contournement "
             "du scoping producteur). L'incident a été journalisé pour audit. Veuillez "
-            "reformuler votre question — l'agent ne peut accéder qu'à vos propres données."
+            "reformuler votre question - l'agent ne peut accéder qu'à vos propres données."
         )
     return "Votre question n'a pas pu être traitée."
 
@@ -806,7 +806,7 @@ def format_refusal(producer_id: int | None, reason: str = "cross_producer") -> s
 
 
 class AgentOrchestrator:
-    """Phase 1 orchestrator — no LLM, rule-based + deterministic.
+    """Phase 1 orchestrator - no LLM, rule-based + deterministic.
 
     Construction::
 
@@ -835,15 +835,15 @@ class AgentOrchestrator:
         self.role = role
         self.producer_id = producer_id
         self.identity_id = identity_id
-        # Phase 2 tracing — ``None`` falls back to a no-op tracer so the
+        # Phase 2 tracing - ``None`` falls back to a no-op tracer so the
         # orchestrator stays usable in scripts/tests without the chat API.
         self.tracer: Tracer = tracer if tracer is not None else _NoopTracer()
-        # Phase 3 RAG — ``None`` falls back to building a default
+        # Phase 3 RAG - ``None`` falls back to building a default
         # ``RagSearchTool`` on demand (so a script that doesn't pass one
         # still gets documentary answers). The chat API always passes a
         # real one so tenant scoping is enforced.
         self.rag_tool: RagSearchTool | None = rag_tool
-        # Phase 5 ML forecast — ``None`` falls back to building a default
+        # Phase 5 ML forecast - ``None`` falls back to building a default
         # ``ForecastTool`` on demand (so a script that doesn't pass one
         # still gets ML-based stock predictions when the model is trained).
         # The chat API always passes a real one so the producer scoping is
@@ -869,7 +869,7 @@ class AgentOrchestrator:
         )
         try:
             response = await self._run_inner(user_message, ctx)
-        except Exception as exc:  # noqa: BLE001 — never crash the caller
+        except Exception as exc:  # noqa: BLE001 - never crash the caller
             # Record the error in the trace, then re-raise so the API layer
             # can return its own 200-with-error envelope.
             await self.tracer.end_trace(
@@ -884,7 +884,7 @@ class AgentOrchestrator:
                 },
             )
             raise
-        # Persist the trace (async — writes to SQLite + optionally Langfuse).
+        # Persist the trace (async - writes to SQLite + optionally Langfuse).
         trace_result = self._build_trace_result(user_message, response, ctx)
         trace_id = await self.tracer.end_trace(ctx, trace_result)
         response.trace_id = trace_id
@@ -899,7 +899,7 @@ class AgentOrchestrator:
         """Project an ``AgentResponse`` into the trace-row dict.
 
         The ``intent`` field is filled from the first step's detail ("Intention
-        détectée : <intent>.") — the orchestrator records it there but not
+        détectée : <intent>.") - the orchestrator records it there but not
         as a top-level field on the response. ``sql_valid`` is True iff SQL
         was generated AND sqlglot accepted it (``response.sql is not None``).
         """
@@ -910,7 +910,7 @@ class AgentOrchestrator:
                 intent = detail.split("Intention détectée :", 1)[-1].strip().rstrip(".")
                 break
         # Build a richer tool_calls list for the trace ({name, latency_ms,
-        # success}) — the API response keeps tool_calls as list[str].
+        # success}) - the API response keeps tool_calls as list[str].
         tool_calls_detail: list[dict[str, Any]] = []
         if response.tool_calls:
             # Look up the execution span ("Exécution read-only") for latency.
@@ -949,14 +949,14 @@ class AgentOrchestrator:
     async def _run_inner(self, user_message: str, ctx: TraceContext) -> AgentResponse:
         """Original agent loop body, instrumented with tracing spans.
 
-        Returns the ``AgentResponse`` — the public ``run()`` wraps this to
+        Returns the ``AgentResponse`` - the public ``run()`` wraps this to
         call ``end_trace``.
         """
         started_at = time.monotonic()
         steps: list[StepTrace] = []
         security_checks: list[SecurityCheck] = []
 
-        # ── Step 1 — comprehend the question ──
+        # ── Step 1 - comprehend the question ──
         span = self.tracer.start_span(ctx, "comprehension")
         t = time.monotonic()
         intent = classify_question(user_message, self.role)
@@ -971,7 +971,7 @@ class AgentOrchestrator:
         )
         self.tracer.end_span(ctx, span, status="ok", intent=intent)
 
-        # ── Step 2 — tool selection ──
+        # ── Step 2 - tool selection ──
         span = self.tracer.start_span(ctx, "tool_selection")
         t = time.monotonic()
         # Pre-refuse cross-producer questions for producers.
@@ -980,7 +980,7 @@ class AgentOrchestrator:
                 StepTrace(
                     index=2,
                     title="Sélection de l'outil",
-                    detail="Aucun — refus préventif",
+                    detail="Aucun - refus préventif",
                     status="blocked",
                     duration_ms=int((time.monotonic() - t) * 1000),
                 )
@@ -988,7 +988,7 @@ class AgentOrchestrator:
             self.tracer.end_span(ctx, span, status="blocked", reason="cross_producer_refusal")
             span_val = self.tracer.start_span(ctx, "sqlglot_validation")
             security_checks = [
-                SecurityCheck("Read-only", "ok", "N/A — requête non exécutée"),
+                SecurityCheck("Read-only", "ok", "N/A - requête non exécutée"),
                 SecurityCheck("Scope appliqué", "blocked", "Violation : agrégation cross-producteur"),
                 SecurityCheck("Tables autorisées", "ok", "N/A"),
                 SecurityCheck("LIMIT 1000", "ok", "N/A"),
@@ -996,7 +996,7 @@ class AgentOrchestrator:
             for next_idx, (title, detail, status) in enumerate(
                 [
                     ("Validation sqlglot", "Scoping violation : la requête nécessite un accès admin.", "blocked"),
-                    ("Exécution read-only", "Action refusée — scoping violation", "blocked"),
+                    ("Exécution read-only", "Action refusée - scoping violation", "blocked"),
                     ("Synthèse", "Refus formaté.", "blocked"),
                 ],
                 start=3,
@@ -1028,7 +1028,7 @@ class AgentOrchestrator:
                 tables_touched=[],
             )
 
-        # Step 2 — tool selection (sql_read_tool for analytical intents,
+        # Step 2 - tool selection (sql_read_tool for analytical intents,
         # rag_search for documentary, ops_copilot for ops_analysis,
         # forecast_tool for producer-side stock_shortfall when the ML model
         # is trained). The documentary branch routes to ``_run_documentary``
@@ -1061,7 +1061,7 @@ class AgentOrchestrator:
         )
         self.tracer.end_span(ctx, span, status="ok", tool=selected_tool)
 
-        # ── Phase 4 — ops_analysis intent: route to OpsCopilotAgent ──
+        # ── Phase 4 - ops_analysis intent: route to OpsCopilotAgent ──
         # Admin-only: producers asking for an onboarding pre-analysis are
         # refused with the same shape as the cross_producer refusal
         # (security_checks + steps + polite French message).
@@ -1070,16 +1070,16 @@ class AgentOrchestrator:
                 return self._build_ops_refusal(steps, started_at)
             return await self._run_ops_copilot(user_message, ctx, started_at, steps)
 
-        # ── Phase 3 — documentary intent: route to RagSearchTool ──
+        # ── Phase 3 - documentary intent: route to RagSearchTool ──
         # We intercept BEFORE SQL generation because documentary questions
         # never need SQL. The RAG tool enforces tenant + producer scoping
         # internally (mirrors the SqlReadTool row-level security).
         if intent == "documentary":
             return await self._run_documentary(user_message, ctx, started_at, steps)
 
-        # ── Phase 5 — stock_shortfall intent (producer + ML model trained):
+        # ── Phase 5 - stock_shortfall intent (producer + ML model trained):
         # route to ForecastTool. We intercept BEFORE SQL generation because
-        # the ML path doesn't need SQL — the forecast_tool builds features
+        # the ML path doesn't need SQL - the forecast_tool builds features
         # from stock_history + stocks + products directly. When the model
         # .pkl is missing OR the caller is admin (no producer scope), we
         # fall through to the SQL heuristic below (existing eval-011 admin
@@ -1087,7 +1087,7 @@ class AgentOrchestrator:
         if can_forecast:
             return await self._run_stock_forecast(user_message, ctx, started_at, steps)
 
-        # ── Step 3 — SQL generation ──
+        # ── Step 3 - SQL generation ──
         span = self.tracer.start_span(ctx, "sql_generation")
         t = time.monotonic()
         try:
@@ -1115,7 +1115,7 @@ class AgentOrchestrator:
                 tool_calls=[],
                 steps=[s.__dict__ for s in steps],
                 security_checks=[
-                    SecurityCheck("Read-only", "ok", "N/A — requête non exécutée").__dict__,
+                    SecurityCheck("Read-only", "ok", "N/A - requête non exécutée").__dict__,
                     SecurityCheck("Scope appliqué", "ok", "N/A").__dict__,
                     SecurityCheck("Tables autorisées", "ok", "N/A").__dict__,
                     SecurityCheck("LIMIT 1000", "ok", "N/A").__dict__,
@@ -1125,8 +1125,8 @@ class AgentOrchestrator:
         refused_by_generator = raw_sql == REFUSE_MARKER
         is_greeting = raw_sql == GREETING_MARKER
         gen_detail = (
-            "Refusé — question cross-producteur" if refused_by_generator
-            else "Salutation détectée — pas de SQL" if is_greeting
+            "Refusé - question cross-producteur" if refused_by_generator
+            else "Salutation détectée - pas de SQL" if is_greeting
             else "LLM generator" if self.sql_tool.generator.__class__.__name__ == "LLMSQLGenerator"
             else "Rule-based generator (Phase 1)"
         )
@@ -1145,24 +1145,24 @@ class AgentOrchestrator:
             raw_sql=raw_sql if not refused_by_generator else None,
         )
 
-        # ── Step 4 — sqlglot validation + scoping ──
+        # ── Step 4 - sqlglot validation + scoping ──
         span = self.tracer.start_span(ctx, "sqlglot_validation")
         t = time.monotonic()
 
-        # GREETING — return a friendly message without executing SQL.
+        # GREETING - return a friendly message without executing SQL.
         if is_greeting:
             steps.append(
                 StepTrace(
                     index=4,
                     title="Validation sqlglot",
-                    detail="Pas de SQL — salutation détectée.",
+                    detail="Pas de SQL - salutation détectée.",
                     status="ok",
                     duration_ms=int((time.monotonic() - t) * 1000),
                 )
             )
             self.tracer.end_span(ctx, span, status="ok", reason="greeting")
             security_checks = [
-                SecurityCheck("Read-only", "ok", "N/A — pas de SQL"),
+                SecurityCheck("Read-only", "ok", "N/A - pas de SQL"),
                 SecurityCheck("Scope appliqué", "ok", "N/A"),
                 SecurityCheck("Tables autorisées", "ok", "N/A"),
                 SecurityCheck("LIMIT 1000", "ok", "N/A"),
@@ -1173,7 +1173,7 @@ class AgentOrchestrator:
                     StepTrace(
                         index=5 if step_title == "Exécution read-only" else 6,
                         title=step_title,
-                        detail="Salutation — pas de requête.",
+                        detail="Salutation - pas de requête.",
                         status="ok",
                         duration_ms=0,
                     )
@@ -1187,7 +1187,7 @@ class AgentOrchestrator:
             return AgentResponse(
                 answer=(
                     f"Bonjour{greeting_name} ! Je suis votre agent Tevet-7. "
-                    "Posez-moi une question sur vos données — ventes, stock, "
+                    "Posez-moi une question sur vos données - ventes, stock, "
                     "revenus, statistiques. Chaque réponse est sécurisée par "
                     "un scope tenant."
                 ),
@@ -1220,7 +1220,7 @@ class AgentOrchestrator:
             )
             self.tracer.end_span(ctx, span, status="blocked", reason="cross_producer")
             security_checks = [
-                SecurityCheck("Read-only", "ok", "N/A — requête non exécutée"),
+                SecurityCheck("Read-only", "ok", "N/A - requête non exécutée"),
                 SecurityCheck("Scope appliqué", "blocked", "Violation : agrégation cross-producteur"),
                 SecurityCheck("Tables autorisées", "ok", "N/A"),
                 SecurityCheck("LIMIT 1000", "ok", "N/A"),
@@ -1230,7 +1230,7 @@ class AgentOrchestrator:
                 StepTrace(
                     index=5,
                     title="Exécution read-only",
-                    detail="Action refusée — scoping violation",
+                    detail="Action refusée - scoping violation",
                     status="blocked",
                     duration_ms=0,
                 )
@@ -1315,7 +1315,7 @@ class AgentOrchestrator:
             security_incident=self.sql_tool._last_security_incident,
         )
 
-        # ── Step 5 — execution ──
+        # ── Step 5 - execution ──
         span = self.tracer.start_span(ctx, "sql_execution")
         t = time.monotonic()
         try:
@@ -1364,7 +1364,7 @@ class AgentOrchestrator:
             ctx, span, status="ok", rowcount=result.rowcount
         )
 
-        # ── Step 6 — synthesise the answer ──
+        # ── Step 6 - synthesise the answer ──
         span = self.tracer.start_span(ctx, "synthesis")
         t = time.monotonic()
         answer, chart = await format_answer(
@@ -1416,7 +1416,7 @@ class AgentOrchestrator:
         )
 
     # ───────────────────────────────────────────────────────────────────────
-    # Phase 3 — documentary intent (RAG path)
+    # Phase 3 - documentary intent (RAG path)
     # ───────────────────────────────────────────────────────────────────────
     async def _run_documentary(
         self,
@@ -1436,7 +1436,7 @@ class AgentOrchestrator:
         Security checks for documentary:
           - Scope appliqué      (tenant + producer_id filter enforced)
           - Documents autorisés (tenant scope only)
-          - Source citée        (bool — at least one source cited)
+          - Source citée        (bool - at least one source cited)
         """
         # Lazily build a RagSearchTool if the caller didn't provide one
         # (scripts/tests convenience). The chat API always passes one.
@@ -1456,18 +1456,18 @@ class AgentOrchestrator:
 
         # Build the scope description for the security check.
         if self.role == "admin":
-            scope_detail_doc = "tenant=dp (admin — tous les docs du tenant)"
+            scope_detail_doc = "tenant=dp (admin - tous les docs du tenant)"
         else:
             scope_detail_doc = (
                 f"tenant=dp + (producer_id IS NULL OR producer_id = {self.producer_id})"
             )
 
-        # ── Step 3 — FTS5 BM25 search ──
+        # ── Step 3 - FTS5 BM25 search ──
         span = self.tracer.start_span(ctx, "rag_search")
         t = time.monotonic()
         try:
             rag_result = await rag_tool.search(user_message, top_k=4, ctx=ctx)
-        except Exception as exc:  # noqa: BLE001 — never crash the chat
+        except Exception as exc:  # noqa: BLE001 - never crash the chat
             steps.append(
                 StepTrace(
                     index=3,
@@ -1515,7 +1515,7 @@ class AgentOrchestrator:
             latency_ms=rag_result.latency_ms,
         )
 
-        # ── Step 4 — Ranking BM25 ──
+        # ── Step 4 - Ranking BM25 ──
         span = self.tracer.start_span(ctx, "rag_ranking")
         t = time.monotonic()
         # BM25 ranking is done by FTS5 at query time (ORDER BY score ASC).
@@ -1535,7 +1535,7 @@ class AgentOrchestrator:
         )
         self.tracer.end_span(ctx, span, status="ok", top_k=rag_result.top_k)
 
-        # ── Step 5 — Synthèse avec citations ──
+        # ── Step 5 - Synthèse avec citations ──
         span = self.tracer.start_span(ctx, "synthesis")
         t = time.monotonic()
         answer, sources = format_documentary_answer(user_message, rag_result)
@@ -1557,7 +1557,7 @@ class AgentOrchestrator:
             sources_count=len(sources),
         )
 
-        # ── Step 6 — Réponse finalisée ──
+        # ── Step 6 - Réponse finalisée ──
         span = self.tracer.start_span(ctx, "answer_citations")
         t = time.monotonic()
         cited = bool(sources)
@@ -1568,7 +1568,7 @@ class AgentOrchestrator:
                 detail=(
                     "Réponse + sources citées"
                     if cited
-                    else "Réponse « no hit » — reformulation suggérée"
+                    else "Réponse « no hit » - reformulation suggérée"
                 ),
                 status="ok" if cited else "warning",
                 duration_ms=int((time.monotonic() - t) * 1000),
@@ -1583,7 +1583,7 @@ class AgentOrchestrator:
             SecurityCheck(
                 "Source citée",
                 "ok" if cited else "warning",
-                f"{len(sources)} source(s)" if cited else "Aucune source — base vide",
+                f"{len(sources)} source(s)" if cited else "Aucune source - base vide",
             ),
         ]
 
@@ -1607,7 +1607,7 @@ class AgentOrchestrator:
         )
 
     # ───────────────────────────────────────────────────────────────────────
-    # Phase 5 — stock_shortfall intent (ML forecast path)
+    # Phase 5 - stock_shortfall intent (ML forecast path)
     # ───────────────────────────────────────────────────────────────────────
     def _is_forecast_available(self) -> bool:
         """Return True iff we can serve the ML forecast for this request.
@@ -1671,7 +1671,7 @@ class AgentOrchestrator:
 
         scope_detail = f"producer_id = {self.producer_id}"
 
-        # ── Step 3 — feature engineering ──
+        # ── Step 3 - feature engineering ──
         span = self.tracer.start_span(
             ctx, "forecast_feature_engineering",
             producer_id=self.producer_id,
@@ -1694,7 +1694,7 @@ class AgentOrchestrator:
         )
         self.tracer.end_span(ctx, span, status="ok", producer_id=self.producer_id)
 
-        # ── Step 4 — ML prediction (RandomForest.predict_proba) ──
+        # ── Step 4 - ML prediction (RandomForest.predict_proba) ──
         span = self.tracer.start_span(
             ctx, "forecast_ml_predict",
             producer_id=self.producer_id,
@@ -1708,7 +1708,7 @@ class AgentOrchestrator:
                 ctx=ctx,
                 top_k=5,
             )
-        except Exception as exc:  # noqa: BLE001 — never crash the chat
+        except Exception as exc:  # noqa: BLE001 - never crash the chat
             logger.exception("ForecastTool.predict crashed for producer=%s", self.producer_id)
             self.tracer.end_span(ctx, span, status="error", error=str(exc))
             steps.append(
@@ -1769,7 +1769,7 @@ class AgentOrchestrator:
             model_loaded=result.model_loaded,
         )
 
-        # ── Step 5 — ranking top-k by probability ──
+        # ── Step 5 - ranking top-k by probability ──
         span = self.tracer.start_span(ctx, "forecast_ranking")
         t = time.monotonic()
         steps.append(
@@ -1790,7 +1790,7 @@ class AgentOrchestrator:
             top_k=len(result.predictions),
         )
 
-        # ── Step 6 — synthesis (FR markdown + chart) ──
+        # ── Step 6 - synthesis (FR markdown + chart) ──
         span = self.tracer.start_span(ctx, "synthesis")
         t = time.monotonic()
         # Pull the model metadata for the footer (n_rows + n_estimators).
@@ -1802,7 +1802,7 @@ class AgentOrchestrator:
                 bundle = _joblib.load(MODEL_PATH)
                 if isinstance(bundle, dict):
                     model_meta = bundle.get("metadata")
-        except Exception:  # noqa: BLE001 — footer is best-effort
+        except Exception:  # noqa: BLE001 - footer is best-effort
             model_meta = None
         answer = render_forecast_answer(result, model_meta=model_meta)
         chart = render_forecast_chart(result)
@@ -1880,7 +1880,7 @@ class AgentOrchestrator:
         )
 
     # ───────────────────────────────────────────────────────────────────────
-    # Phase 4 — ops_analysis intent (Ops Copilot HITL path)
+    # Phase 4 - ops_analysis intent (Ops Copilot HITL path)
     # ───────────────────────────────────────────────────────────────────────
     def _build_ops_refusal(
         self,
@@ -1894,7 +1894,7 @@ class AgentOrchestrator:
         consistent refusal regardless of which guard fired.
         """
         security_checks = [
-            SecurityCheck("Read-only", "ok", "N/A — requête non exécutée"),
+            SecurityCheck("Read-only", "ok", "N/A - requête non exécutée"),
             SecurityCheck(
                 "Scope appliqué", "blocked",
                 "Violation : ops analysis réservée à l'admin Ops",
@@ -1905,7 +1905,7 @@ class AgentOrchestrator:
         for next_idx, (title, detail, status) in enumerate(
             [
                 ("Validation sqlglot", "Ops Copilot : accès admin requis.", "blocked"),
-                ("Exécution read-only", "Action refusée — ops analysis est admin-only", "blocked"),
+                ("Exécution read-only", "Action refusée - ops analysis est admin-only", "blocked"),
                 ("Synthèse", "Refus formaté.", "blocked"),
             ],
             start=3,
@@ -1971,7 +1971,7 @@ class AgentOrchestrator:
 
         from app.db_seed import get_engine, producer_onboardings
 
-        # ── Step 3 — dossier resolution ──
+        # ── Step 3 - dossier resolution ──
         span = self.tracer.start_span(ctx, "ops_dossier_resolution")
         t = time.monotonic()
         onboarding_dict, resolution_detail = await self._resolve_onboarding(
@@ -1993,7 +1993,7 @@ class AgentOrchestrator:
         )
 
         if onboarding_dict is None:
-            # Dossier not found — return a polite message + the known names.
+            # Dossier not found - return a polite message + the known names.
             known = await self._known_onboarding_names()
             known_str = ", ".join(known) if known else "(aucun dossier en base)"
             answer = (
@@ -2002,9 +2002,9 @@ class AgentOrchestrator:
                 "producteur. Dossiers actuellement en base : " + known_str + "."
             )
             security_checks = [
-                SecurityCheck("Scope appliqué", "ok", "admin — accès tous dossiers"),
+                SecurityCheck("Scope appliqué", "ok", "admin - accès tous dossiers"),
                 SecurityCheck("Dossier résolu", "warning", "Nom non reconnu"),
-                SecurityCheck("Décision proposée", "blocked", "N/A — dossier introuvable"),
+                SecurityCheck("Décision proposée", "blocked", "N/A - dossier introuvable"),
             ]
             return AgentResponse(
                 answer=answer,
@@ -2022,7 +2022,7 @@ class AgentOrchestrator:
                 ops_analysis=None,
             )
 
-        # ── Step 4 — OpsCopilotAgent pre-analysis ──
+        # ── Step 4 - OpsCopilotAgent pre-analysis ──
         span = self.tracer.start_span(ctx, "ops_pre_analysis")
         t = time.monotonic()
         agent = OpsCopilotAgent(tracer=self.tracer)
@@ -2049,7 +2049,7 @@ class AgentOrchestrator:
             trace_id=analysis.trace_id,
         )
 
-        # ── Step 5 — synthèse (FR human-readable answer) ──
+        # ── Step 5 - synthèse (FR human-readable answer) ──
         span = self.tracer.start_span(ctx, "ops_synthesis")
         t = time.monotonic()
         answer = self._format_ops_answer(analysis)
@@ -2058,7 +2058,7 @@ class AgentOrchestrator:
                 index=5,
                 title="Synthèse avec décision proposée",
                 detail=(
-                    f"Recommandation : {analysis.proposed_decision} — "
+                    f"Recommandation : {analysis.proposed_decision} - "
                     f"{len(analysis.issues)} issue(s)."
                 ),
                 status="ok",
@@ -2070,7 +2070,7 @@ class AgentOrchestrator:
             proposed_decision=analysis.proposed_decision,
         )
 
-        # ── Step 6 — réponse finalisée ──
+        # ── Step 6 - réponse finalisée ──
         span = self.tracer.start_span(ctx, "ops_response")
         t = time.monotonic()
         steps.append(
@@ -2078,7 +2078,7 @@ class AgentOrchestrator:
                 index=6,
                 title="Réponse finalisée",
                 detail=(
-                    f"Analyse prête — en attente de validation humaine "
+                    f"Analyse prête - en attente de validation humaine "
                     f"(trace_id={analysis.trace_id})."
                 ),
                 status="ok",
@@ -2089,7 +2089,7 @@ class AgentOrchestrator:
 
         # Security checks for ops_analysis.
         security_checks = [
-            SecurityCheck("Scope appliqué", "ok", "admin — accès tous dossiers"),
+            SecurityCheck("Scope appliqué", "ok", "admin - accès tous dossiers"),
             SecurityCheck(
                 "Dossier résolu", "ok",
                 f"id={onboarding_dict['id']} legal_name={onboarding_dict['legal_name']!r}",
@@ -2097,7 +2097,7 @@ class AgentOrchestrator:
             SecurityCheck(
                 "Décision proposée",
                 "ok" if analysis.proposed_decision == "approve" else "warning",
-                f"{analysis.proposed_decision} (confiance {analysis.confidence} %) — "
+                f"{analysis.proposed_decision} (confiance {analysis.confidence} %) - "
                 f"en attente de validation humaine",
             ),
         ]
@@ -2123,7 +2123,7 @@ class AgentOrchestrator:
         """Build a French markdown answer that wraps the agent's
         ``proposed_reason`` + a one-line summary table of the checks.
 
-        The answer is intentionally short — the full structured analysis
+        The answer is intentionally short - the full structured analysis
         lives in the ``ops_analysis`` field of the AgentResponse (which the
         chat endpoint serialises alongside the answer). The admin UI is
         expected to render both.
@@ -2159,7 +2159,7 @@ class AgentOrchestrator:
             )
         lines.append("")
         lines.append(
-            "*L'agent ne valide jamais le dossier seul — la décision finale "
+            "*L'agent ne valide jamais le dossier seul - la décision finale "
             "revient à un administrateur Ops via `/api/approvals/{id}/decide`.*"
         )
         return "\n".join(lines)
@@ -2179,7 +2179,7 @@ class AgentOrchestrator:
 
         global _OPS_ONBOARDING_NAMES
         engine = get_engine()
-        # Always re-read the onboarding rows — there may be new ones since
+        # Always re-read the onboarding rows - there may be new ones since
         # the last call (uploads via the API). The cost is one SELECT
         # per ops_analysis chat request; fine for the demo.
         try:
@@ -2228,7 +2228,7 @@ class AgentOrchestrator:
             if name.lower() in msg_lower:
                 return (
                     dict(row._mapping),
-                    f"Dossier « {name} » (id={row.id}) — match exact",
+                    f"Dossier « {name} » (id={row.id}) - match exact",
                 )
             score = hits / len(tokens)
             if best is None or score > best[0] or (score == best[0] and len(name) < len(best[1].legal_name or "")):
@@ -2238,7 +2238,7 @@ class AgentOrchestrator:
             row = best[1]
             return (
                 dict(row._mapping),
-                f"Dossier « {row.legal_name} » (id={row.id}) — match {int(best[0] * 100)} %",
+                f"Dossier « {row.legal_name} » (id={row.id}) - match {int(best[0] * 100)} %",
             )
         known = ", ".join(r.legal_name for r in rows)
         return None, f"Dossier non reconnu. Dossiers connus : {known}."

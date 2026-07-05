@@ -8,7 +8,7 @@ Why an abstraction?
 -------------------
 
 1. **Security boundary.** Tools (e.g. ``SqlReadTool``) never touch a tenant
-   DB directly — they go through a connector that owns the credentials, the
+   DB directly - they go through a connector that owns the credentials, the
    read-only enforcement, and the row-level scope. The agent never sees a
    connection string.
 
@@ -20,14 +20,14 @@ Why an abstraction?
 
 4. **Write-action control.** Read paths go through ``execute_readonly_query``.
    Write paths go through ``call_business_action`` and (in Phase 4) through
-   the human-in-the-loop queue — never through the read tool.
+   the human-in-the-loop queue - never through the read tool.
 
 Concrete subclasses to implement (Phase 1+):
 
-- ``PostgresConnector`` — asyncpg with a read-only role + per-tenant scope.
-- ``RestApiConnector`` — translate SQL-like requests to REST calls, or expose
+- ``PostgresConnector`` - asyncpg with a read-only role + per-tenant scope.
+- ``RestApiConnector`` - translate SQL-like requests to REST calls, or expose
   a fixed set of pre-defined "named queries" instead of free SQL.
-- ``ShopifyConnector`` — wraps the Shopify Admin API with GraphQL.
+- ``ShopifyConnector`` - wraps the Shopify Admin API with GraphQL.
 
 The contract below is stable across all of them.
 """
@@ -57,7 +57,7 @@ class QueryResult:
         where the underlying API reports a count differently.
     executed_sql:
         The EXACT SQL that was executed, post-rewriting. This is what we
-        show to the user via the agent's ``sql_used`` field — never the
+        show to the user via the agent's ``sql_used`` field - never the
         LLM-generated SQL, which may have been rewritten for security.
     """
 

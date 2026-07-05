@@ -1,4 +1,4 @@
-"""``POST /chat`` — main entry point for the Producer Copilot.
+"""``POST /chat`` - main entry point for the Producer Copilot.
 
 Phase 1 implementation
 ======================
@@ -24,7 +24,7 @@ Security model
    it is ``null`` (no row-level filter).
 2. **Scoping.** ``producer_id`` is passed to ``SqlReadTool`` as
    ``scope_value``. The rewriter injects ``WHERE producer_id = N`` at every
-   SELECT that touches a scoped table — see ``app/tools/sql_tool.py``.
+   SELECT that touches a scoped table - see ``app/tools/sql_tool.py``.
 3. **Read-only.** The ``SqliteConnector`` re-parses the SQL and refuses any
    non-SELECT statement. SQLite has no read-only role concept, so this is
    our second layer of defense (sqlglot is the first).
@@ -73,21 +73,21 @@ class ChatRequest(BaseModel):
     is the row-level scope value (NULL for admin); ``role`` selects the table
     allowlist + decides whether scoping is enforced.
 
-    Phase 6a — dual auth mode
+    Phase 6a - dual auth mode
     -------------------------
 
     The identity fields (``identity_id``, ``producer_id``, ``role``) are
     now OPTIONAL. Two paths are supported:
 
-    1. **JWT path (new, for the frontend)** — the caller sends
+    1. **JWT path (new, for the frontend)** - the caller sends
        ``Authorization: Bearer <jwt>``. Identity is extracted from the
        verified JWT (tenant_id, role, producer_id, email). The body
        identity fields are IGNORED.
-    2. **Body path (legacy, for the eval + tests)** — no
+    2. **Body path (legacy, for the eval + tests)** - no
        ``Authorization`` header. Identity is read from the body. The
        tenant is hardcoded to ``"dp"`` (the demo tenant).
 
-    Both paths funnel into the SAME orchestrator — the agentic core has
+    Both paths funnel into the SAME orchestrator - the agentic core has
     no notion of users or JWTs, it only receives ``role``,
     ``producer_id``, ``tenant_id`` as plain strings. The dual mode keeps
     the existing 39-case eval passing WITHOUT modification (the eval
@@ -95,7 +95,7 @@ class ChatRequest(BaseModel):
     """
 
     message: str = Field(..., min_length=1, max_length=4000, description="User message.")
-    # Phase 6a: identity fields are now optional — when an Authorization
+    # Phase 6a: identity fields are now optional - when an Authorization
     # header is present they're read from the JWT instead. Defaults
     # (None) keep the old body path working for the eval.
     identity_id: str | None = Field(
@@ -138,27 +138,27 @@ class ChatRequest(BaseModel):
 async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
     """Run the rule-based agent loop and return the full audit envelope.
 
-    Always returns HTTP 200 — refusals and errors are encoded in the JSON
+    Always returns HTTP 200 - refusals and errors are encoded in the JSON
     body (``refused: true``, ``answer`` explaining what happened) so the
     frontend has a single success path.
     """
-    # ── Phase 6a — dual auth mode ──────────────────────────────────────────
+    # ── Phase 6a - dual auth mode ──────────────────────────────────────────
     # If the caller sends an ``Authorization: Bearer <jwt>`` header we
     # extract the identity (tenant_id, role, producer_id) from the
     # verified JWT. Otherwise we fall back to the body identity (the
     # legacy path used by the eval + the old frontend). The CORE agentic
-    # (orchestrator + tools + tracing) is unchanged — it receives plain
+    # (orchestrator + tools + tracing) is unchanged - it receives plain
     # ``role``/``producer_id``/``tenant_id`` strings either way.
     jwt_ctx: TenantContext | None = try_get_tenant_context(request)
     if jwt_ctx is not None:
-        # JWT path — identity comes from the token.
+        # JWT path - identity comes from the token.
         if not jwt_ctx.role or not jwt_ctx.tenant_id:
-            # A fresh signup has no membership yet — refuse with 403 so
+            # A fresh signup has no membership yet - refuse with 403 so
             # the frontend can prompt for tenant creation/activation.
             raise HTTPException(
                 status_code=403,
                 detail=(
-                    "no active tenant in JWT — create or activate a tenant "
+                    "no active tenant in JWT - create or activate a tenant "
                     "via POST /api/tenants or POST /api/tenants/{id}/activate"
                 ),
             )
@@ -172,11 +172,11 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
         user_id: int | None = jwt_ctx.user_id
         is_jwt = True
         logger.info(
-            "chat called [JWT path] — user_id=%s email=%s tenant=%s role=%s producer_id=%s msg_len=%d",
+            "chat called [JWT path] - user_id=%s email=%s tenant=%s role=%s producer_id=%s msg_len=%d",
             jwt_ctx.user_id, jwt_ctx.email, tenant_id, role, producer_id, len(req.message),
         )
     else:
-        # Legacy body path — used by the eval (eval/eval.py sends body
+        # Legacy body path - used by the eval (eval/eval.py sends body
         # identity without an Authorization header).
         if not req.identity_id or not req.role:
             raise HTTPException(
@@ -194,20 +194,20 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
         user_id = None
         is_jwt = False
         logger.info(
-            "chat called [body path] — identity=%s producer_id=%s role=%s msg_len=%d",
+            "chat called [body path] - identity=%s producer_id=%s role=%s msg_len=%d",
             identity_id, producer_id, role, len(req.message),
         )
 
     try:
         # Build a per-request connector + tool + orchestrator.
-        # Phase 6b — the connector is now chosen dynamically based on the
+        # Phase 6b - the connector is now chosen dynamically based on the
         # tenant's ``tenant_configs`` row:
         #   - demo tenant "dp" (and the legacy body path) → SqliteConnector
-        #     (unchanged — backward compat).
+        #     (unchanged - backward compat).
         #   - tenants with ``connector_type="postgres"`` → PostgresConnector.
         #   - tenants with ``connector_type="csv"``      → CsvConnector.
         # If the tenant is not onboarded yet, the factory raises
-        # ``TenantNotOnboardedError`` — we catch it below and return a
+        # ``TenantNotOnboardedError`` - we catch it below and return a
         # clear French message prompting the user to complete onboarding.
 
         # ── Rate limit (per-tenant, prevents LLM cost abuse) ──
@@ -265,9 +265,9 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             scope_value=scope_value,
             role=role,
         )
-        # Phase 3 — build the RAG tool with the same identity context so
+        # Phase 3 - build the RAG tool with the same identity context so
         # documentary questions are scoped identically to analytical ones.
-        # Phase 6a — tenant_id now comes from the JWT (multi-tenant) or
+        # Phase 6a - tenant_id now comes from the JWT (multi-tenant) or
         # defaults to "dp" for the legacy body path (eval).
         rag_tool = RagSearchTool(
             connector=connector,
@@ -276,7 +276,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             role=role,
             tracer=get_tracer(),
         )
-        # Phase 5 — build the forecast tool with the same identity context so
+        # Phase 5 - build the forecast tool with the same identity context so
         # stock-shortage questions are scoped identically. The forecast tool
         # enforces producer scoping internally (queries stock_history /
         # stocks / products WHERE producer_id = :producer_id) so a producer
@@ -313,24 +313,24 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
                     router=router,
                 )
                 response = await llm_orch.run(req.message, history=req.history)
-                logger.info("LLM orchestrator succeeded — tokens=%d/%d latency=%dms",
+                logger.info("LLM orchestrator succeeded - tokens=%d/%d latency=%dms",
                             response.tokens_in, response.tokens_out, response.latency_ms)
             except Exception as exc:
-                logger.warning("LLM orchestrator failed (%s) — falling back to rule-based", exc)
+                logger.warning("LLM orchestrator failed (%s) - falling back to rule-based", exc)
                 response = None
 
         # Heuristic: detect "bad" LLM responses (empty answer, or SQL present
         # but no chart for analytical intents) → fall back to rule-based.
         if response is not None and not response.refused:
             if not response.answer or not response.answer.strip():
-                logger.info("LLM response is bad (empty answer) — falling back to rule-based")
+                logger.info("LLM response is bad (empty answer) - falling back to rule-based")
                 response = None
             elif response.sql and not response.chart:
                 # SQL but no chart → likely 0 rows or wrong aliases.
                 from app.agents.orchestrator import classify_question
                 intent = classify_question(req.message, role)
                 if intent in ("top_products", "weekly_sales", "stock_shortfall", "net_revenue"):
-                    logger.info("LLM response is bad (intent=%s sql=True chart=False) — falling back", intent)
+                    logger.info("LLM response is bad (intent=%s sql=True chart=False) - falling back", intent)
                     response = None
 
         if response is None:
@@ -394,7 +394,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
         # Re-raise FastAPI HTTP exceptions (401/403 from the dual-mode
         # check above) without wrapping them in the catch-all below.
         raise
-    except Exception as exc:  # noqa: BLE001 — never crash the frontend
+    except Exception as exc:  # noqa: BLE001 - never crash the frontend
         logger.exception("Unhandled error in /chat")
         from app.monitoring import capture_exception
         capture_exception(exc, context={"endpoint": "/api/chat", "identity_id": identity_id, "tenant_id": tenant_id})
@@ -423,7 +423,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Schema endpoint — return the loaded schema.yaml as JSON
+# Schema endpoint - return the loaded schema.yaml as JSON
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -445,13 +445,13 @@ async def chat_health() -> dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Traces endpoints — observability surface (Task 18 / Phase 2 tracing)
+# Traces endpoints - observability surface (Task 18 / Phase 2 tracing)
 # ─────────────────────────────────────────────────────────────────────────────
 # ``GET /api/traces``         → list the most recent 50 traces (summary).
 # ``GET /api/traces/{trace_id}`` → full trace detail (SQL, steps, tool_calls,
 #                                 tokens, cost, answer excerpt, …).
 #
-# The tracer itself (LocalTracer or LangfuseTracer) backs both endpoints —
+# The tracer itself (LocalTracer or LangfuseTracer) backs both endpoints -
 # the API layer is a thin wrapper that delegates to ``get_tracer()`` so
 # Langfuse-mode and local-mode expose the same HTTP surface.
 
@@ -460,7 +460,7 @@ async def chat_health() -> dict[str, Any]:
 async def list_traces(limit: int = 50) -> dict[str, Any]:
     """List the most recent traces (newest first).
 
-    Returns the summary fields only (no SQL, no steps) — use
+    Returns the summary fields only (no SQL, no steps) - use
     ``/api/traces/{id}`` for the full detail. The default ``limit=50`` keeps
     the response payload small for the inspector UI.
     """
@@ -491,7 +491,7 @@ async def get_trace(trace_id: str) -> dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# POST /chat/stream — SSE streaming version (Phase A2)
+# POST /chat/stream - SSE streaming version (Phase A2)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -500,9 +500,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
     """SSE streaming version of /chat.
 
     Sends Server-Sent Events:
-    - {"type":"step","title":"Génération SQL..."} — progress updates
-    - {"type":"chunk","content":"Vos "} — answer text chunks (word by word)
-    - {"type":"done","response":{...full envelope...}} — final response
+    - {"type":"step","title":"Génération SQL..."} - progress updates
+    - {"type":"chunk","content":"Vos "} - answer text chunks (word by word)
+    - {"type":"done","response":{...full envelope...}} - final response
 
     The frontend reads the stream and updates the message progressively.
     Falls back to the non-streaming flow if any error occurs.
@@ -581,11 +581,11 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 producer_id=producer_id, role=role, tracer=get_tracer(),
             )
 
-            # ── Guardrails (Phase A4) — check BEFORE any orchestrator ──
+            # ── Guardrails (Phase A4) - check BEFORE any orchestrator ──
             from app.agents.guardrails import check_message
             guardrail_result = check_message(req.message)
             if guardrail_result.blocked:
-                yield f"data: {json_mod.dumps({'type': 'step', 'title': 'Garde-fou — blocage'}, ensure_ascii=False)}\n\n"
+                yield f"data: {json_mod.dumps({'type': 'step', 'title': 'Garde-fou - blocage'}, ensure_ascii=False)}\n\n"
                 envelope = {
                     "answer": guardrail_result.reason,
                     "sql": None, "scope_clause": None, "chart": None,
@@ -618,7 +618,7 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                     yield f"data: {json_mod.dumps({'type': 'step', 'title': 'Analyse de la question…'}, ensure_ascii=False)}\n\n"
                     response = await llm_orch.run(req.message, history=req.history)
                 except Exception as exc:
-                    logger.warning("LLM orchestrator failed in stream (%s) — falling back to rule-based", exc)
+                    logger.warning("LLM orchestrator failed in stream (%s) - falling back to rule-based", exc)
                     response = None
 
             # ── Rule-based fallback ──

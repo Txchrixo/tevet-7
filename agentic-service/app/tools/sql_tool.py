@@ -1,4 +1,4 @@
-"""SqlReadTool — the most important tool in Tevet-7.
+"""SqlReadTool - the most important tool in Tevet-7.
 
 SECURITY NOTES
 ==============
@@ -20,7 +20,7 @@ The rewriting pipeline (see ``validate_and_rewrite``) enforces:
    query must include ``WHERE {scope_column} = {scope_value}`` at every
    SELECT that touches the table (top-level + subqueries + CTEs). If the
    LLM produced a query missing the filter (or with a wrong value), the
-   rewriter injects the correct one and logs a ``SECURITY WARNING`` — the
+   rewriter injects the correct one and logs a ``SECURITY WARNING`` - the
    attempt is treated as a security event for audit purposes.
 4. **Result limit.** ``LIMIT {default_limit}`` is appended if not present.
 5. **No dangerous functions.** ``pg_sleep``, ``lo_import``, ``pg_read_file``,
@@ -66,7 +66,7 @@ class ToolResult:
     success: bool
     query_result: QueryResult | None = None
     error: str | None = None
-    # The natural-language question that triggered this tool call — useful
+    # The natural-language question that triggered this tool call - useful
     # for Langfuse attribution and for the agent to cite back to the user.
     question: str | None = None
     # The post-rewrite SQL that was executed (or None if generation failed).
@@ -128,7 +128,7 @@ class SQLGenerator(Protocol):
         ``SqlGenerationError`` for unrecoverable failures.
 
         ``scope_column`` / ``scope_value`` are provided for context but the
-        generator is NOT required to include the scope clause — the
+        generator is NOT required to include the scope clause - the
         ``validate_and_rewrite`` step will inject it if missing.
         """
         ...
@@ -138,7 +138,7 @@ class SQLGenerator(Protocol):
 # (e.g. a producer asking a cross-producer question).
 REFUSE_MARKER = "__REFUSE__"
 
-# Sentinel for greetings / non-data questions — the orchestrator returns a
+# Sentinel for greetings / non-data questions - the orchestrator returns a
 # friendly message instead of running SQL.
 GREETING_MARKER = "__GREETING__"
 
@@ -311,7 +311,7 @@ class RuleBasedSQLGenerator:
         if date_col and self._has_any(q, ["7 jours", "7 derniers", "semaine", "recent", "récent", "last 7"]):
             return f"SELECT * FROM {table_name} WHERE {date_col} >= DATE('now', '-7 days') ORDER BY {date_col} DESC LIMIT 20"
 
-        # Pattern 8: default — select all columns, limit 20
+        # Pattern 8: default - select all columns, limit 20
         select_cols = ", ".join(col_names[:10]) if len(col_names) > 10 else "*"
         return f"SELECT {select_cols} FROM {table_name} LIMIT 20"
 
@@ -325,7 +325,7 @@ class RuleBasedSQLGenerator:
     ) -> str | None:
         q = question.lower()
 
-        # 1. Cross-producer ranking — admin-only.
+        # 1. Cross-producer ranking - admin-only.
         #    "Quels producteurs ont le plus de commandes ?"
         if self._has_any(q, ["producteur"]) and self._has_any(q, ["commande", "vente"]):
             if role != "admin":
@@ -409,7 +409,7 @@ class RuleBasedSQLGenerator:
                 "ORDER BY day ASC"
             )
 
-        # No DP rule matched — try generic schema-aware generation.
+        # No DP rule matched - try generic schema-aware generation.
         return self._generic_generate(question, role)
 
     @staticmethod
@@ -478,13 +478,13 @@ class SqlReadTool:
     --------
     ``run(question)`` orchestrates three steps:
 
-    1. ``generate_sql(question)`` — produce SQL (rule-based in Phase 1,
+    1. ``generate_sql(question)`` - produce SQL (rule-based in Phase 1,
        LLM-based in Phase 2). The ``SQLGenerator`` protocol makes the swap
        a one-line change.
-    2. ``validate_and_rewrite(sql)`` — sqlglot parses the SQL, applies the
+    2. ``validate_and_rewrite(sql)`` - sqlglot parses the SQL, applies the
        five security checks described in the module docstring, and returns
        the rewritten SQL.
-    3. ``execute(sql)`` — the connector runs the rewritten SQL on its
+    3. ``execute(sql)`` - the connector runs the rewritten SQL on its
        read-only connection.
     """
 
@@ -540,7 +540,7 @@ class SqlReadTool:
             self._table_scope_columns[t["name"]] = t.get("tenant_scope_column")
 
     # ───────────────────────────────────────────────────────────────────────
-    # Step 1 — SQL generation
+    # Step 1 - SQL generation
     # ───────────────────────────────────────────────────────────────────────
     async def generate_sql(self, question: str) -> str:
         """Generate SQL for the question via the configured generator.
@@ -563,7 +563,7 @@ class SqlReadTool:
         return sql
 
     # ───────────────────────────────────────────────────────────────────────
-    # Step 2 — Validation & rewriting (sqlglot)
+    # Step 2 - Validation & rewriting (sqlglot)
     # ───────────────────────────────────────────────────────────────────────
     def validate_and_rewrite(self, sql: str) -> str:
         """Parse ``sql`` with sqlglot and return a safe, rewritten SQL string.
@@ -609,7 +609,7 @@ class SqlReadTool:
         if not isinstance(ast, exp.Select):
             kind = type(ast).__name__
             raise SqlSecurityError(
-                f"Statement kind '{kind}' is not allowed — only SELECT."
+                f"Statement kind '{kind}' is not allowed - only SELECT."
             )
 
         # ── c) Table allowlist (walk ALL tables in the AST) ──
@@ -620,7 +620,7 @@ class SqlReadTool:
             if tname in self.forbidden_tables:
                 raise SqlSecurityError(
                     f"Forbidden table referenced: {tname!r} "
-                    "(control-plane table — never reachable via the agent)."
+                    "(control-plane table - never reachable via the agent)."
                 )
             if tname not in self.allowed_tables:
                 raise SqlSecurityError(
@@ -714,7 +714,7 @@ class SqlReadTool:
                 if str(existing_value) != str(scope_val):
                     # Wrong value → rewrite + security incident.
                     logger.warning(
-                        "SECURITY WARNING — scope bypass attempt: "
+                        "SECURITY WARNING - scope bypass attempt: "
                         "question scope_value=%s but SQL contained %s=%s. "
                         "Rewriting to %s=%s.",
                         scope_val, scope_col, existing_value, scope_col, scope_val,
@@ -755,7 +755,7 @@ class SqlReadTool:
 
     @staticmethod
     def _direct_tables_of_select(sel: exp.Select) -> list[str]:
-        """Tables directly referenced by ``sel`` (FROM + JOINs) — excluding
+        """Tables directly referenced by ``sel`` (FROM + JOINs) - excluding
         tables that appear only inside subqueries of ``sel``.
         """
         out: list[str] = []
@@ -768,7 +768,7 @@ class SqlReadTool:
         return out
 
     # ───────────────────────────────────────────────────────────────────────
-    # Step 3 — Execution (Connector)
+    # Step 3 - Execution (Connector)
     # ───────────────────────────────────────────────────────────────────────
     async def execute(self, sql: str) -> QueryResult:
         """Run the rewritten SQL via the connector's read-only connection."""
@@ -820,7 +820,7 @@ class SqlReadTool:
         except SqlGenerationError as exc:
             logger.info("SqlGenerationError: %s", exc)
             return ToolResult(success=False, error=str(exc), question=question)
-        except Exception as exc:  # noqa: BLE001 — surface to agent, don't crash
+        except Exception as exc:  # noqa: BLE001 - surface to agent, don't crash
             logger.exception("Unexpected error in SqlReadTool.run")
             return ToolResult(success=False, error=f"unexpected: {exc!r}", question=question)
 

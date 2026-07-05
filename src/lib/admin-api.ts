@@ -6,7 +6,7 @@
  * forwards the Authorization header (JWT) to the FastAPI admin service at
  * `http://localhost:8001/api/admin/*`.
  *
- * The frontend never talks to localhost:8001 directly — only relative paths
+ * The frontend never talks to localhost:8001 directly - only relative paths
  * so the request goes through Next.js (and Caddy in production).
  */
 
@@ -23,12 +23,12 @@ import type {
 /** Where the JWT is persisted client-side (set by the login flow). */
 const TOKEN_STORAGE_KEY = "tevet7.jwt";
 
-/** The default tenant slug — Drive Producteur. */
+/** The default tenant slug - Drive Producteur. */
 export const DEFAULT_TENANT_ID = "dp";
 
 /**
  * Reads the JWT from localStorage. Returns null on the server or when no
- * token has been issued yet — the admin UI surfaces an empty state in that
+ * token has been issued yet - the admin UI surfaces an empty state in that
  * case.
  */
 export function getAuthToken(): string | null {

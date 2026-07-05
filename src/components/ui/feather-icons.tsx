@@ -1,5 +1,5 @@
 /**
- * Feather Icons — local inline SVG components.
+ * Feather Icons - local inline SVG components.
  *
  * Source: https://feathericons.com/ (MIT licensed).
  * Each icon is a functional React component accepting
@@ -7,7 +7,7 @@
  *
  * These are the only icons used by the Tevet-7 UI and the home page.
  * shadcn/ui internal components (e.g. dropdown-menu) keep their own lucide-react
- * imports for chevrons — those are NOT our icons and are left untouched.
+ * imports for chevrons - those are NOT our icons and are left untouched.
  */
 
 import * as React from "react";

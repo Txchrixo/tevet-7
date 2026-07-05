@@ -3,13 +3,13 @@
 Endpoints
 =========
 
-- ``POST /api/auth/signup`` — body ``{email, password, name}`` →
+- ``POST /api/auth/signup`` - body ``{email, password, name}`` →
   ``{user: {id, email, name}, token}``.
-- ``POST /api/auth/login`` — body ``{email, password}`` →
+- ``POST /api/auth/login`` - body ``{email, password}`` →
   ``{user: {id, email, name}, token}``. The token's claims include the
-  user's active membership (tenant_id, role, producer_id) — set by the
+  user's active membership (tenant_id, role, producer_id) - set by the
   tenant module's ``set_active_membership``.
-- ``GET  /api/auth/me`` — ``Authorization: Bearer <jwt>`` → returns the
+- ``GET  /api/auth/me`` - ``Authorization: Bearer <jwt>`` → returns the
   current user + their memberships (so the frontend can render the
   tenant switcher).
 
@@ -114,7 +114,7 @@ async def signup_endpoint(body: SignupRequest) -> dict[str, Any]:
 
     Returns 409 if the email is already registered. The JWT issued here
     has ``tenant_id=None``, ``role=None``, ``producer_id=None`` because a
-    fresh signup has no memberships yet — the client must create or
+    fresh signup has no memberships yet - the client must create or
     activate a tenant (``POST /api/tenants`` or
     ``POST /api/tenants/{id}/activate``) to obtain a token with a real
     tenant context.
@@ -124,7 +124,7 @@ async def signup_endpoint(body: SignupRequest) -> dict[str, Any]:
     try:
         from app.auth.jwt import create_access_token
         user = await signup(body.email, body.password, body.name)
-        # Fresh signup has no membership — issue a token with null tenant
+        # Fresh signup has no membership - issue a token with null tenant
         # context. The client must create/activate a tenant to get a
         # token with real scope.
         token = create_access_token({
@@ -176,7 +176,7 @@ async def login_endpoint(body: LoginRequest, request: Request) -> dict[str, Any]
 
     Returns 401 on wrong email/password. The JWT's claims include
     ``tenant_id``, ``role``, ``producer_id`` from the user's active
-    membership — set by ``POST /api/tenants/{id}/activate``.
+    membership - set by ``POST /api/tenants/{id}/activate``.
 
     Rate-limited: 5 attempts per minute per IP (brute-force protection).
     """
@@ -202,7 +202,7 @@ async def login_endpoint(body: LoginRequest, request: Request) -> dict[str, Any]
         )
         return {"user": user, "token": token, "refresh_token": refresh_token}
     except ValueError as exc:
-        # Wrong email or wrong password — same message to avoid
+        # Wrong email or wrong password - same message to avoid
         # user-enumeration leak.
         await _end_auth_trace(
             tracer, ctx, span, t0, status_="error", error=str(exc),
@@ -243,7 +243,7 @@ async def me_endpoint(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# POST /api/auth/refresh — Phase B2: exchange refresh token for new access token
+# POST /api/auth/refresh - Phase B2: exchange refresh token for new access token
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -269,7 +269,7 @@ async def refresh_endpoint(body: RefreshRequest) -> dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# POST /api/auth/demo-token — Phase 6d: public demo access (no credentials)
+# POST /api/auth/demo-token - Phase 6d: public demo access (no credentials)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -281,13 +281,13 @@ async def demo_token_endpoint() -> dict[str, Any]:
     The JWT includes ``is_demo=True`` so the frontend can show the
     "DÉMO PUBLIQUE" badge and block destructive actions.
 
-    This endpoint is publicly accessible — no Authorization header required.
+    This endpoint is publicly accessible - no Authorization header required.
     Rate limiting should be added in production.
     """
     tracer, ctx, span = _start_auth_span("auth_demo_token")
     t0 = time.monotonic()
     try:
-        # Login as the demo marie user (no password check — public demo).
+        # Login as the demo marie user (no password check - public demo).
         user, token, refresh_token = await login("marie@tevet7.dev", "tevet7demo")
         await _end_auth_trace(
             tracer, ctx, span, t0, status_="ok",

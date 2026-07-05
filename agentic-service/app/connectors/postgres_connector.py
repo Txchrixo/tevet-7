@@ -1,22 +1,22 @@
-"""PostgresConnector — real Connector implementation backed by PostgreSQL.
+"""PostgresConnector - real Connector implementation backed by PostgreSQL.
 
-Phase 6b onboarding backend — the connector used by tenants who configure a
+Phase 6b onboarding backend - the connector used by tenants who configure a
 PostgreSQL data source during onboarding. The connector:
 
 1. Connects to the tenant's Postgres via SQLAlchemy async + asyncpg.
 2. Loads the tenant's ``schema_config`` (saved by the onboarding wizard as a
    JSON string in ``tenant_configs.schema_config``).
 3. Enforces read-only execution a second time at the connector level
-   (defense in depth on top of the sqlglot rewriter) — non-SELECT statements
+   (defense in depth on top of the sqlglot rewriter) - non-SELECT statements
    are refused.
 4. Auto-detects the tenant's schema by querying ``information_schema.tables``
-   and ``information_schema.columns`` — used by the onboarding wizard's
+   and ``information_schema.columns`` - used by the onboarding wizard's
    "detect schema" step.
-5. Tests the connection (``test_connection``) — used by the onboarding
+5. Tests the connection (``test_connection``) - used by the onboarding
    wizard's "test connection" step before saving the URL.
 
 The connector is constructed per request (not a singleton) so it respects
-the tenant context. The agent and tools never see the connection URL — only
+the tenant context. The agent and tools never see the connection URL - only
 the connector does.
 """
 
@@ -61,7 +61,7 @@ class PostgresConnector(Connector):
     connection_url:
         SQLAlchemy URL for the tenant's Postgres. May be in either the
         sync form (``postgresql://...``) or the async form
-        (``postgresql+asyncpg://...``) — the connector normalises it.
+        (``postgresql+asyncpg://...``) - the connector normalises it.
     schema_config:
         The tenant's saved schema_config dict (parsed from the JSON
         column in ``tenant_configs``). Same shape as ``app/schema.yaml``.
@@ -88,7 +88,7 @@ class PostgresConnector(Connector):
         return self._engine
 
     async def _dispose(self) -> None:
-        """Dispose the engine if it was created. Best-effort — used by the
+        """Dispose the engine if it was created. Best-effort - used by the
         onboarding wizard to free connections after a test."""
         if self._engine is not None:
             try:
@@ -101,13 +101,13 @@ class PostgresConnector(Connector):
     def get_schema(self) -> dict:
         """Return the tenant's saved schema_config dict.
 
-        Raises ``ValueError`` if no schema_config has been saved yet — the
+        Raises ``ValueError`` if no schema_config has been saved yet - the
         onboarding wizard must call ``detect_schema`` + ``save_schema`` first.
         """
         if self._schema_config is None:
             raise ValueError(
                 f"PostgresConnector for tenant {self.tenant_id!r} has no "
-                "saved schema_config — run onboarding first."
+                "saved schema_config - run onboarding first."
             )
         return self._schema_config
 
@@ -132,7 +132,7 @@ class PostgresConnector(Connector):
         Defense in depth: re-parse the SQL with sqlglot and refuse anything
         that is not a SELECT. The sqlglot rewriter has already enforced
         scoping; this is our second layer. A third layer is the Postgres
-        role itself — tenants are encouraged to use a read-only role in
+        role itself - tenants are encouraged to use a read-only role in
         their connection URL (we don't enforce it here because some tenants
         may share a connection string).
         """
@@ -173,7 +173,7 @@ class PostgresConnector(Connector):
 
     # ── onboarding helpers ──────────────────────────────────────────────────
     async def test_connection(self) -> dict[str, Any]:
-        """Test the connection — returns ``{ok, error, tables_count}``.
+        """Test the connection - returns ``{ok, error, tables_count}``.
 
         Used by the onboarding wizard before saving the URL. Does NOT
         load the schema (use ``detect_schema`` for that). Closes the
@@ -181,7 +181,7 @@ class PostgresConnector(Connector):
         failed test.
         """
         try:
-            # Quick check that asyncpg is importable — if it isn't, the
+            # Quick check that asyncpg is importable - if it isn't, the
             # create_async_engine call below would fail with a less clear
             # error.
             import asyncpg  # noqa: F401
@@ -206,7 +206,7 @@ class PostgresConnector(Connector):
                 )
                 tables_count = int(r2.scalar() or 0)
             return {"ok": True, "error": None, "tables_count": tables_count}
-        except Exception as exc:  # noqa: BLE001 — surface any error to the wizard
+        except Exception as exc:  # noqa: BLE001 - surface any error to the wizard
             logger.warning(
                 "PostgresConnector.test_connection failed for tenant=%s: %s",
                 self.tenant_id, exc,
@@ -254,7 +254,7 @@ class PostgresConnector(Connector):
         engine = self.engine
         try:
             async with engine.connect() as conn:
-                # Tables — exclude system schemas.
+                # Tables - exclude system schemas.
                 t_res = await conn.execute(
                     text(
                         "SELECT table_name, table_schema FROM information_schema.tables "
@@ -264,7 +264,7 @@ class PostgresConnector(Connector):
                     )
                 )
                 table_rows = t_res.fetchall()
-                # Columns — one row per (table_schema, table_name, column_name).
+                # Columns - one row per (table_schema, table_name, column_name).
                 c_res = await conn.execute(
                     text(
                         "SELECT table_name, column_name, data_type, is_nullable "
@@ -317,7 +317,7 @@ class PostgresConnector(Connector):
                 "tenant_id": self.tenant_id,
                 "schema_version": "auto-detect",
                 "description": (
-                    "Schéma auto-détecté depuis information_schema — à valider "
+                    "Schéma auto-détecté depuis information_schema - à valider "
                     "par l'administrateur du tenant."
                 ),
                 "default_limit": 1000,

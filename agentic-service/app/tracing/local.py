@@ -1,4 +1,4 @@
-"""LocalTracer — default tracer that persists every trace to the SQLite
+"""LocalTracer - default tracer that persists every trace to the SQLite
 ``traces`` table.
 
 Design
@@ -6,9 +6,9 @@ Design
 
 * One in-process ring buffer of the last 100 finalised traces powers the
   ``GET /api/traces`` listing endpoint without touching the DB on every call.
-* ``end_trace`` is async — it awaits an ``INSERT`` into ``traces`` via the
+* ``end_trace`` is async - it awaits an ``INSERT`` into ``traces`` via the
   shared SQLAlchemy async engine (``app.db_seed.get_engine``).
-* ``start_trace`` / ``start_span`` / ``end_span`` are sync — they only
+* ``start_trace`` / ``start_span`` / ``end_span`` are sync - they only
   mutate in-memory state, so they don't block the event loop.
 * Failures (DB locked, schema drift) are logged at WARNING and swallowed:
   tracing must never crash a user request. The in-memory copy is still
@@ -41,7 +41,7 @@ _RING_BUFFER_SIZE = 100
 
 
 class LocalTracer:
-    """Default tracer — persists traces to SQLite + keeps an in-memory cache."""
+    """Default tracer - persists traces to SQLite + keeps an in-memory cache."""
 
     def __init__(self) -> None:
         # Most-recent-first ring buffer (we append on the right, popleft when
@@ -133,7 +133,7 @@ class LocalTracer:
         return ctx.trace_id
 
     def flush(self) -> None:
-        """No-op for LocalTracer — writes are synchronous on end_trace."""
+        """No-op for LocalTracer - writes are synchronous on end_trace."""
         return None
 
     # ── Query surface used by the /api/traces endpoints ─────────────────────
@@ -150,7 +150,7 @@ class LocalTracer:
         if len(buf) >= limit:
             return [_summary(r) for r in buf[:limit]]
 
-        # Buffer too small — query the DB.
+        # Buffer too small - query the DB.
         try:
             engine = get_engine()
             async with engine.connect() as conn:
@@ -165,7 +165,7 @@ class LocalTracer:
             logger.warning("list_recent DB query failed", exc_info=True)
             rows = []
         # Merge with whatever we had in memory (memory may have fresher rows
-        # not yet flushed — though for LocalTracer that's not the case).
+        # not yet flushed - though for LocalTracer that's not the case).
         seen_ids = {r["id"] for r in rows}
         for r in buf:
             if r["id"] not in seen_ids:
@@ -204,7 +204,7 @@ class LocalTracer:
                 await conn.execute(traces_table.insert().values(**row))
         except Exception:  # noqa: BLE001
             logger.warning(
-                "traces INSERT failed for id=%s — trace still in memory ring buffer",
+                "traces INSERT failed for id=%s - trace still in memory ring buffer",
                 row.get("id"),
                 exc_info=True,
             )

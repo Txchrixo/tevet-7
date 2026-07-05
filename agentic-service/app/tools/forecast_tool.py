@@ -1,4 +1,4 @@
-"""ForecastTool — ML-based stock-shortage prediction (Phase 5).
+"""ForecastTool - ML-based stock-shortage prediction (Phase 5).
 
 Predicts, for each product of a given producer, the probability that the
 product will rupture at least once in the next ``horizon_days`` days. The
@@ -32,7 +32,7 @@ all three tools uniformly in ``app.api.chat``.
 
 Tracing: every ``predict()`` call opens a Langfuse span
 ``forecast_predict`` with the producer_id, horizon_days, n_products, and
-n_at_risk as metadata — so the Langfuse dashboard shows forecast calls
+n_at_risk as metadata - so the Langfuse dashboard shows forecast calls
 alongside SQL and RAG calls.
 """
 
@@ -61,7 +61,7 @@ logger = logging.getLogger("tevet7.forecast_tool")
 _SERVICE_ROOT = Path(__file__).resolve().parent.parent.parent
 MODEL_PATH = _SERVICE_ROOT / "ml" / "models" / "stock_shortage_model.pkl"
 
-# Reference "today" for the demo — matches ``app.db_seed._REFERENCE_NOW``.
+# Reference "today" for the demo - matches ``app.db_seed._REFERENCE_NOW``.
 # In a real deployment this would be ``datetime.now()``; in the Phase 5
 # demo we fix it so the forecast sees the same day the seed ended on.
 _REFERENCE_NOW = datetime(2024, 7, 15, 0, 0, 0)
@@ -79,7 +79,7 @@ class ForecastPrediction:
     product_id: int
     product_name: str
     category: str
-    probability: float            # 0..1 — P(stockout in next horizon_days)
+    probability: float            # 0..1 - P(stockout in next horizon_days)
     stock_available: float        # current stocks.available
     sales_7d: float               # sum of daily_sales over last 7 days
     sales_3d: float
@@ -105,7 +105,7 @@ class ForecastResult:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Top-factor heuristic — translates the model's probability into a
+# Top-factor heuristic - translates the model's probability into a
 # human-readable FR explanation of the dominant risk driver. The mapping
 # is intentionally simple (no SHAP) so it stays interpretable for the demo.
 # ─────────────────────────────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ class ForecastTool:
         self._load_attempted = True
         if not MODEL_PATH.exists():
             logger.warning(
-                "ForecastTool: model file %s does not exist — predict() will "
+                "ForecastTool: model file %s does not exist - predict() will "
                 "return a fallback message. Run `python3 ml/train_stock_model.py`.",
                 MODEL_PATH,
             )
@@ -214,7 +214,7 @@ class ForecastTool:
                 bundle.get("metadata", {}).get("prevalence", 0.0) * 100,
             )
             return self._bundle
-        except Exception as exc:  # noqa: BLE001 — never crash the chat flow
+        except Exception as exc:  # noqa: BLE001 - never crash the chat flow
             logger.exception("ForecastTool: failed to load model from %s: %s", MODEL_PATH, exc)
             return None
 
@@ -368,7 +368,7 @@ class ForecastTool:
                     category_encoded = int(label_encoder.transform([str(category)])[0])
                 else:
                     category_encoded = 0
-            except Exception:  # noqa: BLE001 — unknown category → 0
+            except Exception:  # noqa: BLE001 - unknown category → 0
                 category_encoded = 0
             feature_rows.append({
                 "product_id": int(p.id),
@@ -437,7 +437,7 @@ class ForecastTool:
 
         try:
             feature_rows = await self._build_inference_features(producer_id, horizon_days)
-        except Exception as exc:  # noqa: BLE001 — never crash the chat
+        except Exception as exc:  # noqa: BLE001 - never crash the chat
             logger.exception("ForecastTool: feature build failed for producer=%s", producer_id)
             latency_ms = int((time.monotonic() - started) * 1000)
             if span is not None and self.tracer is not None:
@@ -484,7 +484,7 @@ class ForecastTool:
                 error="Modèle invalide (feature_columns manquantes).",
             )
 
-        import pandas as pd  # local import — pandas is heavy and only needed here
+        import pandas as pd  # local import - pandas is heavy and only needed here
         X = pd.DataFrame(feature_rows)[feature_columns]
         model = bundle["model"]
         try:
@@ -580,15 +580,15 @@ def render_forecast_answer(result: ForecastResult, model_meta: dict[str, Any] | 
 
     The format mirrors the Phase 5 spec::
 
-        **Prévisions de rupture de stock** — 3 prochains jours (Ferme du Vallon)
+        **Prévisions de rupture de stock** - 3 prochains jours (Ferme du Vallon)
 
         3 produits à risque selon le modèle ML :
 
-        1. **Tomates cœur de bœuf** — 82% de risque
+        1. **Tomates cœur de bœuf** - 82% de risque
            Stock actuel : 18 unités · Ventes 7j : 142 · Facteur principal : ventes élevées
-        2. **Salade laitue** — 67% de risque
+        2. **Salade laitue** - 67% de risque
            Stock actuel : 8 unités · Ventes 7j : 76 · Facteur principal : stock faible
-        3. **Courgettes** — 45% de risque
+        3. **Courgettes** - 45% de risque
            Stock actuel : 12 unités · Ventes 7j : 98 · Facteur principal : weekend
 
         Le modèle RandomForest (100 arbres) a été entraîné sur 90 jours d'historique.
@@ -608,7 +608,7 @@ def render_forecast_answer(result: ForecastResult, model_meta: dict[str, Any] | 
     producer_label = result.producer_name or f"producteur #{result.producer_id}"
     n_risk = len(result.predictions)
     lines: list[str] = [
-        f"**Prévisions de rupture de stock** — {result.horizon_days} prochains jours ({producer_label})",
+        f"**Prévisions de rupture de stock** - {result.horizon_days} prochains jours ({producer_label})",
         "",
         f"{n_risk} produit{'s' if n_risk > 1 else ''} à risque selon le modèle ML :",
         "",
@@ -627,7 +627,7 @@ def render_forecast_answer(result: ForecastResult, model_meta: dict[str, Any] | 
         factor_label = factor_label_map.get(p.top_factor, p.top_factor)
         stock_int = int(round(p.stock_available))
         sales_7d_int = int(round(p.sales_7d))
-        lines.append(f"{i}. **{p.product_name}** — {pct} % de risque")
+        lines.append(f"{i}. **{p.product_name}** - {pct} % de risque")
         lines.append(
             f"   Stock actuel : {stock_int} unités · Ventes 7j : {sales_7d_int} "
             f"· Facteur principal : {factor_label}"
@@ -653,7 +653,7 @@ def render_forecast_chart(result: ForecastResult) -> dict[str, Any] | None:
         return None
     return {
         "type": "bar",
-        "title": f"Risque de rupture — {result.horizon_days} prochains jours",
+        "title": f"Risque de rupture - {result.horizon_days} prochains jours",
         "xKey": "product_name",
         "series": [
             {

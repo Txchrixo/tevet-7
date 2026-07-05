@@ -7,7 +7,7 @@
  * forwards the Authorization header (JWT) to the FastAPI onboarding service at
  * `http://localhost:8001/api/tenants/{id}/onboarding/*`.
  *
- * The frontend never talks to localhost:8001 directly — only relative paths
+ * The frontend never talks to localhost:8001 directly - only relative paths
  * so the request goes through Next.js (and Caddy in production).
  *
  * Why a separate client (vs. reusing admin-api.ts):
@@ -99,7 +99,7 @@ function describeError(parsed: unknown, fallback: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Step 1 — Connect data source
+// Step 1 - Connect data source
 // ---------------------------------------------------------------------------
 
 /**
@@ -178,7 +178,7 @@ export async function connectCsv(
   const token = getAuthToken();
   const headers: Record<string, string> = {};
   if (token) headers["authorization"] = `Bearer ${token}`;
-  // NOTE: do NOT set content-type — the browser sets it automatically with
+  // NOTE: do NOT set content-type - the browser sets it automatically with
   // the correct multipart boundary when we pass a FormData body.
 
   const form = new FormData();
@@ -232,7 +232,7 @@ export async function connectCsv(
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — Detect schema
+// Step 2 - Detect schema
 // ---------------------------------------------------------------------------
 
 /** Raw column shape returned by the backend `detect-schema` endpoint. */
@@ -323,7 +323,7 @@ export async function detectSchema(
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 (save) — Save schema
+// Step 2 (save) - Save schema
 // ---------------------------------------------------------------------------
 
 /**
@@ -345,7 +345,7 @@ export async function saveSchema(
   };
   if (token) headers["authorization"] = `Bearer ${token}`;
 
-  // Strip the wizard-only `selected` flag before sending — the backend stores
+  // Strip the wizard-only `selected` flag before sending - the backend stores
   // the schema without it. Deselected tables/columns are dropped entirely.
   const payload = {
     schema_config: {
@@ -409,7 +409,7 @@ export async function saveSchema(
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — Save roles
+// Step 3 - Save roles
 // ---------------------------------------------------------------------------
 
 /**
@@ -476,7 +476,7 @@ export async function saveRoles(
 }
 
 // ---------------------------------------------------------------------------
-// Step 4 — Complete onboarding
+// Step 4 - Complete onboarding
 // ---------------------------------------------------------------------------
 
 /**

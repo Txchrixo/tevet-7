@@ -18,12 +18,12 @@ interface BrandMarkProps {
 }
 
 /**
- * The icon mark only — heptagon outline + top-vertex node.
+ * The icon mark only - heptagon outline + top-vertex node.
  *
  * Uses a `useEffect` + `useState` "mounted" guard so the SVG (which reads
  * CSS variables `--accent` / `--foreground` that resolve differently once
  * the theme provider has applied the dark theme) only renders after the
- * client has hydrated. Before mount we emit a same-sized empty span — this
+ * client has hydrated. Before mount we emit a same-sized empty span - this
  * guarantees the server-rendered HTML and the first client render produce
  * the same markup, so React can reconcile without a hydration warning.
  */

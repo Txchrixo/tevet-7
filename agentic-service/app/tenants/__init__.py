@@ -1,4 +1,4 @@
-"""Tenants package for Tevet-7 (Phase 6a — Option C modular monolith).
+"""Tenants package for Tevet-7 (Phase 6a - Option C modular monolith).
 
 Public surface
 --------------
@@ -20,7 +20,7 @@ cross-contamination. The row-level ``producer_id`` scoping is a SECOND
 layer inside one tenant (producer Marie sees only her rows within tenant
 ``dp``).
 
-The CORE agentic (agents/tools/tracing) is unaware of tenants — it
+The CORE agentic (agents/tools/tracing) is unaware of tenants - it
 receives ``tenant_id`` as a plain string from the HTTP layer and uses it
 as a filter when querying. This module owns the tenant CRUD + the
 membership model (which user belongs to which tenant with which role).

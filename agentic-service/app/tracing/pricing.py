@@ -6,7 +6,7 @@ but we still compute a cost estimate per trace so the inspector UI and the
 becomes meaningful in Phase 2 when we plug a real LLM in.
 
 The pricing table below is a snapshot of public list prices (USD per 1K
-tokens) as of mid-2024. **It is not authoritative** — production should read
+tokens) as of mid-2024. **It is not authoritative** - production should read
 from a config file or a pricing API. For the demo it's a constant table.
 """
 
@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from app.config import get_settings
 
-# Pricing table — USD per 1K tokens.
+# Pricing table - USD per 1K tokens.
 #   (input_per_1k, output_per_1k)
 #
 # Source: public vendor list prices. Update when prices change.
@@ -30,7 +30,7 @@ _PRICING: dict[str, tuple[float, float]] = {
     "claude-3-5-sonnet-20240620": (0.003, 0.015),
     "claude-3-haiku": (0.000250, 0.001250),
     "claude-3-opus": (0.015, 0.075),
-    # Fallback (unknown model) — use gpt-4o-mini pricing as a conservative default
+    # Fallback (unknown model) - use gpt-4o-mini pricing as a conservative default
     "_default": (0.000150, 0.000600),
 }
 

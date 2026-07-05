@@ -3,27 +3,27 @@
 Implements the multi-step wizard that turns a freshly-created tenant into
 an agent-ready workspace:
 
-  1. ``start_onboarding``      — creates/updates a ``tenant_configs`` row
+  1. ``start_onboarding``      - creates/updates a ``tenant_configs`` row
                                   with the chosen connector_type
                                   (``"postgres"`` or ``"csv"``).
-  2. ``connect_postgres``      — tests a Postgres connection URL.
-     ``connect_csv``           — saves an uploaded CSV file + tests loading.
-  3. ``detect_schema``         — uses the connector's ``detect_schema()``
+  2. ``connect_postgres``      - tests a Postgres connection URL.
+     ``connect_csv``           - saves an uploaded CSV file + tests loading.
+  3. ``detect_schema``         - uses the connector's ``detect_schema()``
                                   to auto-discover tables/columns. Returns
                                   a draft for the user to review/edit.
-  4. ``save_schema``           — persists the user's edited schema as the
+  4. ``save_schema``           - persists the user's edited schema as the
                                   tenant's ``schema_config``.
-  5. ``save_roles``            — persists the tenant's roles + scope columns.
-  6. ``complete_onboarding``   — flips ``onboarded=True``. The chat
+  5. ``save_roles``            - persists the tenant's roles + scope columns.
+  6. ``complete_onboarding``   - flips ``onboarded=True``. The chat
                                   endpoint refuses to run before this.
-  7. ``get_onboarding_status`` — returns the current onboarding state
+  7. ``get_onboarding_status`` - returns the current onboarding state
                                   (used by the wizard to resume mid-flow).
 
 All functions are async and operate on the ``tenant_configs`` table. They
-are tenant-scoped — the caller (HTTP layer) MUST verify the user is a
+are tenant-scoped - the caller (HTTP layer) MUST verify the user is a
 member of ``tenant_id`` before invoking them.
 
-The service does NOT modify the CORE agentic — only the ``tenant_configs``
+The service does NOT modify the CORE agentic - only the ``tenant_configs``
 table + the connector layer. The agent + tools + tracing are unchanged.
 """
 
@@ -123,13 +123,13 @@ async def _upsert_config(
     """Insert-or-update the tenant_configs row for ``tenant_id``.
 
     Only the fields passed as non-None are written (except ``onboarded``
-    which is written iff explicitly passed — to allow flipping to True
+    which is written iff explicitly passed - to allow flipping to True
     without touching the other fields). ``updated_at`` is always bumped.
     """
     engine = get_engine()
     now = datetime.utcnow()
     existing = await _get_config_row(tenant_id)
-    # Build the values dict — only include keys that are not None (so we
+    # Build the values dict - only include keys that are not None (so we
     # don't overwrite existing values with NULL).
     values: dict[str, Any] = {"updated_at": now}
     if connector_type is not None:
@@ -146,7 +146,7 @@ async def _upsert_config(
         values["onboarded"] = onboarded
 
     if existing is None:
-        # Insert — fill the required fields with sensible defaults.
+        # Insert - fill the required fields with sensible defaults.
         insert_values = {
             "tenant_id": tenant_id,
             "connector_type": connector_type or "sqlite_demo",
@@ -206,7 +206,7 @@ async def start_onboarding(tenant_id: str, connector_type: str) -> dict[str, Any
         onboarded=False,
     )
     logger.info(
-        "start_onboarding — tenant=%s connector_type=%s",
+        "start_onboarding - tenant=%s connector_type=%s",
         tenant_id, connector_type,
     )
     config = await _get_config_row(tenant_id)
@@ -234,12 +234,12 @@ async def connect_postgres(tenant_id: str, connection_url: str) -> dict[str, Any
             connection_url=connection_url,
         )
         logger.info(
-            "connect_postgres — tenant=%s ok=True tables_count=%d",
+            "connect_postgres - tenant=%s ok=True tables_count=%d",
             tenant_id, result.get("tables_count", 0),
         )
     else:
         logger.warning(
-            "connect_postgres — tenant=%s ok=False error=%s",
+            "connect_postgres - tenant=%s ok=False error=%s",
             tenant_id, result.get("error"),
         )
     return result
@@ -261,7 +261,7 @@ async def connect_csv(
     if not file_bytes:
         return {"ok": False, "error": "CSV file is empty.", "tables_count": 0}
     csv_dir = _ensure_csv_dir()
-    # Sanitize the filename for disk — keep the extension, slugify the
+    # Sanitize the filename for disk - keep the extension, slugify the
     # base name. We use the tenant_id as the on-disk filename so multiple
     # uploads from the same tenant overwrite (not accumulate).
     ext = ".csv"
@@ -293,13 +293,13 @@ async def connect_csv(
             csv_path=str(csv_path),
         )
         logger.info(
-            "connect_csv — tenant=%s ok=True tables_count=%d cols=%d",
+            "connect_csv - tenant=%s ok=True tables_count=%d cols=%d",
             tenant_id, result.get("tables_count", 0),
             len(result.get("columns", []) or []),
         )
     else:
         logger.warning(
-            "connect_csv — tenant=%s ok=False error=%s",
+            "connect_csv - tenant=%s ok=False error=%s",
             tenant_id, result.get("error"),
         )
     return result
@@ -316,14 +316,14 @@ async def detect_schema(tenant_id: str) -> dict[str, Any]:
     config = await _get_config_row(tenant_id)
     if config is None:
         raise ValueError(
-            f"tenant {tenant_id!r} has no onboarding session — call "
+            f"tenant {tenant_id!r} has no onboarding session - call "
             "start_onboarding first."
         )
     ctype = config["connector_type"]
     if ctype == "postgres":
         if not config["connection_url"]:
             raise ValueError(
-                "no connection_url saved — call connect_postgres first."
+                "no connection_url saved - call connect_postgres first."
             )
         connector = PostgresConnector(
             tenant_id=tenant_id,
@@ -332,7 +332,7 @@ async def detect_schema(tenant_id: str) -> dict[str, Any]:
         )
     elif ctype == "csv":
         if not config["csv_path"]:
-            raise ValueError("no csv_path saved — call connect_csv first.")
+            raise ValueError("no csv_path saved - call connect_csv first.")
         connector = CsvConnector(
             tenant_id=tenant_id,
             csv_path=config["csv_path"],
@@ -346,11 +346,11 @@ async def detect_schema(tenant_id: str) -> dict[str, Any]:
     draft = await connector.detect_schema()
     # Stash the draft in the tenant_configs row as the schema_config (so
     # the user can review/edit it via the next step). The user MUST call
-    # save_schema to confirm — detect_schema does NOT mark the tenant
+    # save_schema to confirm - detect_schema does NOT mark the tenant
     # onboarded.
     await _upsert_config(tenant_id, schema_config=draft)
     logger.info(
-        "detect_schema — tenant=%s connector=%s tables=%d",
+        "detect_schema - tenant=%s connector=%s tables=%d",
         tenant_id, ctype, len(draft.get("tables", [])),
     )
     return draft
@@ -364,7 +364,7 @@ async def save_schema(tenant_id: str, schema_config: dict) -> None:
         raise ValueError("schema_config must have a 'tables' key")
     await _upsert_config(tenant_id, schema_config=schema_config)
     logger.info(
-        "save_schema — tenant=%s tables=%d",
+        "save_schema - tenant=%s tables=%d",
         tenant_id, len(schema_config.get("tables", [])),
     )
 
@@ -375,7 +375,7 @@ async def save_roles(tenant_id: str, roles_config: dict) -> None:
         raise ValueError("roles_config must be a dict")
     await _upsert_config(tenant_id, roles_config=roles_config)
     logger.info(
-        "save_roles — tenant=%s roles=%s",
+        "save_roles - tenant=%s roles=%s",
         tenant_id, list(roles_config.keys()),
     )
 
@@ -390,19 +390,19 @@ async def complete_onboarding(tenant_id: str) -> None:
     config = await _get_config_row(tenant_id)
     if config is None:
         raise ValueError(
-            f"tenant {tenant_id!r} has no onboarding session — call "
+            f"tenant {tenant_id!r} has no onboarding session - call "
             "start_onboarding first."
         )
     if not config["schema_config"]:
-        raise ValueError("cannot complete onboarding — save_schema must run first.")
+        raise ValueError("cannot complete onboarding - save_schema must run first.")
     if not config["schema_config"].get("tables"):
         raise ValueError(
-            "cannot complete onboarding — schema_config has no tables."
+            "cannot complete onboarding - schema_config has no tables."
         )
     if not config["roles_config"]:
-        raise ValueError("cannot complete onboarding — save_roles must run first.")
+        raise ValueError("cannot complete onboarding - save_roles must run first.")
     await _upsert_config(tenant_id, onboarded=True)
-    logger.info("complete_onboarding — tenant=%s onboarded=True", tenant_id)
+    logger.info("complete_onboarding - tenant=%s onboarded=True", tenant_id)
 
 
 async def get_onboarding_status(tenant_id: str) -> dict[str, Any]:

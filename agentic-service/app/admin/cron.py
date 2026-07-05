@@ -7,7 +7,7 @@ we wipe + reseed the demo tenant's business data so visitors can't
 permanently break it.
 
 In production you should use a real scheduler (celery beat, kubernetes
-cronjob, AWS EventBridge) — this background task is fine for the dev
+cronjob, AWS EventBridge) - this background task is fine for the dev
 demo but won't survive a multi-process deployment.
 
 Contract::
@@ -39,15 +39,15 @@ class DemoResetCron:
         self._task: asyncio.Task | None = None
 
     async def start(self) -> None:
-        """Start the cron loop. Idempotent — calling twice is a no-op."""
+        """Start the cron loop. Idempotent - calling twice is a no-op."""
         if not self._enabled:
-            logger.info("Demo reset cron disabled by config — not starting.")
+            logger.info("Demo reset cron disabled by config - not starting.")
             return
         if self._task is not None and not self._task.done():
-            logger.warning("DemoResetCron.start() called twice — ignoring.")
+            logger.warning("DemoResetCron.start() called twice - ignoring.")
             return
         self._task = asyncio.create_task(self._run(), name="demo-reset-cron")
-        logger.info("Demo reset cron started — interval=%ss", self._interval)
+        logger.info("Demo reset cron started - interval=%ss", self._interval)
 
     async def stop(self) -> None:
         """Cancel the cron loop. Safe to call multiple times."""
@@ -66,22 +66,22 @@ class DemoResetCron:
         # Run one cycle immediately on startup so a fresh dev.db has data.
         try:
             await self._cycle()
-        except Exception as exc:  # noqa: BLE001 — cron must not die
+        except Exception as exc:  # noqa: BLE001 - cron must not die
             logger.exception("Demo reset cycle failed: %s", exc)
 
         while True:
             try:
                 await asyncio.sleep(self._interval)
             except asyncio.CancelledError:
-                logger.info("Demo reset cron cancelled — exiting loop.")
+                logger.info("Demo reset cron cancelled - exiting loop.")
                 return
             try:
                 await self._cycle()
-            except Exception as exc:  # noqa: BLE001 — cron must not die
+            except Exception as exc:  # noqa: BLE001 - cron must not die
                 logger.exception("Demo reset cycle failed: %s", exc)
 
     async def _cycle(self) -> None:
         """Run one reset cycle + log."""
         logger.info("Demo reset cron: starting cycle")
         result = await reset_demo_data()
-        logger.info("Demo reset cron: cycle done — %s", result)
+        logger.info("Demo reset cron: cycle done - %s", result)

@@ -1,6 +1,6 @@
 """Async SQLAlchemy setup for the Tevet-7 control-plane database.
 
-This module manages the **control-plane** connection only — i.e. tenants,
+This module manages the **control-plane** connection only - i.e. tenants,
 users, configs, audit logs, quotas. Tenant *business* databases (e.g. Drive
 Producteur's real DB) are connected to dynamically per-request via the
 Connector abstraction (see ``app/connectors/base.py``).
@@ -81,7 +81,7 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         except Exception:
             await session.rollback()
             raise
-        # We do NOT auto-commit here — handlers that write should commit
+        # We do NOT auto-commit here - handlers that write should commit
         # explicitly. Read-only handlers don't need a commit.
 
 

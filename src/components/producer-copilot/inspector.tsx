@@ -25,7 +25,7 @@ interface InspectorProps {
 }
 
 /**
- * Inspector close button — single X rendered in the inspector header
+ * Inspector close button - single X rendered in the inspector header
  * (top-right). This is the ONLY in-panel close affordance: the desktop
  * header's eye-toggle opens/closes from outside, but once you're inside
  * the inspector you also need a way to dismiss it without reaching for the
@@ -82,7 +82,7 @@ export function Inspector({ message, onClose }: InspectorProps) {
               <div className="flex items-center gap-2 rounded-md border border-dashed border-border bg-background px-3 py-2 text-xs text-muted-foreground">
                 <ShieldOff size={14} className="shrink-0" />
                 <span className="font-body">
-                  Action refusée — scoping violation
+                  Action refusée - scoping violation
                 </span>
               </div>
             ) : (
@@ -103,7 +103,7 @@ export function Inspector({ message, onClose }: InspectorProps) {
             )}
           </section>
 
-          {/* Steps — ledger-numbered */}
+          {/* Steps - ledger-numbered */}
           <section>
             <SectionLabel icon={<Eye size={12} />}>
               Étapes du raisonnement
@@ -133,7 +133,7 @@ export function Inspector({ message, onClose }: InspectorProps) {
                         </span>
                         <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
                           <span className="font-heading tabular-nums">
-                            {step.durationMs > 0 ? step.durationMs : "—"}
+                            {step.durationMs > 0 ? step.durationMs : "-"}
                           </span>
                           {step.durationMs > 0 ? " ms" : ""}
                         </span>
@@ -191,7 +191,7 @@ export function Inspector({ message, onClose }: InspectorProps) {
             </ul>
           </section>
 
-          {/* Cost & tokens — ledger grid */}
+          {/* Cost & tokens - ledger grid */}
           <section>
             <SectionLabel icon={<Clock size={12} />}>
               Coût &amp; tokens
@@ -209,7 +209,7 @@ export function Inspector({ message, onClose }: InspectorProps) {
           <Separator />
 
           <p className="text-[10px] leading-relaxed text-muted-foreground">
-            Trace simulée — en production, journalisée dans Langfuse.
+            Trace simulée - en production, journalisée dans Langfuse.
           </p>
         </div>
       </ScrollArea>

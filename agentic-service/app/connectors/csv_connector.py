@@ -1,17 +1,17 @@
-"""CsvConnector — Connector backed by a tenant's uploaded CSV file.
+"""CsvConnector - Connector backed by a tenant's uploaded CSV file.
 
-Phase 6b onboarding backend — the connector used by tenants who upload a CSV
+Phase 6b onboarding backend - the connector used by tenants who upload a CSV
 file during onboarding (the easiest path to demo the platform without
 standing up a Postgres). The connector:
 
 1. Reads the CSV file with pandas (header + first N rows for type inference).
 2. Loads the CSV into a per-tenant in-memory SQLite table (the connector
-   owns its own async engine — it does NOT touch the demo's ``dev.db``).
+   owns its own async engine - it does NOT touch the demo's ``dev.db``).
 3. Exposes the same ``execute_readonly_query`` contract as the other
    connectors so the sqlglot rewriter + SqlReadTool work unchanged.
 4. Auto-detects the schema (column names + inferred types: int, float, text)
-   — used by the onboarding wizard's "detect schema" step.
-5. Tests the file is readable — used by the onboarding wizard's "test
+   - used by the onboarding wizard's "detect schema" step.
+5. Tests the file is readable - used by the onboarding wizard's "test
    connection" step.
 
 Per-tenant SQLite files are stored under ``/tmp/tevet7_csv/<tenant_id>.db``
@@ -48,7 +48,7 @@ def _ensure_csv_dir() -> Path:
 
 def _tenant_db_path(tenant_id: str) -> Path:
     """Return the on-disk SQLite path for a CSV-backed tenant."""
-    # Sanitize the tenant_id (lowercase letters/digits/hyphens only —
+    # Sanitize the tenant_id (lowercase letters/digits/hyphens only -
     # enforced at tenant creation, but defensive here too).
     safe = "".join(c for c in tenant_id if c.isalnum() or c in "-_")
     if not safe:
@@ -148,7 +148,7 @@ class CsvConnector(Connector):
             url = f"sqlite+aiosqlite:///{db_path}"
             self._engine = create_async_engine(url, echo=False, future=True)
         if not self._loaded:
-            # Synchronous load — pandas + csv are sync; we do it once on
+            # Synchronous load - pandas + csv are sync; we do it once on
             # the first engine access. Errors propagate up (caller will
             # see them in test_connection / detect_schema).
             self._load_csv_into_sqlite()
@@ -163,18 +163,18 @@ class CsvConnector(Connector):
         onboarding wizard calls ``connect_csv`` which forces a re-load by
         deleting the SQLite file first.
         """
-        import pandas as pd  # local import — pandas is heavy
+        import pandas as pd  # local import - pandas is heavy
         from sqlalchemy import create_engine as _sync_create_engine
 
         if not os.path.exists(self.csv_path):
             raise FileNotFoundError(f"CSV file not found: {self.csv_path}")
 
         db_path = _tenant_db_path(self.tenant_id)
-        # Sync engine — pandas' to_sql is sync-only.
+        # Sync engine - pandas' to_sql is sync-only.
         sync_url = f"sqlite:///{db_path}"
         sync_engine = _sync_create_engine(sync_url, future=True)
         try:
-            # Check if the table already exists — if so, skip the load.
+            # Check if the table already exists - if so, skip the load.
             with sync_engine.connect() as conn:
                 from sqlalchemy import inspect as _inspect
                 inspector = _inspect(sync_engine)
@@ -182,7 +182,7 @@ class CsvConnector(Connector):
             table_name = self._infer_table_name()
             if table_name in existing:
                 logger.info(
-                    "CsvConnector: table %s already loaded for tenant=%s — skipping",
+                    "CsvConnector: table %s already loaded for tenant=%s - skipping",
                     table_name, self.tenant_id,
                 )
                 return
@@ -222,7 +222,7 @@ class CsvConnector(Connector):
         if self._schema_config is None:
             raise ValueError(
                 f"CsvConnector for tenant {self.tenant_id!r} has no saved "
-                "schema_config — run onboarding first."
+                "schema_config - run onboarding first."
             )
         return self._schema_config
 
@@ -231,7 +231,7 @@ class CsvConnector(Connector):
 
         If no table has ``allowed_for_roles`` set (e.g. the schema was
         saved via the onboarding wizard which doesn't set it), all tables
-        are allowed — the scoping is enforced by the sqlglot rewriter.
+        are allowed - the scoping is enforced by the sqlglot rewriter.
         """
         schema = self.get_schema()
         out: list[str] = []
@@ -297,7 +297,7 @@ class CsvConnector(Connector):
     # ── onboarding helpers ──────────────────────────────────────────────────
     async def test_connection(self) -> dict[str, Any]:
         """Test that the CSV file exists + is readable. Returns
-        ``{ok, error, tables_count}`` — ``tables_count`` is 1 (a CSV
+        ``{ok, error, tables_count}`` - ``tables_count`` is 1 (a CSV
         yields exactly one table).
         """
         try:
@@ -370,7 +370,7 @@ class CsvConnector(Connector):
                 "schema_version": "auto-detect-csv",
                 "description": (
                     f"Schéma auto-détecté depuis le fichier CSV « {os.path.basename(self.csv_path)} » "
-                    "— à valider par l'administrateur du tenant."
+                    "- à valider par l'administrateur du tenant."
                 ),
                 "default_limit": 1000,
             },

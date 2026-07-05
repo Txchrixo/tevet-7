@@ -1,12 +1,12 @@
-"""LLMProvider — universal abstraction over LLM SDKs.
+"""LLMProvider - universal abstraction over LLM SDKs.
 
 Protocol (interface) that every provider adapter implements. The ModelRouter
-is agnostic — it calls ``provider.chat(...)`` and gets back a normalized
+is agnostic - it calls ``provider.chat(...)`` and gets back a normalized
 ``ChatResult``. Each provider owns its SDK/HTTP wiring.
 
 Data shapes:
   - ``ChatResult``: content, tool_calls (normalized), usage, model, stream.
-  - ``ToolCall``: id, name, arguments (dict — already parsed).
+  - ``ToolCall``: id, name, arguments (dict - already parsed).
   - ``Usage``: prompt/completion/cache_hit/cache_miss tokens.
   - ``StreamDelta``: content + usage (on final chunk).
 """

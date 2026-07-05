@@ -1,4 +1,4 @@
-"""Conversation persistence service — DB operations."""
+"""Conversation persistence service - DB operations."""
 from __future__ import annotations
 import logging, uuid
 from datetime import datetime

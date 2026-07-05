@@ -1,4 +1,4 @@
-"""SqliteConnector — real Connector implementation backed by aiosqlite.
+"""SqliteConnector - real Connector implementation backed by aiosqlite.
 
 Phase 1 target: drive the Producer Copilot against a fictitious SQLite
 database (see ``app/db_seed.py``) so the demo runs without Postgres/Docker.
@@ -6,7 +6,7 @@ database (see ``app/db_seed.py``) so the demo runs without Postgres/Docker.
 The connector is the ONLY object that touches the tenant's data. Tools
 (``SqlReadTool``) go through it; they never see a connection string. The
 ``execute_readonly_query`` method enforces read-only-ness a second time
-by refusing any statement that is not a SELECT — defense in depth on top
+by refusing any statement that is not a SELECT - defense in depth on top
 of the sqlglot rewriter.
 """
 
@@ -26,7 +26,7 @@ from app.db_seed import get_engine
 
 logger = logging.getLogger("tevet7.connectors.sqlite")
 
-# Path to the canonical schema.yaml — load lazily so tests can construct a
+# Path to the canonical schema.yaml - load lazily so tests can construct a
 # connector without the file existing.
 _SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schema.yaml"
 

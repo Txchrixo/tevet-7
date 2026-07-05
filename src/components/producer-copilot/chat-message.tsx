@@ -58,7 +58,7 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
         .toFixed(1)
         .replace(".", ",")
         .replace(/\s/g, "\u00A0")
-    : "—";
+    : "-";
   const tokensDisplay = totalTokens.toLocaleString("fr-FR").replace(/\s/g, "\u00A0");
 
   return (
@@ -130,7 +130,7 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
               </div>
             )}
 
-            {/* Footer line — hidden while streaming (Phase A2) */}
+            {/* Footer line - hidden while streaming (Phase A2) */}
             {!isStreaming && (
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] uppercase tracking-wide text-muted-foreground">
               {response?.refused ? (

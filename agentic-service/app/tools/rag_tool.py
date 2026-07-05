@@ -1,15 +1,15 @@
-"""RagSearchTool — documentary retrieval over the FTS5 ``document_chunks_fts``.
+"""RagSearchTool - documentary retrieval over the FTS5 ``document_chunks_fts``.
 
-Phase 3 — RAG layer for the Producer Copilot.
+Phase 3 - RAG layer for the Producer Copilot.
 
 SECURITY NOTES
 ==============
 
 The RAG tool enforces the **same row-level scoping** as ``SqlReadTool``:
 
-1. ``tenant_id`` filter — always applied (a producer from tenant "dp" only
+1. ``tenant_id`` filter - always applied (a producer from tenant "dp" only
    sees chunks where ``tenant_id = 'dp'``).
-2. ``producer_id`` filter — for producers: chunks where
+2. ``producer_id`` filter - for producers: chunks where
    ``producer_id IS NULL`` (tenant-wide docs like the CGV) OR
    ``producer_id = <caller_producer_id>``. For admins: no producer filter
    (admin sees all chunks in the tenant).
@@ -63,7 +63,7 @@ class RagChunk:
     document_id: int
     document_title: str
     chunk_index: int
-    score: float  # bm25() — negative, smaller = better
+    score: float  # bm25() - negative, smaller = better
     producer_id: int | None
 
 
@@ -115,7 +115,7 @@ def _build_fts_match(question: str) -> str:
     parameters cannot be used for the MATCH expression itself (it's not a
     value, it's a query-language string), so we sanitise carefully and
     pass it inline. We still bind ``tenant_id`` and ``producer_id`` as
-    named parameters — those are real values.
+    named parameters - those are real values.
     """
     import unicodedata
 
@@ -332,7 +332,7 @@ class RagSearchTool:
             return RagResult(
                 chunks=chunks, query=question, top_k=top_k, latency_ms=latency_ms,
             )
-        except Exception as exc:  # noqa: BLE001 — never crash the chat flow
+        except Exception as exc:  # noqa: BLE001 - never crash the chat flow
             logger.exception("RagSearchTool.search failed for question=%r", question)
             latency_ms = int((time.monotonic() - started) * 1000)
             if span is not None and self.tracer is not None:
@@ -342,7 +342,7 @@ class RagSearchTool:
             return RagResult(chunks=[], query=question, top_k=top_k, latency_ms=latency_ms)
 
     # ───────────────────────────────────────────────────────────────────────
-    # run() — Tool-protocol entry point (mirrors SqlReadTool.run)
+    # run() - Tool-protocol entry point (mirrors SqlReadTool.run)
     # ───────────────────────────────────────────────────────────────────────
     async def run(self, question: str) -> RagToolResult:
         """End-to-end entry point used by callers that don't need to pass a

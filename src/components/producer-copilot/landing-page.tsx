@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * LandingPage — production-grade SaaS landing page with i18n (EN/FR).
+ * LandingPage - production-grade SaaS landing page with i18n (EN/FR).
  *
  * Sections: Navbar → Hero → Social proof → Problem/Solution → Features →
  * How it works → Use cases → Pricing → FAQ → CTA → Footer
@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { APP_NAME } from "@/lib/constants";
 import { BrandMark, BrandLogo } from "@/components/producer-copilot/brand-mark";
+import { useCopilotStore } from "@/lib/store";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // i18n dictionary
@@ -594,7 +595,8 @@ function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l:
 interface LandingPageProps { onSignup: () => void; onDemo: () => void; }
 
 export function LandingPage({ onSignup, onDemo }: LandingPageProps) {
-  const [lang, setLang] = useState<Lang>("en");
+  const lang = useCopilotStore.getState().lang;
+  const setLang = useCopilotStore.getState().setLang;
   const t = T[lang];
   return (
     <div className="min-h-screen bg-background">

@@ -5,31 +5,31 @@ Endpoints
 
 Tenant management (Phase 6a):
 
-- ``POST /api/tenants``                   — create a new tenant (requires
+- ``POST /api/tenants``                   - create a new tenant (requires
   auth). Body ``{name, slug}``. Returns the tenant + a new JWT with the
   tenant context (the creator becomes an admin of the new tenant).
-- ``GET  /api/tenants/mine``              — list the user's tenants.
+- ``GET  /api/tenants/mine``              - list the user's tenants.
   Returns ``[{tenant_id, name, slug, role, producer_id, is_demo, is_active}]``.
-- ``POST /api/tenants/{tenant_id}/activate`` — set the user's active
+- ``POST /api/tenants/{tenant_id}/activate`` - set the user's active
   tenant. Returns the membership + a new JWT.
-- ``GET  /api/tenants/{tenant_id}``       — tenant detail (members list).
-- ``POST /api/tenants/{tenant_id}/members`` — add a member (admin only).
+- ``GET  /api/tenants/{tenant_id}``       - tenant detail (members list).
+- ``POST /api/tenants/{tenant_id}/members`` - add a member (admin only).
 
-Onboarding (Phase 6b — multi-step wizard):
+Onboarding (Phase 6b - multi-step wizard):
 
-- ``POST /api/tenants/{tenant_id}/onboarding/start``         — start/reset.
+- ``POST /api/tenants/{tenant_id}/onboarding/start``         - start/reset.
   Body ``{connector_type: "postgres" | "csv"}``.
-- ``POST /api/tenants/{tenant_id}/onboarding/connect``       — test connection.
+- ``POST /api/tenants/{tenant_id}/onboarding/connect``       - test connection.
   Multipart form: ``connector_type``, ``connection_url?`` (postgres),
   ``file?`` (csv upload). Returns ``{ok, error, tables_count}``.
-- ``POST /api/tenants/{tenant_id}/onboarding/detect-schema`` — auto-detect.
+- ``POST /api/tenants/{tenant_id}/onboarding/detect-schema`` - auto-detect.
   Returns the draft schema (also stashes it as the pending schema_config).
-- ``POST /api/tenants/{tenant_id}/onboarding/save-schema``   — body
+- ``POST /api/tenants/{tenant_id}/onboarding/save-schema``   - body
   ``{schema_config: dict}``. Persists the user's edited schema.
-- ``POST /api/tenants/{tenant_id}/onboarding/save-roles``    — body
+- ``POST /api/tenants/{tenant_id}/onboarding/save-roles``    - body
   ``{roles_config: dict}``. Persists roles + scope columns.
-- ``POST /api/tenants/{tenant_id}/onboarding/complete``      — mark done.
-- ``GET  /api/tenants/{tenant_id}/onboarding/status``        — current state.
+- ``POST /api/tenants/{tenant_id}/onboarding/complete``      - mark done.
+- ``GET  /api/tenants/{tenant_id}/onboarding/status``        - current state.
 
 All endpoints require auth (``Authorization: Bearer <jwt>``) and the user
 must be a member of the tenant (403 otherwise). The status endpoint
@@ -93,7 +93,7 @@ class CreateTenantRequest(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# POST /api/tenants — create
+# POST /api/tenants - create
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -106,7 +106,7 @@ async def create_tenant_endpoint(
 
     The creator becomes an admin of their new tenant (``role="admin"``,
     ``producer_id=None``). The new membership is ``is_active=True`` so
-    the returned JWT immediately has the right tenant context — the
+    the returned JWT immediately has the right tenant context - the
     frontend can call ``/api/chat`` right away without an extra
     ``activate`` round-trip.
     """
@@ -131,7 +131,7 @@ async def create_tenant_endpoint(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GET /api/tenants/mine — list user's tenants
+# GET /api/tenants/mine - list user's tenants
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -150,7 +150,7 @@ async def list_my_tenants_endpoint(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# POST /api/tenants/{tenant_id}/activate — set active tenant
+# POST /api/tenants/{tenant_id}/activate - set active tenant
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -175,7 +175,7 @@ async def activate_tenant_endpoint(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GET /api/tenants/{tenant_id} — tenant detail
+# GET /api/tenants/{tenant_id} - tenant detail
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -188,7 +188,7 @@ async def get_tenant_endpoint(
 
     The caller must be a member of the tenant (403 otherwise). The
     members list includes each member's user_id, email, name, role, and
-    producer_id — enough for the admin UI to render a roster.
+    producer_id - enough for the admin UI to render a roster.
     """
     tenant = await get_tenant(tenant_id)
     if tenant is None:
@@ -210,7 +210,7 @@ async def get_tenant_endpoint(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# POST /api/tenants/{tenant_id}/members — add a member (admin only)
+# POST /api/tenants/{tenant_id}/members - add a member (admin only)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -228,7 +228,7 @@ async def add_member_endpoint(
 ) -> dict[str, Any]:
     """Add a user (by email) to a tenant. Admin-only.
 
-    Looks up the user by email — if they don't have an account yet,
+    Looks up the user by email - if they don't have an account yet,
     returns 404. The new membership is ``is_active=False`` (the added
     user must explicitly activate it).
     """
@@ -268,7 +268,7 @@ async def add_member_endpoint(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# DELETE /api/tenants/{tenant_id}/members/{user_id} — remove a member (Phase C2)
+# DELETE /api/tenants/{tenant_id}/members/{user_id} - remove a member (Phase C2)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -316,11 +316,11 @@ async def remove_member_endpoint(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 6b — Onboarding endpoints
+# Phase 6b - Onboarding endpoints
 # ─────────────────────────────────────────────────────────────────────────────
 # Multi-step wizard that turns a freshly-created tenant into an agent-ready
 # workspace. Each endpoint requires the caller to be a member of the tenant
-# (403 otherwise) — admin role is NOT required to RUN the wizard, but the
+# (403 otherwise) - admin role is NOT required to RUN the wizard, but the
 # frontend typically gates it to admins. The demo tenant "dp" is already
 # onboarded (seeded by init_db) so its status endpoint returns
 # {onboarded: true, connector_type: "sqlite_demo"}.
@@ -349,7 +349,7 @@ async def _verify_membership(tenant_id: str, user_id: int) -> None:
 class StartOnboardingRequest(BaseModel):
     connector_type: str = Field(
         ...,
-        description="'postgres' or 'csv' — the data source type for this tenant.",
+        description="'postgres' or 'csv' - the data source type for this tenant.",
     )
 
 
@@ -529,7 +529,7 @@ async def onboarding_status_endpoint(
     admin: bool = Query(
         False,
         description=(
-            "Demo / eval bypass — when true, skip membership verification "
+            "Demo / eval bypass - when true, skip membership verification "
             "so the curl-based worklog verification can probe the demo "
             "tenant without a JWT. Real callers (the frontend) MUST send "
             "a Bearer JWT instead."
@@ -546,12 +546,12 @@ async def onboarding_status_endpoint(
 
     Two paths are supported (mirrors ``app/api/chat.py``):
 
-    1. **JWT path** — the caller sends ``Authorization: Bearer <jwt>``.
+    1. **JWT path** - the caller sends ``Authorization: Bearer <jwt>``.
        Membership is verified server-side (403 if the user is not a
        member of the tenant).
-    2. **Demo path** — the caller sends ``?admin=true`` (no JWT). The
+    2. **Demo path** - the caller sends ``?admin=true`` (no JWT). The
        tenant's existence is verified (404 if unknown) but membership is
-       NOT verified — used by the curl-based worklog verification +
+       NOT verified - used by the curl-based worklog verification +
        the eval. Lets the demo page show the demo tenant's onboarding
        state without forcing a login.
 
@@ -559,10 +559,10 @@ async def onboarding_status_endpoint(
     """
     jwt_ctx = try_get_tenant_context(request)
     if jwt_ctx is not None:
-        # JWT path — verify membership.
+        # JWT path - verify membership.
         await _verify_membership(tenant_id, jwt_ctx.user_id)
     elif admin:
-        # Demo path — verify the tenant exists (don't 404 on a typo).
+        # Demo path - verify the tenant exists (don't 404 on a typo).
         tenant = await get_tenant(tenant_id)
         if tenant is None:
             raise HTTPException(
@@ -582,7 +582,7 @@ async def onboarding_status_endpoint(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Phase 6d — Dynamic example questions
+# Phase 6d - Dynamic example questions
 # ─────────────────────────────────────────────────────────────────────────────
 # Returns up to 5 natural-language French questions generated from the
 # tenant's schema_config so the sidebar's "Exemples" section reflects the
@@ -602,7 +602,7 @@ async def example_questions_endpoint(
     admin: bool = Query(
         False,
         description=(
-            "Demo / eval bypass — when true, skip membership verification "
+            "Demo / eval bypass - when true, skip membership verification "
             "so the curl-based worklog verification can probe the demo "
             "tenant without a JWT. Real callers (the frontend) MUST send "
             "a Bearer JWT instead."
@@ -621,21 +621,21 @@ async def example_questions_endpoint(
     ----------
     Two paths are supported (mirrors ``onboarding_status_endpoint``):
 
-    1. **JWT path** — the caller sends ``Authorization: Bearer <jwt>``.
+    1. **JWT path** - the caller sends ``Authorization: Bearer <jwt>``.
        Membership is verified server-side (403 if the user is not a
        member of the tenant).
-    2. **Demo path** — the caller sends ``?admin=true`` (no JWT). The
+    2. **Demo path** - the caller sends ``?admin=true`` (no JWT). The
        tenant's existence is verified (404 if unknown) but membership is
-       NOT verified — used by the curl-based worklog verification.
+       NOT verified - used by the curl-based worklog verification.
 
     If neither a JWT nor ``?admin=true`` is provided, returns 401.
     """
     jwt_ctx = try_get_tenant_context(request)
     if jwt_ctx is not None:
-        # JWT path — verify membership.
+        # JWT path - verify membership.
         await _verify_membership(tenant_id, jwt_ctx.user_id)
     elif admin:
-        # Demo path — verify the tenant exists (don't 404 on a typo).
+        # Demo path - verify the tenant exists (don't 404 on a typo).
         tenant = await get_tenant(tenant_id)
         if tenant is None:
             raise HTTPException(

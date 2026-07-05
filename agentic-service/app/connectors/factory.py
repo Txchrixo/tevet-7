@@ -1,19 +1,19 @@
-"""Connector factory — returns the right connector for a given tenant.
+"""Connector factory - returns the right connector for a given tenant.
 
-Phase 6b onboarding backend — the chat endpoint (and any other HTTP handler
+Phase 6b onboarding backend - the chat endpoint (and any other HTTP handler
 that touches tenant data) calls ``get_connector_for_tenant(tenant_id)`` to
 get a per-request connector instance. The factory loads the tenant's
 config row from ``tenant_configs`` and returns:
 
   - ``SqliteConnector``     when ``connector_type == "sqlite_demo"``
-                            (the demo tenant ``dp`` — backward compat).
+                            (the demo tenant ``dp`` - backward compat).
   - ``PostgresConnector``   when ``connector_type == "postgres"``.
   - ``CsvConnector``        when ``connector_type == "csv"``.
   - ``SqliteConnector``     (fallback) when the tenant has no config row
-                            yet — preserves the legacy eval path (body
+                            yet - preserves the legacy eval path (body
                             identity → tenant_id="dp") without a DB lookup.
 
-The factory does NOT cache connectors — each request builds a fresh one so
+The factory does NOT cache connectors - each request builds a fresh one so
 the tenant context is always current (a tenant that re-runs onboarding
 mid-session must see their new connector on the next request). The
 connector instances are cheap (lazy engine) so per-request construction
@@ -51,7 +51,7 @@ class TenantNotOnboardedError(Exception):
 
     def __init__(self, tenant_id: str) -> None:
         super().__init__(
-            f"Tenant {tenant_id!r} is not onboarded yet — complete onboarding "
+            f"Tenant {tenant_id!r} is not onboarded yet - complete onboarding "
             "to activate the agent."
         )
         self.tenant_id = tenant_id
@@ -87,7 +87,7 @@ async def _load_tenant_config(tenant_id: str) -> dict[str, Any] | None:
             schema_config = json.loads(row.schema_config)
         except (ValueError, TypeError):
             logger.warning(
-                "tenant_configs.schema_config for %r is not valid JSON — treating as empty",
+                "tenant_configs.schema_config for %r is not valid JSON - treating as empty",
                 tenant_id,
             )
     roles_config = None
@@ -119,14 +119,14 @@ async def get_connector_for_tenant(tenant_id: str) -> Connector:
     ``init_db()`` with ``connector_type="sqlite_demo"``,
     ``onboarded=True``), the factory returns a ``SqliteConnector``. If
     ``dp``'s config row is missing for any reason (e.g. init_db hasn't
-    run yet — should not happen in normal operation), we fall back to
+    run yet - should not happen in normal operation), we fall back to
     ``SqliteConnector`` so the eval + the demo path keep working
     unchanged.
     """
     config = await _load_tenant_config(tenant_id)
 
     # No config row → only the demo tenant "dp" gets the SqliteConnector
-    # fallback (legacy / eval path — its config row is seeded by
+    # fallback (legacy / eval path - its config row is seeded by
     # init_db). Any OTHER tenant with no config row is genuinely
     # unconfigured → refuse with a clear error so the agent doesn't
     # silently fall through to the demo's data.
@@ -143,7 +143,7 @@ async def get_connector_for_tenant(tenant_id: str) -> Connector:
     schema_cfg = config["schema_config"]
 
     if ctype == "sqlite_demo":
-        # Demo tenant — backward compat: SqliteConnector reads dev.db.
+        # Demo tenant - backward compat: SqliteConnector reads dev.db.
         return SqliteConnector()
     if ctype == "postgres":
         if not config["connection_url"]:
@@ -162,10 +162,10 @@ async def get_connector_for_tenant(tenant_id: str) -> Connector:
             schema_config=schema_cfg,
         )
 
-    # Unknown connector_type — log + fall back to SqliteConnector so the
+    # Unknown connector_type - log + fall back to SqliteConnector so the
     # platform doesn't crash for a tenant with a malformed config.
     logger.warning(
-        "Unknown connector_type %r for tenant %r — falling back to SqliteConnector",
+        "Unknown connector_type %r for tenant %r - falling back to SqliteConnector",
         ctype, tenant_id,
     )
     return SqliteConnector()
@@ -181,6 +181,6 @@ async def is_tenant_onboarded(tenant_id: str) -> bool:
     config = await _load_tenant_config(tenant_id)
     if config is None:
         # No row → legacy / demo path (dp's row is seeded by init_db, so
-        # this branch is only hit for unknown tenants — return False).
+        # this branch is only hit for unknown tenants - return False).
         return False
     return bool(config["onboarded"])

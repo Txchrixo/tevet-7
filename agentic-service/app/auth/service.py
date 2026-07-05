@@ -3,7 +3,7 @@
 This module owns the user-management CRUD that backs the auth HTTP routes
 (``POST /api/auth/signup``, ``POST /api/auth/login``, ``GET /api/auth/me``).
 It uses the SAME async engine as the rest of the service
-(``app.db_seed.get_engine()``) — there is no separate "auth DB". The
+(``app.db_seed.get_engine()``) - there is no separate "auth DB". The
 ``users`` table is created by ``init_db()`` alongside the business tables
 (see ``app/db_seed.py``).
 
@@ -19,10 +19,10 @@ Token issuance
 --------------
 
 ``login`` returns ``(user_row, jwt_token)``. The token's claims include
-the user's ACTIVE membership (tenant_id + role + producer_id) — set by
+the user's ACTIVE membership (tenant_id + role + producer_id) - set by
 ``app.tenants.service.set_active_membership``. A fresh signup has no
 memberships yet, so ``signup`` returns a token with ``tenant_id=None``,
-``role=None``, ``producer_id=None`` — the client must create or activate
+``role=None``, ``producer_id=None`` - the client must create or activate
 a tenant before calling ``/api/chat`` with the JWT.
 """
 
@@ -68,7 +68,7 @@ async def _get_active_membership(user_id: int) -> dict[str, Any] | None:
     A user has at most one ``is_active=True`` membership at a time
     (enforced by ``set_active_membership``). If they have none, we look
     for any membership (demo users are pre-seeded with one). If still
-    none, returns None — the caller issues a token with null tenant
+    none, returns None - the caller issues a token with null tenant
     context and the client must create/activate a tenant.
     """
     engine = get_engine()
@@ -137,12 +137,12 @@ async def signup(email: str, password: str, name: str) -> dict[str, Any]:
             .returning(users.c.id, users.c.email, users.c.name, users.c.created_at)
         )
         row = result.fetchone()
-    logger.info("signup — user created id=%d email=%s name=%s", row.id, row.email, row.name)
+    logger.info("signup - user created id=%d email=%s name=%s", row.id, row.email, row.name)
     # Phase C4: send welcome email (fire-and-forget, non-blocking).
     try:
         from app.notifications import notify_welcome
         notify_welcome(name, email)
-    except Exception:  # noqa: BLE001 — never block signup on email
+    except Exception:  # noqa: BLE001 - never block signup on email
         pass
     return _row_to_user(row)
 
@@ -171,7 +171,7 @@ async def login(email: str, password: str) -> tuple[dict[str, Any], str]:
 
     membership = await _get_active_membership(user["id"])
     # Look up is_demo on the tenant (so demo users get is_demo=true in
-    # the JWT — the frontend uses this to display a "demo account" badge).
+    # the JWT - the frontend uses this to display a "demo account" badge).
     is_demo = False
     if membership is not None:
         from app.db_seed import tenants as tenants_table
@@ -204,7 +204,7 @@ async def login(email: str, password: str) -> tuple[dict[str, Any], str]:
         "producer_id": membership["producer_id"] if membership else None,
         "is_demo": is_demo,
     })
-    logger.info("login — user id=%d email=%s tenant=%s role=%s",
+    logger.info("login - user id=%d email=%s tenant=%s role=%s",
                 user["id"], user["email"],
                 membership["tenant_id"] if membership else None,
                 membership["role"] if membership else None)
@@ -242,7 +242,7 @@ async def list_user_memberships(user_id: int) -> list[dict[str, Any]]:
     slug, role, producer_id, is_demo, is_active, onboarded}``.
 
     The ``onboarded`` flag comes from the ``tenant_configs`` table (LEFT JOIN
-    — a freshly created tenant may not have a config row yet, in which case
+    - a freshly created tenant may not have a config row yet, in which case
     ``onboarded`` defaults to ``False``).
     """
     from app.db_seed import tenants as tenants_table, tenant_configs

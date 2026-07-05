@@ -1,8 +1,8 @@
-"""OpsCopilotAgent — Phase 4 human-in-the-loop Ops assistant.
+"""OpsCopilotAgent - Phase 4 human-in-the-loop Ops assistant.
 
 The agent pre-analyzes Drive Producteur producer-onboarding dossiers and
 PROPOSES a decision (approve / reject / request_info). It NEVER approves or
-rejects on its own — that decision is reserved for a human admin via the
+rejects on its own - that decision is reserved for a human admin via the
 ``/api/approvals/{id}/decide`` endpoint. This is the core human-in-the-loop
 (HITL) argument for the platform: the agent does the tedious pre-analysis
 (SIRET check, document completeness, address consistency, cert expiry),
@@ -14,8 +14,8 @@ Business rules (mirror the DP onboarding procedure seeded as a RAG document)
 For each onboarding dossier, the agent runs 5 deterministic checks:
 
 1. **SIRET check.** Three sub-checks: 14 digits (format), Luhn algorithm
-   (informational — surfaced as a warning if it fails but the SIRENE flag is
-   OK), and ``siret_valid`` flag (authoritative — comes from the SIRENE API
+   (informational - surfaced as a warning if it fails but the SIRENE flag is
+   OK), and ``siret_valid`` flag (authoritative - comes from the SIRENE API
    call done at ingest time by the Ops team). SIRET invalid (siret_valid=
    False) is a **legal blocker** → propose REJECT.
 2. **Documents check.** All 5 required pieces must be present: legal_name,
@@ -23,7 +23,7 @@ For each onboarding dossier, the agent runs 5 deterministic checks:
    propose REQUEST_INFO.
 3. **Address consistency.** ``declared_address`` vs ``document_address``
    (the address printed on the uploaded ID document). Substring / token
-   overlap heuristic — not perfect, just a flag for the human reviewer.
+   overlap heuristic - not perfect, just a flag for the human reviewer.
    Mismatch → propose REJECT.
 4. **Cert expiry.** ``professional_certificate_expiry`` must be in the
    future. Expired → propose REJECT.
@@ -49,7 +49,7 @@ so the audit trail links the human decision back to the agent's pre-analysis.
 No LLM
 ======
 
-Phase 4 keeps the agent rule-based — the same design choice as Phase 1's
+Phase 4 keeps the agent rule-based - the same design choice as Phase 1's
 SQL generator. The rules are deterministic and auditable; an LLM can be
 swapped in Phase 6 to draft the ``proposed_reason`` free-text without
 touching the rule layer.
@@ -125,11 +125,11 @@ class OpsIssue:
 
     ``severity`` is one of:
 
-    * ``"blocker"``   — legal/compliance problem → REJECT (SIRET invalid,
+    * ``"blocker"``   - legal/compliance problem → REJECT (SIRET invalid,
       cert expired, address mismatch).
-    * ``"missing"``   — required piece absent → REQUEST_INFO (missing doc,
+    * ``"missing"``   - required piece absent → REQUEST_INFO (missing doc,
       missing field).
-    * ``"warning"``   — informational (Luhn failed but SIRENE OK, etc.).
+    * ``"warning"``   - informational (Luhn failed but SIRENE OK, etc.).
 
     ``code`` is a stable machine identifier so the admin UI can group /
     filter issues by type.
@@ -229,7 +229,7 @@ def _address_tokens(addr: str) -> set[str]:
     """Tokenise an address into a comparable set.
 
     Lowercase, strip punctuation, drop French stopwords + 1-char tokens +
-    pure numbers (house numbers shift between documents — we don't want a
+    pure numbers (house numbers shift between documents - we don't want a
     different street number to trigger a mismatch on its own; the human
     reviewer will catch those visually).
     """
@@ -251,12 +251,12 @@ def _addresses_consistent(declared: str | None, document: str | None) -> tuple[b
 
     Returns ``(consistent, detail)``. Heuristic: token-overlap Jaccard ≥ 0.5
     OR one is a substring of the other. We deliberately err on the
-    permissive side — false positives (flagging a matching address as
+    permissive side - false positives (flagging a matching address as
     inconsistent) waste the admin's time more than false negatives.
     """
     if not declared or not document:
-        # If either is missing we can't check — treat as "skipped" (ok).
-        return True, "Adresse document non fournie — check ignoré"
+        # If either is missing we can't check - treat as "skipped" (ok).
+        return True, "Adresse document non fournie - check ignoré"
     if declared.strip().lower() == document.strip().lower():
         return True, "Adresses identiques"
     # Substring match (one direction catches "12 rue des Lilas" vs
@@ -267,7 +267,7 @@ def _addresses_consistent(declared: str | None, document: str | None) -> tuple[b
     a = _address_tokens(declared)
     b = _address_tokens(document)
     if not a or not b:
-        return True, "Tokens insuffisants — check ignoré"
+        return True, "Tokens insuffisants - check ignoré"
     inter = a & b
     union = a | b
     jaccard = len(inter) / len(union) if union else 0.0
@@ -302,7 +302,7 @@ def _parse_iso_date(value: str | None) -> date | None:
 class OpsCopilotAgent:
     """Pre-analyzes a producer-onboarding dossier and PROPOSES a decision.
 
-    The agent never approves or rejects — it only emits a
+    The agent never approves or rejects - it only emits a
     ``proposed_decision`` + ``proposed_reason``. The human admin closes the
     loop via ``POST /api/approvals/{id}/decide``.
 
@@ -454,7 +454,7 @@ class OpsCopilotAgent:
         return analysis
 
     # ───────────────────────────────────────────────────────────────────────
-    # Individual checks (sync helpers — easy to unit-test in isolation)
+    # Individual checks (sync helpers - easy to unit-test in isolation)
     # ───────────────────────────────────────────────────────────────────────
 
     @staticmethod
@@ -494,7 +494,7 @@ class OpsCopilotAgent:
                 detail="Validation SIRENE échouée (siret_valid=False)",
             )
         if not luhn_ok:
-            # Luhn is informational only — the SIRENE flag is the
+            # Luhn is informational only - the SIRENE flag is the
             # authoritative validity source (the SIRENE API does its own
             # algorithmic + existence checks). We surface the Luhn
             # inconsistency in the check detail so the human reviewer
@@ -511,7 +511,7 @@ class OpsCopilotAgent:
         return OpsCheck(
             name="SIRET",
             status="ok",
-            detail=f"SIRET valide (14 chiffres, Luhn OK, SIRENE OK) — {siret}",
+            detail=f"SIRET valide (14 chiffres, Luhn OK, SIRENE OK) - {siret}",
         )
 
     @staticmethod
@@ -582,7 +582,7 @@ class OpsCopilotAgent:
         onboarding: dict[str, Any], issues: list[OpsIssue]
     ) -> OpsCheck:
         # If the cert is missing entirely, the documents check already
-        # flagged it — don't double-report.
+        # flagged it - don't double-report.
         present = bool(onboarding.get("professional_certificate_present"))
         if not present:
             return OpsCheck(
@@ -598,7 +598,7 @@ class OpsCopilotAgent:
                 code="cert_expiry_missing",
                 message=(
                     "Date d'expiration du certificat professionnel non "
-                    "renseignée — à demander au producteur."
+                    "renseignée - à demander au producteur."
                 ),
             ))
             return OpsCheck(

@@ -7,7 +7,7 @@ which tool to call (or responds directly for greetings/conversation).
 Architecture:
     User question + history
         ↓
-    LLM (the brain) — function calling
+    LLM (the brain) - function calling
         ↓
     LLM decides: SQL? RAG? Forecast? Direct response?
         ↓
@@ -21,7 +21,7 @@ Architecture:
     AgentResponse (same shape as rule-based)
 
 Security: sqlglot validates ALL SQL before execution. The LLM NEVER
-touches the database — it generates text. sqlglot is the gardener.
+touches the database - it generates text. sqlglot is the gardener.
 
 Token efficiency:
     - System prompt: ~350 tokens (compact schema + rules)
@@ -78,7 +78,7 @@ TOOL_DEFINITIONS = [
                         "type": "string",
                         "description": (
                             "The SQL SELECT query in SQLite syntax. "
-                            "Do NOT include WHERE producer_id = X — "
+                            "Do NOT include WHERE producer_id = X - "
                             "the system injects it automatically. "
                             "Use date('now', '-7 days') for date filters."
                         ),
@@ -222,7 +222,7 @@ class LLMOrchestrator:
             f"3. For document questions: call search_documents.\n"
             f"4. For stock shortage: call predict_stock_shortage.\n"
             f"5. For greetings/small talk: respond directly (no tool call).\n"
-            f"6. Do NOT include {scope_col} in your WHERE clause — the system injects it.\n"
+            f"6. Do NOT include {scope_col} in your WHERE clause - the system injects it.\n"
             f"7. Use SQLite dates: date('now', '-7 days'), date('now', 'start of month').\n"
             f"8. Do NOT use date_trunc, INTERVAL, CURRENT_DATE (PostgreSQL only).\n"
             f"9. Cite document sources by title when using search_documents.\n"
@@ -370,13 +370,13 @@ class LLMOrchestrator:
         total_tokens_in = 0
         total_tokens_out = 0
 
-        # ── Guardrails (Phase A4) — run BEFORE the LLM is called ──
+        # ── Guardrails (Phase A4) - run BEFORE the LLM is called ──
         from app.agents.guardrails import check_message, redact_pii
         guardrail_result = check_message(user_message)
         if guardrail_result.blocked:
             latency_ms = int((time.monotonic() - started_at) * 1000)
             steps.append(StepTrace(
-                index=1, title="Garde-fou — blocage",
+                index=1, title="Garde-fou - blocage",
                 detail=guardrail_result.reason,
                 status="blocked", duration_ms=latency_ms,
             ))
@@ -394,7 +394,7 @@ class LLMOrchestrator:
                 refused=True, tables_touched=[], sources=[],
                 ops_analysis=None, forecast_predictions=None, trace_id=None,
             )
-        # PII redaction — replace PII before sending to the LLM.
+        # PII redaction - replace PII before sending to the LLM.
         safe_message = redact_pii(user_message)
 
         # ── Build messages ──
@@ -432,7 +432,7 @@ class LLMOrchestrator:
 
         steps.append(StepTrace(
             index=1, title="Analyse de la question",
-            detail=f"LLM ({model_used}) — {result.usage.completion_tokens} tokens",
+            detail=f"LLM ({model_used}) - {result.usage.completion_tokens} tokens",
             status="ok", duration_ms=int((time.monotonic() - t) * 1000),
         ))
 
@@ -441,7 +441,7 @@ class LLMOrchestrator:
             latency_ms = int((time.monotonic() - started_at) * 1000)
             steps.append(StepTrace(
                 index=2, title="Réponse directe",
-                detail="Pas d'outil nécessaire — réponse conversationnelle.",
+                detail="Pas d'outil nécessaire - réponse conversationnelle.",
                 status="ok", duration_ms=0,
             ))
             return AgentResponse(
@@ -523,7 +523,7 @@ class LLMOrchestrator:
 
         steps.append(StepTrace(
             index=3, title="Synthèse de la réponse",
-            detail=f"LLM ({synth_model}) — {synth_tokens} tokens",
+            detail=f"LLM ({synth_model}) - {synth_tokens} tokens",
             status="ok", duration_ms=int((time.monotonic() - t) * 1000),
         ))
 

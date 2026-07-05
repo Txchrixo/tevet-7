@@ -1,6 +1,6 @@
 import { BrandMark } from "@/components/producer-copilot/brand-mark";
 
-export const metadata = { title: "Docs — Tevet-7" };
+export const metadata = { title: "Docs - Tevet-7" };
 
 export default function DocsPage() {
   return (
@@ -35,11 +35,11 @@ export default function DocsPage() {
           <div className="rounded-lg border border-border bg-card p-4">
             <h3 className="font-heading text-base text-foreground mb-2">Supported LLM Providers</h3>
             <ul className="text-sm text-muted-foreground space-y-1">
-              <li>Groq (Llama) — free, 14k req/day</li>
-              <li>DeepSeek — paid, high quality</li>
-              <li>GLM-4.6 (Z.ai) — free, sandbox</li>
-              <li>OpenRouter — aggregator, free models</li>
-              <li>Gemini (Google) — free tier</li>
+              <li>Groq (Llama) - free, 14k req/day</li>
+              <li>DeepSeek - paid, high quality</li>
+              <li>GLM-4.6 (Z.ai) - free, sandbox</li>
+              <li>OpenRouter - aggregator, free models</li>
+              <li>Gemini (Google) - free tier</li>
               <li>Any OpenAI-compatible provider</li>
             </ul>
           </div>

@@ -1,10 +1,10 @@
-"""Admin package — tenant admin + platform owner surfaces.
+"""Admin package - tenant admin + platform owner surfaces.
 
 Exposes:
-  - ``admin_router`` — FastAPI router mounted at ``/api/admin`` by main.py.
-  - ``service``       — business logic (pure-async, no FastAPI deps).
-  - ``demo_reset``    — reseed the demo tenant's business data.
-  - ``cron``          — ``DemoResetCron`` background task.
+  - ``admin_router`` - FastAPI router mounted at ``/api/admin`` by main.py.
+  - ``service``       - business logic (pure-async, no FastAPI deps).
+  - ``demo_reset``    - reseed the demo tenant's business data.
+  - ``cron``          - ``DemoResetCron`` background task.
 """
 
 from __future__ import annotations

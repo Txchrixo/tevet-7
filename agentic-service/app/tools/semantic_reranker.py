@@ -1,8 +1,8 @@
-"""Semantic reranker for RAG — improves FTS5 recall with semantic matching.
+"""Semantic reranker for RAG - improves FTS5 recall with semantic matching.
 
 Two-stage retrieval:
-  1. FTS5 (BM25) — high recall, fetches candidate chunks.
-  2. Semantic reranker — reranks by synonym-expanded Jaccard similarity.
+  1. FTS5 (BM25) - high recall, fetches candidate chunks.
+  2. Semantic reranker - reranks by synonym-expanded Jaccard similarity.
 
 Uses French business-domain synonyms (payé↔règlement, commission↔frais, etc.).
 Free (no API), fast (<1ms), deterministic. Production upgrade: replace with

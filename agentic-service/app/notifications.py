@@ -1,16 +1,16 @@
-"""Email notifications — welcome, approval, billing events (Phase C4).
+"""Email notifications - welcome, approval, billing events (Phase C4).
 
 Sends transactional emails:
   - welcome (signup)
-  - approval_request (Ops Copilot — a dossier needs review)
-  - approval_decided (Ops Copilot — the admin approved/rejected)
+  - approval_request (Ops Copilot - a dossier needs review)
+  - approval_decided (Ops Copilot - the admin approved/rejected)
   - billing_activated (Stripe checkout completed)
 
 Transport: SMTP (via aiosmtplib) when SMTP_HOST is set. Otherwise, logs
-the email to stdout (dev mode — the email content is visible in the logs
+the email to stdout (dev mode - the email content is visible in the logs
 so the developer can verify the template + content without a mail server).
 
-Templates: plain French text, minimal HTML. No external template engine —
+Templates: plain French text, minimal HTML. No external template engine -
 keeps the dependency count low. Each template is a function that returns
 ``(subject, body_text, body_html)``.
 """
@@ -45,17 +45,17 @@ def welcome_email(name: str, email: str) -> EmailMessage:
         subject=f"Bienvenue sur Tevet-7, {name} !",
         body_text=(
             f"Bonjour {name},\n\n"
-            f"Bienvenue sur Tevet-7 — la plateforme d'agents IA configurable.\n\n"
+            f"Bienvenue sur Tevet-7 - la plateforme d'agents IA configurable.\n\n"
             f"Votre compte est créé. Prochaine étape : créez votre workspace "
             f"et connectez vos données pour activer votre agent.\n\n"
-            f"— L'équipe Tevet-7"
+            f"- L'équipe Tevet-7"
         ),
         body_html=(
             f"<p>Bonjour {name},</p>"
-            f"<p>Bienvenue sur <strong>Tevet-7</strong> — la plateforme d'agents IA configurable.</p>"
+            f"<p>Bienvenue sur <strong>Tevet-7</strong> - la plateforme d'agents IA configurable.</p>"
             f"<p>Votre compte est créé. Prochaine étape : créez votre workspace "
             f"et connectez vos données pour activer votre agent.</p>"
-            f"<p>— L'équipe Tevet-7</p>"
+            f"<p>- L'équipe Tevet-7</p>"
         ),
     )
 
@@ -69,7 +69,7 @@ def approval_request_email(email: str, legal_name: str, proposed: str, confidenc
             f"Producteur : {legal_name}\n"
             f"Recommandation : {proposed} (confiance {confidence}%)\n\n"
             f"Connectez-vous à Tevet-7 pour valider ou refuser ce dossier.\n\n"
-            f"— L'équipe Tevet-7"
+            f"- L'équipe Tevet-7"
         ),
     )
 
@@ -80,7 +80,7 @@ def approval_decided_email(email: str, legal_name: str, decision: str) -> EmailM
         subject=f"[Tevet-7] Dossier {decision} : {legal_name}",
         body_text=(
             f"Le dossier de {legal_name} a été {decision}.\n\n"
-            f"— L'équipe Tevet-7"
+            f"- L'équipe Tevet-7"
         ),
     )
 
@@ -92,7 +92,7 @@ def billing_activated_email(email: str, plan: str) -> EmailMessage:
         body_text=(
             f"Votre abonnement {plan} est actif.\n\n"
             f"Vous pouvez maintenant utiliser toutes les fonctionnalités Tevet-7.\n\n"
-            f"— L'équipe Tevet-7"
+            f"- L'équipe Tevet-7"
         ),
     )
 
@@ -106,7 +106,7 @@ async def send_email(msg: EmailMessage) -> bool:
     """Send an email. Returns True on success, False on failure.
 
     When SMTP_HOST is not set (dev mode), logs the email content to stdout
-    instead of sending — the developer can verify templates without a mail
+    instead of sending - the developer can verify templates without a mail
     server.
     """
     smtp_host = os.environ.get("SMTP_HOST", "")

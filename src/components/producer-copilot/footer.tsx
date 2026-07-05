@@ -11,7 +11,7 @@ import { Shield } from "@/components/ui/feather-icons";
  * Left   : "Tevet-7 · Plateforme d'agents IA" + auth status
  *          ("Connecté en tant que {email}" when logged in,
  *           "Mode démo" when in demo mode,
- *           nothing when anonymous — but the AuthScreen renders its own
+ *           nothing when anonymous - but the AuthScreen renders its own
  *           footer so this branch is rarely hit).
  * Center : "Tenant : {tenantName}" (dynamic).
  * Right  : security status (Scoping actif).

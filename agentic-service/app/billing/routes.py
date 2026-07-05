@@ -1,13 +1,13 @@
-"""Stripe billing — subscription management (Phase C3).
+"""Stripe billing - subscription management (Phase C3).
 
 Provides:
-  - ``POST /api/billing/create-checkout-session`` — Stripe Checkout (signup to Pro).
-  - ``POST /api/billing/webhook`` — Stripe webhook (fulfill subscription).
-  - ``GET  /api/billing/subscription`` — current subscription status.
-  - ``POST /api/billing/cancel`` — cancel subscription.
+  - ``POST /api/billing/create-checkout-session`` - Stripe Checkout (signup to Pro).
+  - ``POST /api/billing/webhook`` - Stripe webhook (fulfill subscription).
+  - ``GET  /api/billing/subscription`` - current subscription status.
+  - ``POST /api/billing/cancel`` - cancel subscription.
 
 Requires STRIPE_SECRET_KEY + STRIPE_WEBHOOK_SECRET env vars. Without them,
-the endpoints return 503 (billing disabled) — the app works without Stripe
+the endpoints return 503 (billing disabled) - the app works without Stripe
 in dev mode.
 """
 
@@ -92,7 +92,7 @@ async def cancel_subscription(request: Request) -> dict[str, Any]:
 
 @router.post("/billing/webhook")
 async def stripe_webhook(request: Request) -> dict[str, Any]:
-    """Stripe webhook — fulfills subscriptions on payment events."""
+    """Stripe webhook - fulfills subscriptions on payment events."""
     import os
     webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
     if not webhook_secret:

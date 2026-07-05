@@ -1,4 +1,4 @@
-"""Monitoring — structured error logging + Sentry-ready integration."""
+"""Monitoring - structured error logging + Sentry-ready integration."""
 from __future__ import annotations
 import json, logging, os, sys, traceback
 from datetime import datetime, timezone

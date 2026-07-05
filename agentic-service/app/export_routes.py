@@ -1,9 +1,9 @@
-"""Export endpoints — CSV + PDF export of conversations + data (Phase C5).
+"""Export endpoints - CSV + PDF export of conversations + data (Phase C5).
 
 Provides:
-  - ``GET /api/export/conversations.csv`` — export the tenant's conversations as CSV.
-  - ``GET /api/export/conversations.pdf`` — export as PDF (simple table layout).
-  - ``GET /api/export/messages/{conversation_id}.csv`` — export a single conversation.
+  - ``GET /api/export/conversations.csv`` - export the tenant's conversations as CSV.
+  - ``GET /api/export/conversations.pdf`` - export as PDF (simple table layout).
+  - ``GET /api/export/messages/{conversation_id}.csv`` - export a single conversation.
 
 CSV uses Python's built-in ``csv`` module (no external dep).
 PDF uses ``reportlab`` if installed, otherwise falls back to a simple
@@ -110,7 +110,7 @@ async def export_conversations_pdf(request: Request) -> Response:
         styles = getSampleStyleSheet()
 
         elements = [
-            Paragraph(f"Tevet-7 — Conversations ({jwt_ctx.tenant_id})", styles["Title"]),
+            Paragraph(f"Tevet-7 - Conversations ({jwt_ctx.tenant_id})", styles["Title"]),
             Paragraph(f"Exporté le {__import__('datetime').datetime.utcnow().isoformat()}", styles["Normal"]),
         ]
 
@@ -143,7 +143,7 @@ async def export_conversations_pdf(request: Request) -> Response:
     except ImportError:
         # Fallback: plain text export if reportlab not installed.
         output = io.StringIO()
-        output.write(f"Tevet-7 — Conversations ({jwt_ctx.tenant_id})\n\n")
+        output.write(f"Tevet-7 - Conversations ({jwt_ctx.tenant_id})\n\n")
         for r in data:
             output.write(f"Date: {r.created_at}\n")
             output.write(f"User: {r.identity_id}\n")

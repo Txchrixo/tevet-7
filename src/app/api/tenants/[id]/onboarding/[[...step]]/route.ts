@@ -19,7 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
  *   2. The onboarding endpoints accept both JSON (`connect` for Postgres,
  *      `save-schema`, `save-roles`, `complete`) and multipart (`connect` for
  *      CSV). We forward `content-type` verbatim so the multipart boundary is
- *      preserved — without it, the backend's multipart parser would reject
+ *      preserved - without it, the backend's multipart parser would reject
  *      the upload.
  *
  * The browser frontend always uses relative paths (`/api/tenants/...`); this
@@ -46,7 +46,7 @@ async function forward(
 ) {
   const target = buildTargetUrl(req, tenantId, step);
 
-  // Forward only safe headers — Authorization carries the JWT, content-type
+  // Forward only safe headers - Authorization carries the JWT, content-type
   // carries the multipart boundary for CSV uploads (must be preserved verbatim).
   const headers = new Headers();
   const auth = req.headers.get("authorization");

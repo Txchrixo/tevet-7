@@ -1,4 +1,4 @@
-"""Admin routes — tenant admin + platform owner surfaces.
+"""Admin routes - tenant admin + platform owner surfaces.
 
 Phase 6c: these endpoints power the admin console UI. They are mounted at
 ``/api/admin`` by main.py. Tracer calls removed (LocalTracer has no .trace
@@ -90,7 +90,7 @@ async def admin_platform_reset_demo(
 ) -> dict[str, Any]:
     """Reset the demo tenant's business data (platform owner only).
 
-    Note: no `db` dependency here — reset_demo_data() calls init_db() which
+    Note: no `db` dependency here - reset_demo_data() calls init_db() which
     drops + recreates all tables, so we can't have an open session.
     """
     return await admin_service.reset_demo_tenant()

@@ -1,8 +1,8 @@
-"""GLM bridge adapter — GLM-4.6 via the Node.js glm-bridge mini-service.
+"""GLM bridge adapter - GLM-4.6 via the Node.js glm-bridge mini-service.
 
 The bridge exposes an OpenAI-compatible HTTP API on localhost:3030, so this
 adapter extends ``BaseOpenAIAdapter`` and reuses all the shared protocol
-logic. GLM is the PRIMARY provider — free, no geo-block, function-calling
+logic. GLM is the PRIMARY provider - free, no geo-block, function-calling
 capable via the Z.ai SDK.
 """
 

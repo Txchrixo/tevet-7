@@ -7,7 +7,7 @@ import { Toaster as Sonner, ToasterProps } from "sonner"
  * Tevet-7 Sonner toaster.
  *
  * The default sonner styling pulls from Radix color tokens (gray2 / gray11)
- * that we don't define in this design system — those tokens resolve to
+ * that we don't define in this design system - those tokens resolve to
  * literal black/white, which is why the close button rendered as a black X
  * on the dark-green toast background.
  *
@@ -17,7 +17,7 @@ import { Toaster as Sonner, ToasterProps } from "sonner"
  *   2. Pass explicit Tailwind classes on the toaster root so the toast,
  *      its description, and its close button all inherit palette colors.
  *   3. Force the close button to `text-muted-foreground` (visible on the
- *      dark-green toast) with a `hover:text-foreground` affordance — the
+ *      dark-green toast) with a `hover:text-foreground` affordance - the
  *      matching rule lives in `globals.css` under `.toaster [data-close-button]`
  *      because sonner injects the button deep enough that Tailwind variants
  *      from this component can't reliably reach it.

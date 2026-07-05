@@ -1,9 +1,9 @@
-"""Demo reset logic — resets the demo tenant's business data.
+"""Demo reset logic - resets the demo tenant's business data.
 
 Phase 6c: the admin console's "Reset démo" button calls this. In production
 (Postgres), this would do a real DELETE + reseed. In dev (SQLite), we can't
 drop tables while the server's connection pool is active, so we return a
-note — the actual reset happens on next server restart (init_db runs on
+note - the actual reset happens on next server restart (init_db runs on
 startup and is idempotent).
 """
 
@@ -21,12 +21,12 @@ async def reset_demo_data() -> dict:
 
     SQLite doesn't allow dropping tables while the server's connection pool
     is active, so we can't call init_db() at runtime. Instead, we return a
-    response indicating a reset is needed — the actual reset happens on the
+    response indicating a reset is needed - the actual reset happens on the
     next server restart (init_db runs on startup and is idempotent).
 
     In production (Postgres), this would do a real DELETE + reseed.
     """
-    logger.info("Demo reset requested — will take effect on next server restart")
+    logger.info("Demo reset requested - will take effect on next server restart")
     return {
         "reset": True,
         "tenant_id": DEMO_TENANT_ID,

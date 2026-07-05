@@ -11,20 +11,20 @@ Algorithm
 For each table in the schema_config (in declared order), pick the most
 relevant question based on the available column types:
 
-  1. **Metric × group** — a numeric column (non-id, non-geo) plus a
+  1. **Metric × group** - a numeric column (non-id, non-geo) plus a
      categorical varchar column (``category``, ``provider``, ``city``,
      ``unit``, ``role``, ``type``, ``brand``, ``country``, ...).
        → ``"Quel est le total de {metric} par {group} ?"``
-  2. **Status column** — a varchar column named ``status``.
+  2. **Status column** - a varchar column named ``status``.
        → ``"Combien de {table} par statut ?"``
-  3. **Metric only** — a numeric column with no categorical group.
+  3. **Metric only** - a numeric column with no categorical group.
        → ``"Quel est le total de {metric} ?"``
-  4. **Date column** — a ``timestamp`` / ``date`` / ``datetime`` column.
+  4. **Date column** - a ``timestamp`` / ``date`` / ``datetime`` column.
        → ``"Quelles sont les {table} des 7 derniers jours ?"``
-  5. **Name column** — a varchar column named ``name`` / ``label`` /
+  5. **Name column** - a varchar column named ``name`` / ``label`` /
      ``title`` / ``display_name`` / ``legal_name``.
        → ``"Quels sont les 5 {table} les plus fréquents ?"``
-  6. **Fallback** — none of the above.
+  6. **Fallback** - none of the above.
        → ``"Combien y a-t-il de {table} ?"``
 
 Audit / forbidden tables (``users``, ``audit_logs``, ``compliance_flags``,
@@ -51,7 +51,7 @@ _VARCHAR_TYPES = {"varchar", "text", "string", "character", "character varying"}
 _DATE_TYPES = {"timestamp", "date", "datetime", "timestamptz"}
 
 # Columns whose names match these patterns are excluded from the "metric"
-# set even when their type is numeric — they're identifiers or geo coords.
+# set even when their type is numeric - they're identifiers or geo coords.
 _ID_COLUMN_NAMES = {"id", "uid", "uuid"}
 _GEO_COLUMN_NAMES = {"latitude", "longitude", "lat", "lng", "lon"}
 
@@ -234,7 +234,7 @@ def _table_question(table: dict[str, Any]) -> str | None:
     table should be skipped (audit table, no columns, etc.).
 
     Uses humanized names (not raw column names) so the user never sees
-    'price_eur' — they see 'prix'.
+    'price_eur' - they see 'prix'.
     """
     tname = (table.get("name") or "").strip()
     if not tname or _is_forbidden_table(tname):
@@ -285,7 +285,7 @@ def generate_example_questions(
     tenant's ``schema_config``. Returns a list of ``{id, label}`` dicts.
 
     If ``schema_config`` is None, empty, or has no tables, returns an
-    empty list — the caller is responsible for falling back to generic
+    empty list - the caller is responsible for falling back to generic
     questions (see :data:`GENERIC_QUESTIONS`).
     """
     if not schema_config or not isinstance(schema_config, dict):

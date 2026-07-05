@@ -5,11 +5,11 @@
  *   - `/api/auth/*`     → see `src/app/api/auth/[[...path]]/route.ts`
  *   - `/api/tenants/*`  → see `src/app/api/tenants/[[...path]]/route.ts`
  *
- * The browser frontend never talks to localhost:8001 directly — only relative
+ * The browser frontend never talks to localhost:8001 directly - only relative
  * paths so the request goes through Next.js (and Caddy in production).
  *
  * JWT persistence lives in `localStorage` under `tevet7.jwt` (shared with the
- * admin API client — `src/lib/admin-api.ts` reads the same key).
+ * admin API client - `src/lib/admin-api.ts` reads the same key).
  */
 
 import type { AuthUser, TenantMembership } from "./types";
@@ -147,7 +147,7 @@ interface AuthFetchOptions {
 /**
  * Low-level auth/tenant fetch helper. Uses relative paths only.
  *
- * `pathPrefix` is `"auth"` or `"tenants"` — selects which Next.js proxy to hit.
+ * `pathPrefix` is `"auth"` or `"tenants"` - selects which Next.js proxy to hit.
  */
 async function apiFetch<T>(
   pathPrefix: "auth" | "tenants",
@@ -173,7 +173,7 @@ async function apiFetch<T>(
 
   let res: Response;
   try {
-    // 10-second timeout — the backend can take 1-2s per request (DB + LLM).
+    // 10-second timeout - the backend can take 1-2s per request (DB + LLM).
     // 3s was too short and caused false "Backend injoignable" errors.
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
@@ -226,14 +226,14 @@ async function apiFetch<T>(
         const message = err instanceof Error ? err.message : "Network error";
         throw new AuthApiError(message, 0, undefined, true);
       }
-      // If the retry also fails with 401, the refresh token is invalid — logout.
+      // If the retry also fails with 401, the refresh token is invalid - logout.
       if (res.status === 401) {
         setAuthToken(null);
         setRefreshToken(null);
         throw new AuthApiError("Session expirée", 401);
       }
     } else {
-      // Refresh failed — clear tokens and throw 401.
+      // Refresh failed - clear tokens and throw 401.
       setAuthToken(null);
       setRefreshToken(null);
       throw new AuthApiError("Session expirée", 401);
@@ -310,7 +310,7 @@ export interface MeResponse {
   memberships: TenantMembership[];
 }
 
-/** `GET /api/auth/me` — validates the stored JWT and returns the user + memberships. */
+/** `GET /api/auth/me` - validates the stored JWT and returns the user + memberships. */
 export async function getMe(): Promise<MeResponse> {
   return apiFetch<MeResponse>("auth", "me");
 }
@@ -324,7 +324,7 @@ export interface ListTenantsResponse {
   tenants: TenantMembership[];
 }
 
-/** `GET /api/tenants/mine` — list the user's memberships. */
+/** `GET /api/tenants/mine` - list the user's memberships. */
 export async function listMyTenants(): Promise<ListTenantsResponse> {
   return apiFetch<ListTenantsResponse>("tenants", "mine");
 }
@@ -334,7 +334,7 @@ export interface ActivateTenantResponse {
   token: string;
 }
 
-/** `POST /api/tenants/{tenantId}/activate` — switch active tenant, get a fresh JWT. */
+/** `POST /api/tenants/{tenantId}/activate` - switch active tenant, get a fresh JWT. */
 export async function activateTenant(
   tenantId: string,
 ): Promise<ActivateTenantResponse> {
@@ -350,7 +350,7 @@ export interface CreateTenantResponse {
   token: string;
 }
 
-/** `POST /api/tenants` — create a new tenant (the caller becomes admin). */
+/** `POST /api/tenants` - create a new tenant (the caller becomes admin). */
 export async function createTenant(
   name: string,
   slug: string,

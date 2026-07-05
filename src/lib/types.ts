@@ -184,14 +184,14 @@ export interface ResetResult {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 6d — Dynamic example questions
+// Phase 6d - Dynamic example questions
 // ---------------------------------------------------------------------------
 
 /**
  * A natural-language example question shown in the sidebar's "Exemples"
  * section. Generated server-side from the tenant's `schema_config` (see
  * `GET /api/tenants/{id}/example-questions`). The `hint` field is
- * optional — only set on the hardcoded Drive Producteur fallback
+ * optional - only set on the hardcoded Drive Producteur fallback
  * questions (e.g. the "Accès admin requis" hint on the top-producers
  * question).
  */
@@ -212,7 +212,7 @@ export interface OnboardingSchemaColumn {
   name: string;
   type: string;
   description?: string;
-  /** Wizard-only flag — true when the user keeps this column in the agent's
+  /** Wizard-only flag - true when the user keeps this column in the agent's
    * scope. Deselected columns are dropped from the saved schema_config. */
   selected: boolean;
 }
@@ -222,7 +222,7 @@ export interface OnboardingSchemaTable {
   name: string;
   description?: string;
   columns: OnboardingSchemaColumn[];
-  /** Wizard-only flag — true when the table is kept in the agent's scope. */
+  /** Wizard-only flag - true when the table is kept in the agent's scope. */
   selected: boolean;
   /** The RLS scope column for this table (e.g. "producer_id"). Null when the
    * table is global (no per-row scoping) or when the user hasn't picked one. */

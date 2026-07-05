@@ -1,4 +1,4 @@
-"""LangfuseTracer — ships trace events to a Langfuse instance *on top of*
+"""LangfuseTracer - ships trace events to a Langfuse instance *on top of*
 local persistence.
 
 Design
@@ -20,7 +20,7 @@ Graceful degradation
 
 Langfuse SDK errors (auth failure, network down, version mismatch) are
 caught and logged at WARNING. The user request MUST NEVER crash because of
-tracing — the LocalTracer still writes the row to SQLite.
+tracing - the LocalTracer still writes the row to SQLite.
 
 The Langfuse client is constructed lazily on first ``start_trace`` so the
 factory can return a LangfuseTracer even before the package is importable
@@ -72,7 +72,7 @@ class LangfuseTracer:
     def _get_client(self) -> Any:
         """Return the Langfuse client, building it on first use.
 
-        Returns None if the package is missing or construction fails — every
+        Returns None if the package is missing or construction fails - every
         subsequent trace call then degrades to LocalTracer-only behaviour.
         """
         if self._client is not None:

@@ -1,4 +1,4 @@
-"""ProviderFactory — builds the LLM provider chain from config (cached).
+"""ProviderFactory - builds the LLM provider chain from config (cached).
 
 Translates ``Settings`` into ``list[LLMProvider]``. The chain is built in
 priority order: GLM (via bridge) → DeepSeek → OpenRouter → Gemini → Groq.
@@ -45,10 +45,10 @@ def build_providers(settings: Any) -> list[LLMProvider] | None:
 
     providers: list[LLMProvider] = []
 
-    # 1. GLM via the Node bridge — PRIMARY (free, no geo-block, sandbox SDK).
+    # 1. GLM via the Node bridge - PRIMARY (free, no geo-block, sandbox SDK).
     providers.append(GlmBridgeAdapter(name="glm-4.6"))
 
-    # 2. DeepSeek direct — backup.
+    # 2. DeepSeek direct - backup.
     if settings.deepseek_api_key:
         providers.append(DeepSeekAdapter(
             api_key=settings.deepseek_api_key,
@@ -57,7 +57,7 @@ def build_providers(settings: Any) -> list[LLMProvider] | None:
             name=f"deepseek/{settings.deepseek_model}",
         ))
 
-    # 3. OpenRouter — tertiary (free models).
+    # 3. OpenRouter - tertiary (free models).
     if settings.openai_api_key and settings.openai_api_key != "sk-replace-me":
         or_models = [
             m.strip() for m in settings.llm_fallback_models.split(",") if m.strip()
@@ -70,7 +70,7 @@ def build_providers(settings: Any) -> list[LLMProvider] | None:
                 name=f"openrouter/{m}",
             ))
 
-    # 4. Gemini — last resort.
+    # 4. Gemini - last resort.
     if settings.gemini_api_key:
         providers.append(GeminiAdapter(
             api_key=settings.gemini_api_key,
@@ -79,7 +79,7 @@ def build_providers(settings: Any) -> list[LLMProvider] | None:
             name=f"gemini/{settings.gemini_model}",
         ))
 
-    # 5. Groq — bonus (geo-blocked from HK, circuit-breaks fast).
+    # 5. Groq - bonus (geo-blocked from HK, circuit-breaks fast).
     if settings.groq_api_key:
         providers.append(GroqAdapter(
             api_key=settings.groq_api_key,
@@ -88,7 +88,7 @@ def build_providers(settings: Any) -> list[LLMProvider] | None:
         ))
 
     if not providers:
-        logger.warning("No LLM providers configured — using rule-based only")
+        logger.warning("No LLM providers configured - using rule-based only")
         _cached_providers = None
     else:
         logger.info(

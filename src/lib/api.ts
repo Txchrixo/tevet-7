@@ -3,11 +3,11 @@
  *
  * Frontend client functions that don't fit neatly into the auth-api or
  * admin-api buckets live here. Currently hosts the example-questions
- * fetcher used by the Producer Copilot sidebar (Phase 6d — dynamic
+ * fetcher used by the Producer Copilot sidebar (Phase 6d - dynamic
  * example questions).
  *
  * All requests go through the Next.js proxies (relative paths only) so
- * the browser never talks to localhost:8001 directly — same convention
+ * the browser never talks to localhost:8001 directly - same convention
  * as `src/lib/auth-api.ts` and `src/lib/admin-api.ts`.
  */
 
@@ -30,7 +30,7 @@ export function authHeaders(): Record<string, string> {
 }
 
 /**
- * `GET /api/tenants/{tenantId}/example-questions` — returns up to 5
+ * `GET /api/tenants/{tenantId}/example-questions` - returns up to 5
  * schema-driven example questions for the active tenant. Returns an
  * empty list on any error so the caller can fall back to the hardcoded
  * Drive Producteur questions (`FALLBACK_QUESTIONS` in `mock-data.ts`).

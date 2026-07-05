@@ -1,10 +1,10 @@
-"""Guardrails — prompt injection, PII detection, content moderation.
+"""Guardrails - prompt injection, PII detection, content moderation.
 
 Deterministic (0 token, <1ms). Runs BEFORE the LLM is called.
-  1. detect_prompt_injection — 12 regex patterns.
-  2. detect_pii — email, phone, IBAN, SIRET, credit card (flags, redacts).
-  3. moderate_content — harmful keyword blocklist.
-  4. check_message — combined (injection→moderation→PII flag).
+  1. detect_prompt_injection - 12 regex patterns.
+  2. detect_pii - email, phone, IBAN, SIRET, credit card (flags, redacts).
+  3. moderate_content - harmful keyword blocklist.
+  4. check_message - combined (injection→moderation→PII flag).
 """
 
 from __future__ import annotations

@@ -49,29 +49,29 @@ import type {
 import { BrandMark } from "./brand-mark";
 
 // ---------------------------------------------------------------------------
-// Formatting helpers — French locale, Caudex for numbers in stat cards.
+// Formatting helpers - French locale, Caudex for numbers in stat cards.
 // ---------------------------------------------------------------------------
 
 function frNum(n: number | null | undefined): string {
-  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  if (n === null || n === undefined || Number.isNaN(n)) return "-";
   return n.toLocaleString("fr-FR").replace(/\s/g, "\u00A0");
 }
 
 function frMoney(n: number | null | undefined): string {
-  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  if (n === null || n === undefined || Number.isNaN(n)) return "-";
   const v = n.toFixed(2).replace(".", ",");
   return `${v}\u00A0$`;
 }
 
 function frPct(n: number | null | undefined): string {
-  if (n === null || n === undefined || Number.isNaN(n)) return "—";
+  if (n === null || n === undefined || Number.isNaN(n)) return "-";
   // refusal_rate is 0..1 per the spec, but tolerate 0..100 just in case.
   const pct = n > 1 ? n : n * 100;
   return `${pct.toFixed(1).replace(".", ",")}\u00A0%`;
 }
 
 function frDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
+  if (!iso) return "-";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString("fr-FR", {
@@ -112,7 +112,7 @@ function TenantAdminView() {
   const setAdminView = useCopilotStore((s) => s.setAdminView);
   const loadTenantAdmin = useCopilotStore((s) => s.loadTenantAdmin);
 
-  // Refresh on mount — the store action is idempotent.
+  // Refresh on mount - the store action is idempotent.
   React.useEffect(() => {
     void loadTenantAdmin();
   }, []);
@@ -147,7 +147,7 @@ function TenantAdminView() {
               <ConfigPanel config={adminData.config} tenantId={adminData.tenantId} />
             </div>
 
-            {/* Conversations — full width */}
+            {/* Conversations - full width */}
             <ConversationsPanel conversations={adminData.conversations} />
           </div>
         )}
@@ -169,23 +169,23 @@ function TenantStatsGrid({ stats }: { stats: TenantStats | null }) {
   }> = [
     {
       label: "Conversations totales",
-      value: stats ? frNum(stats.total_conversations) : "—",
+      value: stats ? frNum(stats.total_conversations) : "-",
       icon: <MessageSquare size={14} />,
     },
     {
       label: "Tokens consommés",
-      value: stats ? frNum(stats.total_tokens) : "—",
+      value: stats ? frNum(stats.total_tokens) : "-",
       icon: <Activity size={14} />,
     },
     {
       label: "Coût USD",
-      value: stats ? frMoney(stats.total_cost_usd) : "—",
+      value: stats ? frMoney(stats.total_cost_usd) : "-",
       icon: <BarChart2 size={14} />,
       accent: true,
     },
     {
       label: "Latence moyenne",
-      value: stats ? `${frNum(stats.avg_latency_ms)}\u00A0ms` : "—",
+      value: stats ? `${frNum(stats.avg_latency_ms)}\u00A0ms` : "-",
       icon: <Clock size={14} />,
     },
   ];
@@ -200,7 +200,7 @@ function TenantStatsGrid({ stats }: { stats: TenantStats | null }) {
       <div className="mt-2.5">
         <SmallStat
           label="Taux de refus"
-          value={stats ? frPct(stats.refusal_rate) : "—"}
+          value={stats ? frPct(stats.refusal_rate) : "-"}
         />
       </div>
     </section>
@@ -223,7 +223,7 @@ function UsersPanel({ users }: { users: TenantUser[] }) {
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="truncate text-sm font-medium text-foreground">
-                        {u.name || "—"}
+                        {u.name || "-"}
                       </span>
                       <RoleBadge role={u.role} />
                     </div>
@@ -310,11 +310,11 @@ function ConfigPanel({
           <ConfigRow label="Connector" value={config.connector_type} mono />
           <ConfigRow
             label="Tables"
-            value={tableCount !== null ? frNum(tableCount) : "—"}
+            value={tableCount !== null ? frNum(tableCount) : "-"}
           />
           <ConfigRow
             label="Rôles"
-            value={roleCount !== null ? frNum(roleCount) : "—"}
+            value={roleCount !== null ? frNum(roleCount) : "-"}
           />
           <ConfigRow
             label="Onboarded"
@@ -361,7 +361,7 @@ function ConversationsPanel({ conversations }: { conversations: Conversation[] }
                   </Td>
                   <Td>
                     <span className="rounded-md border border-border bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                      {c.intent || "—"}
+                      {c.intent || "-"}
                     </span>
                   </Td>
                   <Td className="text-right font-heading tabular-nums text-foreground">
@@ -495,28 +495,28 @@ function PlatformStatsGrid({ stats }: { stats: PlatformStats | null }) {
   }> = [
     {
       label: "Tenants totaux",
-      value: stats ? frNum(stats.total_tenants) : "—",
+      value: stats ? frNum(stats.total_tenants) : "-",
       icon: <Layers size={14} />,
     },
     {
       label: "Users totaux",
-      value: stats ? frNum(stats.total_users) : "—",
+      value: stats ? frNum(stats.total_users) : "-",
       icon: <Users size={14} />,
     },
     {
       label: "Conversations totales",
-      value: stats ? frNum(stats.total_conversations) : "—",
+      value: stats ? frNum(stats.total_conversations) : "-",
       icon: <MessageSquare size={14} />,
     },
     {
       label: "Coût total USD",
-      value: stats ? frMoney(stats.total_cost_usd) : "—",
+      value: stats ? frMoney(stats.total_cost_usd) : "-",
       icon: <BarChart2 size={14} />,
       accent: true,
     },
     {
       label: "Tokens totaux",
-      value: stats ? frNum(stats.total_tokens) : "—",
+      value: stats ? frNum(stats.total_tokens) : "-",
       icon: <Activity size={14} />,
     },
   ];
@@ -531,7 +531,7 @@ function PlatformStatsGrid({ stats }: { stats: PlatformStats | null }) {
       <div className="mt-2.5">
         <SmallStat
           label="Latence moyenne (ms)"
-          value={stats ? frNum(stats.avg_latency_ms) : "—"}
+          value={stats ? frNum(stats.avg_latency_ms) : "-"}
         />
       </div>
     </section>

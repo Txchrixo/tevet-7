@@ -10,17 +10,17 @@ A **tool** is a thin, audited function the agent can call. Each tool:
 Available tools
 ---------------
 
-- ``SqlReadTool`` (Phase 1) — read-only SQL on the tenant's allowed tables,
+- ``SqlReadTool`` (Phase 1) - read-only SQL on the tenant's allowed tables,
   with mandatory row-level scoping enforced by sqlglot rewriting. See
   ``sql_tool.py``.
 
 Planned tools
 -------------
 
-- ``DocumentSearchTool`` (Phase 3) — pgvector RAG over tenant-uploaded docs.
-- ``BusinessActionTool`` (Phase 4) — proposes a write, queues it for human
+- ``DocumentSearchTool`` (Phase 3) - pgvector RAG over tenant-uploaded docs.
+- ``BusinessActionTool`` (Phase 4) - proposes a write, queues it for human
   approval, never executes directly.
-- ``VisualizationTool`` (Phase 2) — turns a QueryResult into a chart spec.
+- ``VisualizationTool`` (Phase 2) - turns a QueryResult into a chart spec.
 
 The orchestrator (``app/agents/orchestrator.py``) picks the tool list per
 agent based on the agent's configuration.

@@ -1,4 +1,4 @@
-"""ModelRouter — multi-provider fallback chain with circuit breaker + caching.
+"""ModelRouter - multi-provider fallback chain with circuit breaker + caching.
 
 Holds ``list[LLMProvider]``. Calls ``provider.chat(...)`` and gets a
 normalized ``ChatResult``. Tries providers in order on failure. Circuit
@@ -48,7 +48,7 @@ class _CircuitState:
         if self.consecutive_failures >= _CIRCUIT_FAILURE_THRESHOLD:
             self.open_until = now + _CIRCUIT_COOLDOWN_S
             logger.warning(
-                "Circuit OPEN for provider after %d failures — cooldown %.0fs",
+                "Circuit OPEN for provider after %d failures - cooldown %.0fs",
                 self.consecutive_failures, _CIRCUIT_COOLDOWN_S,
             )
 
@@ -72,7 +72,7 @@ class ModelRouter:
             p.name: _CircuitState() for p in providers
         }
         logger.info(
-            "ModelRouter initialized — %d providers: %s (cache=%s)",
+            "ModelRouter initialized - %d providers: %s (cache=%s)",
             len(providers), ", ".join(p.name for p in providers), cache_enabled,
         )
 
@@ -168,7 +168,7 @@ class ModelRouter:
                         created_at=datetime.utcnow(),
                     )
                 )
-            logger.debug("Cache SET — hash=%s… model=%s", prompt_hash[:12], result.model)
+            logger.debug("Cache SET - hash=%s… model=%s", prompt_hash[:12], result.model)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Cache set failed: %s", exc)
 
@@ -190,7 +190,7 @@ class ModelRouter:
         cached = await self._cache_get(prompt_hash)
         if cached is not None:
             result, label = cached
-            logger.info("Cache HIT — hash=%s… model=%s", prompt_hash[:12], label)
+            logger.info("Cache HIT - hash=%s… model=%s", prompt_hash[:12], label)
             if stream and result.stream is None:
                 result.stream = self._fake_stream(result)
             return result
@@ -202,7 +202,7 @@ class ModelRouter:
         for provider in self._providers:
             circuit = self._circuits[provider.name]
             if circuit.is_open(now):
-                logger.debug("Skipping %s — circuit open", provider.name)
+                logger.debug("Skipping %s - circuit open", provider.name)
                 continue
 
             try:
@@ -227,7 +227,7 @@ class ModelRouter:
                 last_error = exc
                 status = _extract_status(exc)
                 logger.warning(
-                    "Provider %s failed (%s) — trying next fallback",
+                    "Provider %s failed (%s) - trying next fallback",
                     provider.name, status or type(exc).__name__,
                 )
                 now = time.monotonic()

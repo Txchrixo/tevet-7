@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * TeamManagement — admin panel to invite + manage tenant members.
+ * TeamManagement - admin panel to invite + manage tenant members.
  *
  * Phase C2: allows tenant admins to:
  *  - List current members (email, role, producer_id, active status)

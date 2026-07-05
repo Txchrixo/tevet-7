@@ -47,7 +47,7 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
 
   const isAdmin = identity.kind === "admin";
 
-  // Tenant display name — real tenant name when authenticated, fallback to
+  // Tenant display name - real tenant name when authenticated, fallback to
   // "Drive Producteur" (the demo tenant) when in demo mode.
   const tenantName = activeTenant?.name ?? "Drive Producteur";
 
@@ -64,12 +64,12 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
         <Menu size={18} />
       </Button>
 
-      {/* App identity — Tevet-7 brand */}
+      {/* App identity - Tevet-7 brand */}
       <BrandLogo size={26} />
 
       <Separator orientation="vertical" className="hidden h-5 md:block" />
 
-      {/* Tenant badge — dynamic, muted context indicator (NOT the app name) */}
+      {/* Tenant badge - dynamic, muted context indicator (NOT the app name) */}
       <Badge
         variant="outline"
         className="hidden gap-1 border-border text-[10px] font-body uppercase tracking-wide text-muted-foreground md:inline-flex"
@@ -79,7 +79,7 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
         {tenantName}
       </Badge>
 
-      {/* DÉMO PUBLIQUE badge — shown when in demo session */}
+      {/* DÉMO PUBLIQUE badge - shown when in demo session */}
       {isDemoSession && (
         <Badge
           variant="outline"
@@ -90,7 +90,7 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
         </Badge>
       )}
 
-      {/* Scope breadcrumb (hidden on small) — shows the active scope */}
+      {/* Scope breadcrumb (hidden on small) - shows the active scope */}
       <div className="ml-1 hidden items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground lg:flex">
         <Separator orientation="vertical" className="h-4" />
         <span className="text-muted-foreground/60">Scope</span>
@@ -128,11 +128,11 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
           {APP_PHASE}
         </Badge>
 
-        {/* Surface toggle — Agent ↔ Ops Console */}
+        {/* Surface toggle - Agent ↔ Ops Console */}
         <ViewToggle />
 
         {/*
-         * Inspector toggle — view control, grouped with the surface toggle
+         * Inspector toggle - view control, grouped with the surface toggle
          * (also a view control) BEFORE the user menu (which is an account
          * action, not a view action). Mobile + desktop variants both render
          * here so the layout doesn't reflow when crossing the md breakpoint.
@@ -159,7 +159,7 @@ export function Header({ onOpenSidebar, onOpenInspector }: HeaderProps) {
 
         <Separator orientation="vertical" className="hidden h-4 md:block" />
 
-        {/* User dropdown — carries admin/platform entries when admin + logout */}
+        {/* User dropdown - carries admin/platform entries when admin + logout */}
         <UserDropdown
           isAdmin={isAdmin}
           canLogout={authMode === "authenticated" || authMode === "demo"}

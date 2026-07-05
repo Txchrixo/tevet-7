@@ -1,6 +1,6 @@
 """Application configuration via pydantic-settings.
 
-All environment variables are read through this module — never call
+All environment variables are read through this module - never call
 ``os.getenv`` directly elsewhere. This gives us:
 
 - A single source of truth (this file ↔ ``.env.example``).
@@ -70,16 +70,16 @@ class Settings(BaseSettings):
     # keys are present, in priority order: Groq → DeepSeek → OpenRouter → Gemini.
     # Each provider has its own base_url + key + model.
 
-    # Groq — primary (14,400 req/day free, function calling, fast).
+    # Groq - primary (14,400 req/day free, function calling, fast).
     groq_api_key: str = Field(default="", description="Groq API key (console.groq.com).")
     groq_model: str = Field(default="llama-3.3-70b-versatile", description="Groq model.")
 
-    # DeepSeek direct — backup (paid but cheap, high quality).
+    # DeepSeek direct - backup (paid but cheap, high quality).
     deepseek_api_key: str = Field(default="", description="DeepSeek direct API key.")
     deepseek_base_url: str = Field(default="https://api.deepseek.com/v1", description="DeepSeek API base URL.")
     deepseek_model: str = Field(default="deepseek-chat", description="DeepSeek model name.")
 
-    # OpenRouter — tertiary (free models via :free suffix).
+    # OpenRouter - tertiary (free models via :free suffix).
     openai_api_key: str = Field(default="sk-replace-me", description="OpenRouter API key.")
     llm_base_url: str = Field(
         default="https://openrouter.ai/api/v1",
@@ -90,7 +90,7 @@ class Settings(BaseSettings):
         description="Comma-separated free OpenRouter models for the tertiary tier.",
     )
 
-    # Gemini — last resort (Google AI Studio free tier).
+    # Gemini - last resort (Google AI Studio free tier).
     gemini_api_key: str = Field(default="", description="Google AI Studio Gemini API key.")
     gemini_base_url: str = Field(
         default="https://generativelanguage.googleapis.com/v1beta/openai/",
@@ -101,8 +101,8 @@ class Settings(BaseSettings):
     # LLM cache TTL (seconds).
     llm_cache_ttl_seconds: int = Field(default=3600, description="LLM response cache TTL in seconds (default 1h).")
 
-    # Legacy (kept for backward compat — the router uses groq_model/deepseek_model/etc).
-    llm_model: str = Field(default="gpt-4o-mini", description="DEPRECATED — kept for backward compat.")
+    # Legacy (kept for backward compat - the router uses groq_model/deepseek_model/etc).
+    llm_model: str = Field(default="gpt-4o-mini", description="DEPRECATED - kept for backward compat.")
     embedding_model: str = Field(
         default="text-embedding-3-small", description="Default embedding model for RAG."
     )
@@ -112,7 +112,7 @@ class Settings(BaseSettings):
     # ``langfuse_secret_key`` are set to non-placeholder values, the tracing
     # factory returns a ``LangfuseTracer`` (ships events to Langfuse in
     # addition to the local SQLite ``traces`` table). When either is None /
-    # the placeholder, the factory falls back to ``LocalTracer`` only —
+    # the placeholder, the factory falls back to ``LocalTracer`` only -
     # this is the dev-mode default. See ``app/tracing/factory.py``.
     langfuse_public_key: str | None = Field(
         default=None,
@@ -174,7 +174,7 @@ def get_settings() -> Settings:
     """Return a cached ``Settings`` instance.
 
     Cached because pydantic-settings re-reads the env file on every
-    instantiation — we don't want that on every request. Tests can reset the
+    instantiation - we don't want that on every request. Tests can reset the
     cache with ``get_settings.cache_clear()``.
     """
     return Settings()

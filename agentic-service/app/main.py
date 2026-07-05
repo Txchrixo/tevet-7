@@ -32,7 +32,7 @@ from app.tracing import get_tracer
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging
 # In production we'd ship structured JSON logs (structlog / loguru). For Phase 1
-# the standard logger is enough — uvicorn's access logs already give us timing.
+# the standard logger is enough - uvicorn's access logs already give us timing.
 # ─────────────────────────────────────────────────────────────────────────────
 logger = logging.getLogger("tevet7")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -48,17 +48,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     logger.info(
-        "Tevet-7 starting — version=%s env=%s llm_model=%s",
+        "Tevet-7 starting - version=%s env=%s llm_model=%s",
         __version__,
         settings.env,
         settings.llm_model,
     )
-    # Phase 1: create + seed the SQLite DB (idempotent — drop & recreate).
+    # Phase 1: create + seed the SQLite DB (idempotent - drop & recreate).
     try:
         await init_db()
         logger.info("SQLite database ready at %s", settings.database_url)
     except Exception:  # noqa: BLE001
-        logger.exception("init_db() failed — /chat will return errors until fixed")
+        logger.exception("init_db() failed - /chat will return errors until fixed")
     # Phase 5: ensure the ML stock-shortage model is trained. Lazy + non-
     # blocking: if training fails, the forecast tool falls back to the SQL
     # heuristic at request time so the demo still works.
@@ -69,10 +69,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             logger.info("ML model: stock_shortage_model.pkl ready (forecast_tool active)")
         else:
             logger.warning(
-                "ML model not trained — forecast_tool will fall back to SQL heuristic"
+                "ML model not trained - forecast_tool will fall back to SQL heuristic"
             )
-    except Exception:  # noqa: BLE001 — never block app startup on ML
-        logger.exception("ensure_model_trained() failed — forecast_tool will fall back")
+    except Exception:  # noqa: BLE001 - never block app startup on ML
+        logger.exception("ensure_model_trained() failed - forecast_tool will fall back")
     # Phase 2 tracing: initialise the tracer singleton early so the first
     # /chat request doesn't pay the (small) construction cost. Also logs
     # which tracer is active (LocalTracer vs LangfuseTracer) so the operator
@@ -82,16 +82,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         tracer_name = type(tracer).__name__
         logger.info("Tracer active: %s", tracer_name)
     except Exception:  # noqa: BLE001
-        logger.exception("tracer init failed — tracing disabled for this run")
+        logger.exception("tracer init failed - tracing disabled for this run")
     # Phase 6c: start the demo reset cron (resets the 'dp' tenant every 24h).
-    # Disabled temporarily — the cron's reset_demo_data has a column attribute
+    # Disabled temporarily - the cron's reset_demo_data has a column attribute
     # bug. The reset endpoint works on-demand; the cron will be re-enabled
     # once the bug is fixed.
     # cron = DemoResetCron(interval_seconds=86400)
     # await cron.start()
     yield
     # await cron.stop()
-    logger.info("Tevet-7 shutting down — version=%s", __version__)
+    logger.info("Tevet-7 shutting down - version=%s", __version__)
     await dispose_engine()
 
 
@@ -117,7 +117,7 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
-    # CORS — Phase B7 lockdown. "*" + credentials is invalid per spec.
+    # CORS - Phase B7 lockdown. "*" + credentials is invalid per spec.
     if settings.cors_origins == "*":
         origins = ["*"]
         allow_credentials = False
@@ -138,7 +138,7 @@ def create_app() -> FastAPI:
     # Phase 3: the documents router adds the RAG management surface
     # (upload / list / detail / delete) used by the documentary intent.
     # Phase 4: the approvals router adds the Ops Copilot HITL surface
-    # (list / detail / decide / re-analyze) — every "agent proposes, human
+    # (list / detail / decide / re-analyze) - every "agent proposes, human
     # decides" workflow lives there.
     # Phase 6a: the auth router adds signup/login/me (JWT issuance) and
     # the tenants router adds tenant CRUD + membership activation. Both
@@ -150,14 +150,14 @@ def create_app() -> FastAPI:
     app.include_router(tenants_router, prefix="/api", tags=["tenants"])
     app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
 
-    # Phase C3 — Stripe billing (optional, requires STRIPE_SECRET_KEY)
+    # Phase C3 - Stripe billing (optional, requires STRIPE_SECRET_KEY)
     try:
         from app.billing import billing_router
         app.include_router(billing_router, prefix="/api", tags=["billing"])
     except ImportError:
         pass
 
-    # Phase C5 — Export (CSV + PDF)
+    # Phase C5 - Export (CSV + PDF)
     try:
         from app.export_routes import router as export_router
         app.include_router(export_router, prefix="/api", tags=["export"])

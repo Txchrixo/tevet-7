@@ -1,7 +1,7 @@
-"""``/api/documents`` — documentary RAG management endpoints.
+"""``/api/documents`` - documentary RAG management endpoints.
 
-Phase 3 — RAG layer for the Producer Copilot.
-Phase 6b — multi-tenant: documents are scoped by ``tenant_id`` (a column on
+Phase 3 - RAG layer for the Producer Copilot.
+Phase 6b - multi-tenant: documents are scoped by ``tenant_id`` (a column on
 the ``documents`` + ``document_chunks`` tables). New tenants (CSV / Postgres)
 get their own empty document set; they can upload CGV / FAQ docs into the
 shared SQLite store before or after running the onboarding wizard. The
@@ -11,10 +11,10 @@ isolated without a per-tenant database.
 Endpoints
 =========
 
-- ``POST /api/documents``          — upload a document (PDF or text).
-- ``GET  /api/documents``          — list documents for the tenant.
-- ``GET  /api/documents/{id}``     — document detail + its chunks.
-- ``DELETE /api/documents/{id}``   — delete a document + its chunks + FTS rows.
+- ``POST /api/documents``          - upload a document (PDF or text).
+- ``GET  /api/documents``          - list documents for the tenant.
+- ``GET  /api/documents/{id}``     - document detail + its chunks.
+- ``DELETE /api/documents/{id}``   - delete a document + its chunks + FTS rows.
 
 All endpoints trace via the active tracer (LocalTracer or LangfuseTracer)
 so the operator can see uploads / deletions in the same Langfuse dashboard
@@ -23,18 +23,18 @@ as the chat traces.
 Security model
 ==============
 
-Phase 6a — dual auth mode (same pattern as ``app/api/chat.py``):
+Phase 6a - dual auth mode (same pattern as ``app/api/chat.py``):
 
-1. **JWT path (new, for the frontend)** — the caller sends
+1. **JWT path (new, for the frontend)** - the caller sends
    ``Authorization: Bearer <jwt>``. The ``tenant_id`` and
    ``producer_id`` are extracted from the verified JWT (the form/query
    params are IGNORED).
-2. **Form/query path (legacy, for the eval + the old frontend)** — no
+2. **Form/query path (legacy, for the eval + the old frontend)** - no
    ``Authorization`` header. The ``tenant_id`` is read from the form
    (POST) or query string (GET) and defaults to ``"dp"``. The
    ``producer_id`` is read from the form/query string too.
 
-Phase 3 kept the model intentionally simple (no JWT) — the dual mode
+Phase 3 kept the model intentionally simple (no JWT) - the dual mode
 preserves that for the eval while letting the frontend authenticate
 via JWT.
 
@@ -86,7 +86,7 @@ def _resolve_doc_context(
         valid, the tenant_id + producer_id are extracted from the JWT
         (the form/query fallbacks are IGNORED).
       - Otherwise the fallback values (from the form/query params) are
-        used — this is the legacy path the eval relies on.
+        used - this is the legacy path the eval relies on.
     """
     jwt_ctx: TenantContext | None = try_get_tenant_context(request)
     if jwt_ctx is not None and jwt_ctx.tenant_id:
@@ -101,7 +101,7 @@ def _extract_pdf_text(file_bytes: bytes) -> str:
     """Extract text from a PDF using pypdf. Returns '' on failure or empty."""
     try:
         from pypdf import PdfReader
-    except ImportError as exc:  # pragma: no cover — pypdf is in requirements
+    except ImportError as exc:  # pragma: no cover - pypdf is in requirements
         raise HTTPException(
             status_code=500,
             detail=f"pypdf is not installed on the server: {exc}",
@@ -135,7 +135,7 @@ def _start_doc_span(name: str, **metadata: Any) -> tuple[Any, TraceContext | Non
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# POST /api/documents — upload
+# POST /api/documents - upload
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -153,7 +153,7 @@ async def upload_document(
 
     Returns ``{document_id, title, chunks_count}``.
 
-    Phase 6a — dual auth mode: when an ``Authorization: Bearer <jwt>``
+    Phase 6a - dual auth mode: when an ``Authorization: Bearer <jwt>``
     header is present, the tenant_id and producer_id are extracted from
     the JWT and the form fields are ignored.
     """
@@ -280,7 +280,7 @@ async def upload_document(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GET /api/documents — list
+# GET /api/documents - list
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -292,7 +292,7 @@ async def list_documents(
 ) -> dict[str, Any]:
     """List documents for the tenant, optionally scoped to a producer.
 
-    Phase 6a — dual auth mode: when an ``Authorization: Bearer <jwt>``
+    Phase 6a - dual auth mode: when an ``Authorization: Bearer <jwt>``
     header is present, the tenant_id and producer_id are extracted from
     the JWT and the query params are ignored.
     """
@@ -376,7 +376,7 @@ async def list_documents(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# GET /api/documents/{id} — detail
+# GET /api/documents/{id} - detail
 # ─────────────────────────────────────────────────────────────────────────────
 
 

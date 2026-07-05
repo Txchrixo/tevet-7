@@ -1,5 +1,5 @@
 /**
- * loading.tsx — Tech minimalist loader.
+ * loading.tsx - Tech minimalist loader.
  *
  * The heptagon outline draws itself (stroke-dasharray animation) while the
  * top vertex dot pulses. Pure SVG + CSS, no JS. Renders before hydration.
@@ -16,7 +16,7 @@ export default function Loading() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">
       <svg width="56" height="56" viewBox="0 0 24 24" fill="none">
-        {/* Heptagon outline — draws itself */}
+        {/* Heptagon outline - draws itself */}
         <path
           d="M 12 3 L 19.04 6.39 L 20.77 14 L 15.91 20.11 L 8.09 20.11 L 3.23 14 L 4.96 6.39 Z"
           stroke="var(--accent, #A8C090)"
@@ -29,7 +29,7 @@ export default function Loading() {
             animation: "hept-draw 2s cubic-bezier(0.4, 0, 0.2, 1) infinite",
           }}
         />
-        {/* Top vertex dot — pulses */}
+        {/* Top vertex dot - pulses */}
         <circle
           cx="12"
           cy="3"

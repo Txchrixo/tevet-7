@@ -42,7 +42,7 @@ function Home() {
 
   // While we're checking the stored JWT, render a minimal placeholder so the
   // AuthScreen doesn't flash before we know whether the user is logged in.
-  // Uses pure CSS animation (no framer-motion) for instant render — the
+  // Uses pure CSS animation (no framer-motion) for instant render - the
   // loading state can be very brief (<100ms) and framer-motion's init delay
   // sometimes means the loader never even appears before the page swaps.
   if (authMode === "loading") {
@@ -205,7 +205,7 @@ function CopilotHome() {
                       />
                     ))}
                   </AnimatePresence>
-                  {/* Phase A2: TypingIndicator removed — the streaming message
+                  {/* Phase A2: TypingIndicator removed - the streaming message
                       card now shows its own typing dots internally. */}
                 </div>
               )}
@@ -216,7 +216,7 @@ function CopilotHome() {
           <div className="border-t border-border bg-background px-3 py-3 sm:px-4">
             <ChatInput />
             <p className="mt-1.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground">
-              Prototype {APP_PHASE} — réponses de l&apos;agent Tevet-7
+              Prototype {APP_PHASE} - réponses de l&apos;agent Tevet-7
             </p>
           </div>
         </main>
@@ -248,7 +248,7 @@ function CopilotHome() {
       <Footer />
 
       {/*
-        Mobile sidebar sheet — `gap-0` overrides the SheetContent default
+        Mobile sidebar sheet - `gap-0` overrides the SheetContent default
         `gap-4` (which would leave a 16px gap above the Sidebar and push its
         bottom past the sheet viewport, breaking internal scroll). The
         Sidebar renders its own user panel + ScrollArea; we don't add a
@@ -264,7 +264,7 @@ function CopilotHome() {
       </Sheet>
 
       {/*
-        Mobile inspector sheet — `hideClose` suppresses the Sheet's auto-X
+        Mobile inspector sheet - `hideClose` suppresses the Sheet's auto-X
         because the Inspector renders its own close button (X) in its header
         (top-right). Keeping both would create the duplicate close buttons
         the user reported. `gap-0` ensures the Inspector fills the sheet
@@ -315,7 +315,7 @@ function WelcomeState({
         </h1>
         <p className="mt-1.5 max-w-md text-sm text-muted-foreground">
           <span className="font-medium text-foreground">Tevet-7</span> · Je suis
-          votre agent. Posez-moi une question sur vos données — chaque réponse
+          votre agent. Posez-moi une question sur vos données - chaque réponse
           est sécurisée par un scope tenant.
         </p>
         <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">

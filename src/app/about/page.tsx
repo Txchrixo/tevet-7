@@ -1,6 +1,6 @@
 import { BrandMark } from "@/components/producer-copilot/brand-mark";
 
-export const metadata = { title: "About — Tevet-7" };
+export const metadata = { title: "About - Tevet-7" };
 
 export default function AboutPage() {
   return (

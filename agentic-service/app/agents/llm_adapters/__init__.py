@@ -1,12 +1,12 @@
-"""LLM provider adapters — SOLID single-responsibility per provider.
+"""LLM provider adapters - SOLID single-responsibility per provider.
 
 Package structure:
-  - ``base.py``       — BaseOpenAIAdapter + shared helpers + client cache
-  - ``groq.py``       — GroqAdapter
-  - ``deepseek.py``   — DeepSeekAdapter
-  - ``openrouter.py`` — OpenRouterAdapter
-  - ``gemini.py``     — GeminiAdapter
-  - ``glm_bridge.py`` — GlmBridgeAdapter
+  - ``base.py``       - BaseOpenAIAdapter + shared helpers + client cache
+  - ``groq.py``       - GroqAdapter
+  - ``deepseek.py``   - DeepSeekAdapter
+  - ``openrouter.py`` - OpenRouterAdapter
+  - ``gemini.py``     - GeminiAdapter
+  - ``glm_bridge.py`` - GlmBridgeAdapter
 
 Each adapter has ONE responsibility: its provider's configuration. All
 OpenAI-protocol logic is shared via the base.

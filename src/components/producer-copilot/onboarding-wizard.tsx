@@ -46,7 +46,6 @@ import type {
 } from "@/lib/types";
 
 import { BrandMark } from "./brand-mark";
-import { Footer } from "./footer";
 
 // ---------------------------------------------------------------------------
 // Main wizard shell
@@ -69,10 +68,10 @@ const STEP_LABELS = [
  * not yet onboarded (`activeTenant.onboarded === false`).
  *
  * Steps:
- *   1. Connect data — PostgreSQL URL or CSV upload
- *   2. Detect schema — pick tables/columns + scope columns (RLS)
- *   3. Define roles — admin + user defaults + user-added
- *   4. Ready — summary + "Accéder à l'agent" completes onboarding
+ *   1. Connect data - PostgreSQL URL or CSV upload
+ *   2. Detect schema - pick tables/columns + scope columns (RLS)
+ *   3. Define roles - admin + user defaults + user-added
+ *   4. Ready - summary + "Accéder à l'agent" completes onboarding
  *
  * All API calls go through the relative `/api/tenants/{id}/onboarding/*`
  * paths (proxied by Next.js to localhost:8001). The wizard never talks to
@@ -86,11 +85,11 @@ export function OnboardingWizard({ tenantId }: OnboardingWizardProps) {
   const startOnboarding = useCopilotStore((s) => s.startOnboarding);
   const setOnboardingStep = useCopilotStore((s) => s.setOnboardingStep);
 
-  // Ensure the wizard is active for this tenant on mount — the store's
+  // Ensure the wizard is active for this tenant on mount - the store's
   // `startOnboarding` resets draft state and sets step=1.
   React.useEffect(() => {
     if (step === 0) startOnboarding(tenantId);
-    // We intentionally only run this on mount — `startOnboarding` is
+    // We intentionally only run this on mount - `startOnboarding` is
     // idempotent but calling it on every step change would wipe draft state.
   }, [tenantId, step, startOnboarding]);
 
@@ -112,7 +111,7 @@ export function OnboardingWizard({ tenantId }: OnboardingWizardProps) {
             </p>
           </div>
 
-          {/* Progress indicator — 4 dots */}
+          {/* Progress indicator - 4 dots */}
           <ProgressIndicator step={step} labels={STEP_LABELS} />
 
           {/* Step card */}
@@ -138,7 +137,7 @@ export function OnboardingWizard({ tenantId }: OnboardingWizardProps) {
             </AnimatePresence>
           </div>
 
-          {/* Back button — hidden on step 1 + step 4 (final) */}
+          {/* Back button - hidden on step 1 + step 4 (final) */}
           {step > 1 && step < 4 && (
             <button
               type="button"
@@ -151,8 +150,6 @@ export function OnboardingWizard({ tenantId }: OnboardingWizardProps) {
           )}
         </div>
       </main>
-
-      <Footer />
     </div>
   );
 }
@@ -214,7 +211,7 @@ function ProgressIndicator({
 }
 
 // ---------------------------------------------------------------------------
-// Step 1 — Connect data
+// Step 1 - Connect data
 // ---------------------------------------------------------------------------
 
 function Step1Connect({ tenantId }: { tenantId: string }) {
@@ -266,7 +263,7 @@ function Step1Connect({ tenantId }: { tenantId: string }) {
         });
       } else {
         setOnboardingError(
-          result.error ?? "Connexion impossible — vérifiez l'URL.",
+          result.error ?? "Connexion impossible - vérifiez l'URL.",
         );
       }
     } catch (err) {
@@ -304,7 +301,7 @@ function Step1Connect({ tenantId }: { tenantId: string }) {
         });
       } else {
         setOnboardingError(
-          result.error ?? "Import impossible — vérifiez le fichier.",
+          result.error ?? "Import impossible - vérifiez le fichier.",
         );
       }
     } catch (err) {
@@ -528,7 +525,7 @@ function ConnectorCard({
 }
 
 // ---------------------------------------------------------------------------
-// Step 2 — Detect schema
+// Step 2 - Detect schema
 // ---------------------------------------------------------------------------
 
 function Step2Schema({ tenantId }: { tenantId: string }) {
@@ -829,7 +826,7 @@ function TableSchemaRow({
 }
 
 // ---------------------------------------------------------------------------
-// Step 3 — Define roles
+// Step 3 - Define roles
 // ---------------------------------------------------------------------------
 
 function Step3Roles({ tenantId }: { tenantId: string }) {
@@ -848,7 +845,7 @@ function Step3Roles({ tenantId }: { tenantId: string }) {
     [data.schemaDraft],
   );
 
-  // All scope columns across selected tables — used to populate the role
+  // All scope columns across selected tables - used to populate the role
   // scope-column dropdown. Deduped.
   const allScopeColumns = React.useMemo(() => {
     const set = new Set<string>();
@@ -1118,7 +1115,7 @@ function RoleRow({
 }
 
 // ---------------------------------------------------------------------------
-// Step 4 — Ready
+// Step 4 - Ready
 // ---------------------------------------------------------------------------
 
 function Step4Ready({ tenantId: _tenantId }: { tenantId: string }) {
@@ -1133,7 +1130,7 @@ function Step4Ready({ tenantId: _tenantId }: { tenantId: string }) {
       ? "PostgreSQL"
       : data.connectorType === "csv"
         ? `CSV (${data.csvFileName ?? "fichier"})`
-        : "—";
+        : "-";
 
   return (
     <div className="space-y-5 text-center">

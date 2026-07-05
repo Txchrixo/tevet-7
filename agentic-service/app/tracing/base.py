@@ -14,7 +14,7 @@ Concrete tracers live in :mod:`app.tracing.local` (writes to the SQLite
 Langfuse instance, on top of local persistence).
 
 The Protocol below is intentionally synchronous-by-convention even though
-``end_trace`` may hit a DB — the caller may ``await`` the returned coroutine
+``end_trace`` may hit a DB - the caller may ``await`` the returned coroutine
 or call it eagerly. We keep the API synchronous so the orchestrator (which
 runs a sync ``run()`` loop with awaited tool calls) can call it without
 ``await`` ceremony; LocalTracer's persistence is fire-and-forget into a
@@ -102,7 +102,7 @@ class Tracer(Protocol):
     Why a Protocol (structural type) rather than an ABC?
 
     So a third-party tracer (e.g. OpenTelemetry, LangSmith) can satisfy the
-    contract without inheriting from our base class — same shape, zero
+    contract without inheriting from our base class - same shape, zero
     coupling. ``isinstance(x, Tracer)`` checks are NOT used; the factory
     just returns "something that quacks like a Tracer".
     """
@@ -134,7 +134,7 @@ class Tracer(Protocol):
 
         ``result`` carries the orchestrator's structured output (answer, sql,
         tool_calls, tokens, latency, refused, security_incident, ...). The
-        tracer persists what it can — see ``LocalTracer._ROW_FIELDS`` for the
+        tracer persists what it can - see ``LocalTracer._ROW_FIELDS`` for the
         canonical list. Returns the trace_id.
         """
         ...

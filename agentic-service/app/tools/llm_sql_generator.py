@@ -1,4 +1,4 @@
-"""LLM-based SQL generator — uses OpenAI to translate natural language to SQL.
+"""LLM-based SQL generator - uses OpenAI to translate natural language to SQL.
 
 This is the "real" AI agent: instead of keyword matching (RuleBasedSQLGenerator),
 the LLM receives the tenant's schema + the user's question and generates SQL.
@@ -10,9 +10,9 @@ Architecture:
         ↓
     OpenAI chat completion (system prompt with schema + user question)
         ↓
-    Raw SQL string (no scope clause — sqlglot injects it)
+    Raw SQL string (no scope clause - sqlglot injects it)
         ↓
-    SqlReadTool.validate_and_rewrite() — sqlglot AST validation + scoping
+    SqlReadTool.validate_and_rewrite() - sqlglot AST validation + scoping
         ↓
     Execute on read-only connection
 
@@ -41,7 +41,7 @@ class LLMSQLGenerator:
     """LLM-powered SQL generator using OpenAI.
 
     Implements the same ``SQLGenerator`` protocol as ``RuleBasedSQLGenerator``.
-    The orchestrator doesn't know which generator is active — it just calls
+    The orchestrator doesn't know which generator is active - it just calls
     ``generate()`` and gets back a SQL string (or None).
 
     Construction::
@@ -86,7 +86,7 @@ class LLMSQLGenerator:
                 logger.warning("LLMSQLGenerator: failed to init LLM client: %s", exc)
                 self._client = None
         else:
-            logger.info("LLMSQLGenerator: no API key — will use rule-based fallback")
+            logger.info("LLMSQLGenerator: no API key - will use rule-based fallback")
 
     # ── Schema rendering ──────────────────────────────────────────────────
 
@@ -122,7 +122,7 @@ class LLMSQLGenerator:
         - The task (translate natural language to SQL SELECT)
         - The schema (tables, columns, types)
         - The constraints (SELECT only, no scope clause, use table names)
-        - The user's role (for context — admin sees all, producer is scoped)
+        - The user's role (for context - admin sees all, producer is scoped)
         """
         schema_text = self._render_schema()
 
@@ -132,7 +132,7 @@ Your job: translate the user's natural language question into a single SQL SELEC
 DATABASE SCHEMA:
 {schema_text}
 
-RULES (CRITICAL — violations will be rejected):
+RULES (CRITICAL - violations will be rejected):
 1. Generate ONLY a SELECT statement. No INSERT, UPDATE, DELETE, DROP, or DDL.
 2. Do NOT include a WHERE clause for row-level security (scope). The system
    injects it automatically. Just write the business logic.
@@ -160,11 +160,11 @@ RULES (CRITICAL — violations will be rejected):
 14. If you cannot generate SQL for the question, return "CANNOT_GENERATE".
 15. Do NOT add a semicolon at the end.
 16. Do NOT include the scope column in your WHERE clause (e.g. do NOT add
-    WHERE producer_id = X — the system adds it automatically).
+    WHERE producer_id = X - the system adds it automatically).
 
 USER CONTEXT:
 - Role: {role}
-- Scope column: {scope_column or "none (admin — full access)"}
+- Scope column: {scope_column or "none (admin - full access)"}
 
 Return ONLY the SQL query (no markdown, no explanation, no semicolons).
 If you must refuse, cannot generate, or it's a greeting, return exactly
@@ -229,5 +229,5 @@ If you must refuse, cannot generate, or it's a greeting, return exactly
             return raw
 
         except Exception as exc:
-            logger.warning("LLMSQLGenerator: OpenAI call failed (%s) — falling back to rule-based", exc)
+            logger.warning("LLMSQLGenerator: OpenAI call failed (%s) - falling back to rule-based", exc)
             return await self._fallback.generate(question, role, scope_column, scope_value)

@@ -51,7 +51,7 @@ interface SqlBlockProps {
   sql: string;
   /** The exact clause injected by the scoping layer, e.g. "WHERE p.producer_id = 42". */
   scopeClause: string | null;
-  /** When true the agent refused to run the query — not shown for refusals. */
+  /** When true the agent refused to run the query - not shown for refusals. */
   refused?: boolean;
   /** Start expanded or collapsed. */
   defaultOpen?: boolean;
@@ -149,7 +149,7 @@ function HighlightedSql({
       {refused && (
         <div className="mt-3 flex items-center gap-2 rounded-md border border-dashed border-border bg-background px-2 py-1.5 text-[11px] text-muted-foreground">
           <Shield size={14} className="shrink-0" />
-          Action refusée — la requête a été rejetée par la couche de scoping
+          Action refusée - la requête a été rejetée par la couche de scoping
           avant exécution.
         </div>
       )}
