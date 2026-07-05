@@ -52,25 +52,36 @@ function Home() {
           <path
             d="M 12 3 L 19.04 6.39 L 20.77 14 L 15.91 20.11 L 8.09 20.11 L 3.23 14 L 4.96 6.39 Z"
             stroke="var(--accent, #A8C090)"
-            strokeWidth="1"
+            strokeWidth="1.5"
             strokeLinejoin="round"
-            opacity="0.2"
+            strokeLinecap="round"
+            style={{
+              strokeDasharray: 55,
+              strokeDashoffset: 55,
+              animation: "hept-draw 2s cubic-bezier(0.4, 0, 0.2, 1) infinite",
+            }}
           />
           <circle
-            r="2"
+            cx="12"
+            cy="3"
+            r="1.8"
             fill="var(--foreground, #E8E0C9)"
-            style={{ animation: "heptagon-dot 1.75s linear infinite" }}
+            style={{
+              transformOrigin: "12px 3px",
+              animation: "hept-pulse 2s ease-in-out infinite",
+            }}
           />
           <style>{`
-            @keyframes heptagon-dot {
-              0%      { transform: translate(12px, 3px); }
-              14.28%  { transform: translate(19.04px, 6.39px); }
-              28.57%  { transform: translate(20.77px, 14px); }
-              42.85%  { transform: translate(15.91px, 20.11px); }
-              57.14%  { transform: translate(8.09px, 20.11px); }
-              71.42%  { transform: translate(3.23px, 14px); }
-              85.71%  { transform: translate(4.96px, 6.39px); }
-              100%    { transform: translate(12px, 3px); }
+            @keyframes hept-draw {
+              0%      { stroke-dashoffset: 55; opacity: 1; }
+              60%     { stroke-dashoffset: 0; opacity: 1; }
+              75%     { stroke-dashoffset: 0; opacity: 1; }
+              90%     { stroke-dashoffset: 0; opacity: 0.15; }
+              100%    { stroke-dashoffset: 55; opacity: 0.15; }
+            }
+            @keyframes hept-pulse {
+              0%, 100%  { transform: scale(1); opacity: 1; }
+              50%       { transform: scale(1.6); opacity: 0.7; }
             }
           `}</style>
         </svg>
