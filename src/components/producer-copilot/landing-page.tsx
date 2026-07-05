@@ -249,7 +249,7 @@ function HeptagonPattern({ opacity = 0.03 }: { opacity?: number }) {
 // Navbar
 // ─────────────────────────────────────────────────────────────────────────────
 
-function Navbar({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void; onDemo: () => void }) {
+function Navbar({ t, onLogin, onSignup }: { t: typeof T.en; onLogin: () => void; onSignup: () => void }) {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -278,9 +278,12 @@ function Navbar({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void;
         <div className="hidden md:flex items-center gap-6">
           {navLinks.map((l) => (<a key={l.href} href={l.href} className="text-sm text-muted-foreground hover:text-foreground transition-colors">{l.label}</a>))}
         </div>
-        {/* CTAs: "Log in" hidden on < sm, "Try free" always visible */}
+        {/* CTAs: "Log in" hidden on < sm, "Try free" always visible.
+            "Log in" opens the AuthScreen in login mode; "Try free" opens
+            it in signup mode. Neither starts the demo - the demo is only
+            triggered from the Hero's "View demo" button. */}
         <div className="flex items-center gap-2 sm:gap-3">
-          <button onClick={onDemo} className="hidden sm:block text-sm text-muted-foreground hover:text-foreground transition-colors">{t.navLogin}</button>
+          <button onClick={onLogin} className="hidden sm:block text-sm text-muted-foreground hover:text-foreground transition-colors">{t.navLogin}</button>
           <button onClick={onSignup} className="rounded-md bg-primary px-3 sm:px-4 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap">{t.navTry}</button>
           {/* Hamburger: only on < md */}
           <button className="md:hidden text-foreground ml-1" onClick={() => setMobileOpen(!mobileOpen)}>
@@ -293,7 +296,7 @@ function Navbar({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void;
           <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="md:hidden bg-background border-b border-border overflow-hidden">
             <div className="px-4 py-4 space-y-3">
               {navLinks.map((l) => (<a key={l.href} href={l.href} onClick={() => setMobileOpen(false)} className="block text-sm text-muted-foreground hover:text-foreground">{l.label}</a>))}
-              <button onClick={onDemo} className="block w-full text-left text-sm text-muted-foreground hover:text-foreground">{t.navLogin}</button>
+              <button onClick={() => { setMobileOpen(false); onLogin(); }} className="block w-full text-left text-sm text-muted-foreground hover:text-foreground">{t.navLogin}</button>
             </div>
           </motion.div>
         )}
@@ -592,15 +595,22 @@ function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l:
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface LandingPageProps { onSignup: () => void; onDemo: () => void; }
+interface LandingPageProps {
+  /** Opens the AuthScreen in login mode (used by the "Log in" button). */
+  onLogin: () => void;
+  /** Opens the AuthScreen in signup mode (used by "Try free" / "Get started free"). */
+  onSignup: () => void;
+  /** Starts the public demo (used by the Hero "View demo" button). */
+  onDemo: () => void;
+}
 
-export function LandingPage({ onSignup, onDemo }: LandingPageProps) {
+export function LandingPage({ onLogin, onSignup, onDemo }: LandingPageProps) {
   const lang = useCopilotStore.getState().lang;
   const setLang = useCopilotStore.getState().setLang;
   const t = T[lang];
   return (
     <div className="min-h-screen bg-background">
-      <Navbar t={t} onSignup={onSignup} onDemo={onDemo} />
+      <Navbar t={t} onLogin={onLogin} onSignup={onSignup} />
       <Hero t={t} onSignup={onSignup} onDemo={onDemo} />
       <SocialProof t={t} />
       <ProblemSolution t={t} />

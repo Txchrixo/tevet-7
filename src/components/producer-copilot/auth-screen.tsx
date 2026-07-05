@@ -48,7 +48,16 @@ const AUTH_T = {
   },
 };
 
-export function AuthScreen() {
+interface AuthScreenProps {
+  /**
+   * Which form to show first when the screen opens. Defaults to "login".
+   * The landing page passes "signup" when the user clicks "Try free" /
+   * "Get started free", and "login" when they click "Log in".
+   */
+  initialMode?: "login" | "signup";
+}
+
+export function AuthScreen({ initialMode = "login" }: AuthScreenProps = {}) {
   const showIdentityPicker = useCopilotStore((s) => s.showIdentityPicker);
   const setShowIdentityPicker = useCopilotStore((s) => s.setShowIdentityPicker);
 
@@ -58,10 +67,10 @@ export function AuthScreen() {
     return <IdentityPicker onBack={() => setShowIdentityPicker(false)} />;
   }
 
-  return <AuthForm />;
+  return <AuthForm initialMode={initialMode} />;
 }
 
-function AuthForm() {
+function AuthForm({ initialMode }: { initialMode: "login" | "signup" }) {
   const login = useCopilotStore((s) => s.login);
   const signup = useCopilotStore((s) => s.signup);
   const enterDemoMode = useCopilotStore((s) => s.enterDemoMode);
@@ -73,7 +82,7 @@ function AuthForm() {
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [name, setName] = React.useState("");
-  const [isSignup, setIsSignup] = React.useState(false);
+  const [isSignup, setIsSignup] = React.useState(initialMode === "signup");
   const [error, setError] = React.useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {

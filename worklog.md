@@ -583,3 +583,26 @@ Stage Summary:
 - `bun run lint` → exit 0. Dev server compiles clean (no runtime errors).
 - Backend untouched (agentic-service/ not modified). worklog.md only appended.
 - The 9th interview argument (onboarding wizard) is now visible end-to-end: a brand-new user signs up → creates a workspace → is routed through the 4-step wizard → connects their data → configures schema + roles → lands on the chat surface with a working agent.
+
+---
+Task ID: 44
+Agent: main
+Task: Fix landing page CTA wiring - "Log in" was starting the demo (Marie) and "Try free" was opening AuthScreen in login mode. User reported both buttons effectively led to login, which is wrong.
+
+Work Log:
+- Diagnosed root cause in src/components/producer-copilot/landing-page.tsx Navbar: the "Log in" button was wired to `onDemo` (starts demo) and "Try free" to `onSignup` (which only set showAuth=true, opening AuthScreen in its default = login mode). So even swapping handlers would leave both buttons pointing at the login form.
+- Fixed in 3 files:
+  1. src/components/producer-copilot/auth-screen.tsx: Added `initialMode?: "login" | "signup"` prop (default "login"). AuthForm now initializes `isSignup` from `initialMode === "signup"` so the form opens in the right mode.
+  2. src/app/page.tsx: Replaced `showAuth: boolean` state with `authIntent: "login" | "signup" | null`. LandingPage now receives `onLogin` (sets intent="login"), `onSignup` (sets intent="signup"), `onDemo` (tryDemoLogin). AuthScreen receives `initialMode={authIntent}`.
+  3. src/components/producer-copilot/landing-page.tsx: Navbar signature changed from `{onSignup, onDemo}` to `{onLogin, onSignup}`. Desktop "Log in" button → onLogin. Mobile hamburger "Log in" → onLogin (also closes the menu). "Try free" → onSignup (unchanged). Hero "Get started free" → onSignup (unchanged). Hero "View demo" → onDemo (unchanged, this is the ONLY demo trigger). Pricing + FinalCTA buttons → onSignup (unchanged). LandingPageProps now documents all 3 callbacks.
+- Lint: exit 0 (only 2 pre-existing font warnings in layout.tsx, unrelated).
+- Agent Browser verification (all 3 golden paths):
+  * "Log in" (desktop navbar) → AuthScreen opens with "Sign in" button + Email/Password only (login mode). ✓
+  * "Try free" (desktop navbar) → AuthScreen opens with "Create account" button + Name/Email/Password (signup mode). ✓
+  * "View demo" (Hero) → demo starts, "Bonjour Marie" chat surface renders. ✓
+  * Mobile hamburger "Log in" → AuthScreen in login mode. ✓
+  * No console errors, no runtime errors. dev.log: all GET / 200, POST /api/auth/login 200.
+
+Stage Summary:
+- The two navbar CTAs now lead to DIFFERENT forms (login vs signup) instead of both funneling to login. The demo is only triggered by the Hero "View demo" button, not by "Log in".
+- 3 files modified, 0 created. Backward compatible (AuthScreen initialMode defaults to "login").

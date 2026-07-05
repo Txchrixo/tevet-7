@@ -33,7 +33,10 @@ function Home() {
   const bootstrap = useCopilotStore((s) => s.bootstrap);
   const tenants = useCopilotStore((s) => s.tenants);
   const activeTenant = useCopilotStore((s) => s.activeTenant);
-  const [showAuth, setShowAuth] = React.useState(false);
+  // Tracks which form the user asked to see from the landing page.
+  // null = landing page visible; "login" = AuthScreen in login mode;
+  // "signup" = AuthScreen in signup mode.
+  const [authIntent, setAuthIntent] = React.useState<"login" | "signup" | null>(null);
 
   // Validate the stored JWT (if any) on first mount. Sets `authMode` to
   // "authenticated" / "anonymous" / "demo" depending on the outcome.
@@ -111,18 +114,21 @@ function Home() {
   }
 
   // Anonymous → LandingPage (Phase C1) with CTA to signup/demo.
-  if (authMode === "anonymous" && !showAuth) {
+  if (authMode === "anonymous" && authIntent === null) {
     return (
       <LandingPage
-        onSignup={() => setShowAuth(true)}
+        onLogin={() => setAuthIntent("login")}
+        onSignup={() => setAuthIntent("signup")}
         onDemo={() => useCopilotStore.getState().tryDemoLogin()}
       />
     );
   }
 
-  // AuthScreen (shown when user clicks "Sign up" / "Login" from landing).
-  if ((authMode === "anonymous") && showAuth) {
-    return <AuthScreen />;
+  // AuthScreen (shown when user clicks "Log in" / "Try free" from landing).
+  // authIntent drives the initial form mode so "Try free" opens the signup
+  // form and "Log in" opens the signin form.
+  if (authMode === "anonymous" && authIntent !== null) {
+    return <AuthScreen initialMode={authIntent} />;
   }
 
   // Authenticated but no tenants → CreateWorkspace (onboarding gate).
