@@ -101,7 +101,16 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
               </div>
             )}
 
-            <Markdown content={message.content} />
+            {/* While streaming with no content yet, show typing dots inside the card */}
+            {isStreaming && !message.content ? (
+              <div className="flex items-center gap-1.5 py-1">
+                <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
+              </div>
+            ) : (
+              <Markdown content={message.content} />
+            )}
 
             {response?.refused ? null : (
               !isStreaming && response?.sql && (

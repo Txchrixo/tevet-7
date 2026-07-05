@@ -581,6 +581,76 @@ async def _format_cross_producer(
     return answer, chart
 
 
+async def _format_generic_result(
+    question: str, result: QueryResult, producer_id: int | None
+) -> tuple[str, dict[str, Any] | None]:
+    """Generic result formatter for LLM-generated SQL (intent=unknown).
+
+    Phase A1: when the LLM generates SQL for a question that doesn't match
+    any DP-specific intent, this formatter displays the actual data as a
+    markdown table + detects numeric columns for a chart.
+    """
+    rows = result.as_dicts()
+    if not rows:
+        return "Aucun résultat pour cette requête.", None
+
+    first_row = rows[0]
+    col_names = list(first_row.keys())
+
+    # ── Build markdown table ──
+    header = "| " + " | ".join(col_names) + " |"
+    separator = "|" + "|".join(["---"] * len(col_names)) + "|"
+    table_rows = []
+    for row in rows[:20]:  # Limit to 20 rows in the table.
+        vals = []
+        for c in col_names:
+            v = row.get(c, "")
+            if isinstance(v, float):
+                vals.append(f"{v:.2f}".replace(".", ","))
+            else:
+                vals.append(str(v))
+        table_rows.append("| " + " | ".join(vals) + " |")
+    table_md = header + "\n" + separator + "\n" + "\n".join(table_rows)
+
+    # ── Summary line ──
+    if len(rows) == 1 and len(col_names) == 1:
+        # Single value (e.g., COUNT, SUM, AVG).
+        val = first_row[col_names[0]]
+        answer = f"**Résultat** : {val}"
+    elif len(rows) <= 5:
+        answer = f"Voici les résultats ({len(rows)} ligne(s)) :\n\n{table_md}"
+    else:
+        answer = f"Voici les {min(len(rows), 20)} premiers résultats (sur {len(rows)}) :\n\n{table_md}"
+
+    # ── Chart detection ──
+    # If there's a name/label column + a numeric column, build a bar chart.
+    chart = None
+    if len(rows) >= 2 and len(col_names) >= 2:
+        name_key = next(
+            (k for k in col_names if any(w in k.lower() for w in ("name", "label", "title", "category", "type", "status"))),
+            None,
+        )
+        numeric_key = next(
+            (k for k in col_names if k != name_key and isinstance(first_row.get(k), (int, float))),
+            None,
+        )
+        if name_key and numeric_key:
+            chart_data = [
+                {"name": str(r.get(name_key, "?")), "value": float(r.get(numeric_key, 0))}
+                for r in rows[:10]
+            ]
+            chart = {
+                "type": "bar",
+                "title": f"{numeric_key} par {name_key}",
+                "xKey": "name",
+                "series": [{"key": "value", "label": numeric_key, "color": "#A8C090"}],
+                "data": chart_data,
+                "unit": "",
+            }
+
+    return answer, chart
+
+
 async def format_answer(
     question: str,
     intent: str,
@@ -599,7 +669,9 @@ async def format_answer(
         return await _format_weekly_sales(question, result, producer_id)
     if intent == "cross_producer":
         return await _format_cross_producer(question, result)
-    return "Voici les résultats de votre requête.", None
+    # Phase A1: generic formatter for LLM-generated SQL (intent=unknown).
+    # Instead of saying "Voici les résultats", display the actual data.
+    return await _format_generic_result(question, result, producer_id)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
