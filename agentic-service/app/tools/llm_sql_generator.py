@@ -137,7 +137,14 @@ RULES (CRITICAL — violations will be rejected):
 2. Do NOT include a WHERE clause for row-level security (scope). The system
    injects it automatically. Just write the business logic.
 3. Use the exact table and column names from the schema above.
-4. Use SQLite-compatible SQL (the database is SQLite in development).
+4. Use STRICT SQLite syntax. The database is SQLite (NOT PostgreSQL).
+   - Do NOT use date_trunc(), use strftime() or date() instead.
+   - Do NOT use INTERVAL, use date('now', '-7 days') instead.
+   - Do NOT use CURRENT_DATE, use date('now') instead.
+   - Do NOT use EXTRACT(), use strftime('%m', column) instead.
+   - Example: "this month" → WHERE date_column >= date('now', 'start of month')
+   - Example: "last 7 days" → WHERE date_column >= date('now', '-7 days')
+   - Example: "last 30 days" → WHERE date_column >= date('now', '-30 days')
 5. Keep the query simple and efficient. Avoid subqueries unless necessary.
 6. If the question is about "top" or "best", use ORDER BY ... DESC LIMIT.
 7. If the question is about a total/sum, use SUM() with ROUND(..., 2).
@@ -145,10 +152,13 @@ RULES (CRITICAL — violations will be rejected):
 9. If the question is about an average, use AVG() with ROUND(..., 2).
 10. If the question asks for a breakdown by category, use GROUP BY.
 11. If the question mentions a time period (e.g., "this month", "last week"),
-    add a WHERE clause on the date column. Use '2024-07-01' as "current month start".
+    add a WHERE clause on the date column using SQLite date functions.
 12. If the question is about another producer's data or a cross-tenant query,
     return "REFUSE" (the user is not authorized).
 13. If you cannot generate SQL for the question, return "CANNOT_GENERATE".
+14. Do NOT add a semicolon at the end.
+15. Do NOT include the scope column in your WHERE clause (e.g. do NOT add
+    WHERE producer_id = X — the system adds it automatically).
 
 USER CONTEXT:
 - Role: {role}
