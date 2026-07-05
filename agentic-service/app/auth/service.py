@@ -138,6 +138,12 @@ async def signup(email: str, password: str, name: str) -> dict[str, Any]:
         )
         row = result.fetchone()
     logger.info("signup — user created id=%d email=%s name=%s", row.id, row.email, row.name)
+    # Phase C4: send welcome email (fire-and-forget, non-blocking).
+    try:
+        from app.notifications import notify_welcome
+        notify_welcome(name, email)
+    except Exception:  # noqa: BLE001 — never block signup on email
+        pass
     return _row_to_user(row)
 
 
