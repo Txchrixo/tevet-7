@@ -51,6 +51,7 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
   }
 
   const response = message.response;
+  const isStreaming = message.streaming;
   const totalTokens = response ? response.tokensIn + response.tokensOut : 0;
   const latencyS = response
     ? (response.latencyMs / 1000)
@@ -103,7 +104,7 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
             <Markdown content={message.content} />
 
             {response?.refused ? null : (
-              response?.sql && (
+              !isStreaming && response?.sql && (
                 <div className="mt-3">
                   <SqlBlock
                     sql={response.sql}
@@ -114,13 +115,14 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
               )
             )}
 
-            {response?.chart && !response.refused && (
+            {response?.chart && !response.refused && !isStreaming && (
               <div className="mt-3">
                 <ChartDisplay spec={response.chart} />
               </div>
             )}
 
-            {/* Footer line — micro-labels in Manrope caption uppercase muted */}
+            {/* Footer line — hidden while streaming (Phase A2) */}
+            {!isStreaming && (
             <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] uppercase tracking-wide text-muted-foreground">
               {response?.refused ? (
                 <span className="inline-flex items-center gap-1 text-muted-foreground">
@@ -158,6 +160,7 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
                 cliquez pour voir la trace →
               </span>
             </div>
+            )}
           </div>
         </div>
       </div>

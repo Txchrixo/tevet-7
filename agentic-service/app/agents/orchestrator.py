@@ -341,17 +341,56 @@ def _format_units(value: float, unit: str | None = None) -> str:
 async def _format_top_products(
     question: str, result: QueryResult, producer_id: int | None
 ) -> tuple[str, dict[str, Any] | None]:
-    """Top-products answer + bar chart spec (markdown-formatted)."""
+    """Top-products answer + bar chart spec (markdown-formatted).
+
+    Phase A1: column-name agnostic — finds the name/label column and the
+    numeric columns by type, not by hardcoded alias names. Works with both
+    the rule-based generator (AS units_sold, AS revenue) and the LLM
+    generator (AS total_quantity, AS total_amount, etc.).
+    """
     rows = result.as_dicts()
     if not rows:
         return (
             "Aucune vente enregistrée ce mois-ci pour votre exploitation.",
             None,
         )
-    total_revenue = sum(float(r.get("revenue", 0)) for r in rows)
+
+    # ── Flexible column detection ──
+    first_row = rows[0]
+    all_keys = list(first_row.keys())
+
+    # Find name/label column (for display).
+    name_key = next(
+        (k for k in all_keys if k.lower() in ("name", "product_name", "label", "title", "producer_name", "display_name")),
+        all_keys[0] if all_keys else "name",
+    )
+
+    # Find units/quantity column (numeric, not revenue).
+    units_key = next(
+        (k for k in all_keys if any(w in k.lower() for w in ("unit", "quantity", "count", "qty", "total_quantity", "sold", "freq"))),
+        None,
+    )
+
+    # Find revenue/amount column (numeric, money-related).
+    revenue_key = next(
+        (k for k in all_keys if any(w in k.lower() for w in ("revenue", "amount", "total", "sum", "money", "price", "ca"))),
+        None,
+    )
+
+    # If no specific units/revenue found, use any remaining numeric columns.
+    if not units_key and not revenue_key:
+        # Just use all numeric columns.
+        numeric_keys = [k for k in all_keys if k != name_key]
+        if len(numeric_keys) >= 2:
+            units_key = numeric_keys[0]
+            revenue_key = numeric_keys[1]
+        elif len(numeric_keys) == 1:
+            units_key = numeric_keys[0]
+
+    total_revenue = sum(float(r.get(revenue_key, 0)) for r in rows) if revenue_key else 0
     top_row = rows[0]
-    top_name = top_row.get("name", "?")
-    top_revenue = float(top_row.get("revenue", 0))
+    top_name = top_row.get(name_key, "?")
+    top_revenue = float(top_row.get(revenue_key, 0)) if revenue_key else 0
     top_pct = int((top_revenue / total_revenue * 100)) if total_revenue > 0 else 0
     if producer_id is not None:
         prod_name = await _producer_name(producer_id)
@@ -361,19 +400,26 @@ async def _format_top_products(
     lines: list[str] = []
     chart_data: list[dict[str, Any]] = []
     for i, row in enumerate(rows, start=1):
-        name = row.get("name", "?")
-        units = int(float(row.get("units_sold", 0)))
-        revenue = float(row.get("revenue", 0))
-        lines.append(f"{i}. **{name}** — {units} unités · {_format_eur(revenue)}")
+        name = row.get(name_key, "?")
+        units = int(float(row.get(units_key, 0))) if units_key else 0
+        revenue = float(row.get(revenue_key, 0)) if revenue_key else 0
+        if revenue_key and units_key:
+            lines.append(f"{i}. **{name}** — {units} unités · {_format_eur(revenue)}")
+        elif units_key:
+            lines.append(f"{i}. **{name}** — {units}")
+        elif revenue_key:
+            lines.append(f"{i}. **{name}** — {_format_eur(revenue)}")
+        else:
+            lines.append(f"{i}. **{name}**")
         chart_data.append({"name": name, "units_sold": float(units), "revenue": revenue})
     insight = (
         f"\n\nLes {top_name.lower()} représentent **{top_pct} %** de votre "
         "chiffre d'affaires du mois. Pensez à anticiper le réassort pour le week-end."
-    )
+    ) if total_revenue > 0 else ""
     answer = intro + "\n".join(lines) + insight
     chart = {
         "type": "bar",
-        "title": "Top 5 produits — ce mois-ci",
+        "title": "Top 5 — ce mois-ci",
         "xKey": "name",
         "series": [
             {"key": "units_sold", "label": "Unités vendues", "color": "#A8C090"}
