@@ -411,7 +411,7 @@ class LLMOrchestrator:
                     "content": h.get("content", ""),
                 })
 
-        messages.append({"role": "user", "content": user_message})
+        messages.append({"role": "user", "content": safe_message})
 
         # ── Step 1: LLM analysis (function calling) ──
         t = time.monotonic()
