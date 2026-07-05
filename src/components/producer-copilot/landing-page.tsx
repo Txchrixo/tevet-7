@@ -331,44 +331,8 @@ function Navbar({ t, onLogin, onSignup }: { t: typeof T.en; onLogin: () => void;
 function Hero({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void; onDemo: () => void }) {
   return (
     <section className="relative pt-32 pb-20 px-4 overflow-hidden">
-      {/*
-        Painted desktop wallpaper behind the demo window.
-        The art_bg oil painting fills the Hero section as the "desktop
-        wallpaper". Darkened (brightness 0.2) so the painterly texture reads
-        as a moody backdrop, not a bright image. The InteractiveDemo window
-        floats on top (opaque bg-card + border + shadow) like an app window
-        on a painted desktop — matching the Cursor reference.
-      */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div
-          className="absolute inset-0"
-          style={{
-            backgroundImage: "url('/art-bg.webp')",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            filter: "brightness(0.2) saturate(0.55) contrast(1.1)",
-          }}
-        />
-        {/* Top readability scrim: darkens the painting behind the headline +
-            buttons so light text stays legible. Fades to transparent toward
-            the demo window so the painting shows through around the window. */}
-        <div
-          className="absolute inset-x-0 top-0 h-1/2"
-          style={{
-            background:
-              "linear-gradient(to bottom, var(--background) 0%, color-mix(in srgb, var(--background) 55%, transparent) 60%, transparent 100%)",
-          }}
-        />
-        {/* Bottom transition: fades the painting into the page background so
-            the seam into the next section (SocialProof) is clean. */}
-        <div
-          className="absolute inset-x-0 bottom-0 h-1/4"
-          style={{
-            background:
-              "linear-gradient(to bottom, transparent 0%, var(--background) 100%)",
-          }}
-        />
-      </div>
+      <HeptagonPattern opacity={0.04} />
+      <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent pointer-events-none" />
       <div className="relative max-w-4xl mx-auto text-center">
         {/* Badge scales in with a soft overshoot — "chip materializing" */}
         <Reveal variants={scaleIn} amount={0.5} className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 mb-6">
@@ -396,11 +360,21 @@ function Hero({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void; o
           </RevealItem>
         </RevealGroup>
         {/* Demo card rises with a subtle 3D tilt — "window opening into the product".
-            Opaque bg-card + border + shadow-2xl + ring so the window reads as
-            a distinct floating surface on top of the painted wallpaper. */}
+            The card sits inside a framed artwork background (a "cadre"): the
+            art_bg painting is full-bleed within the frame, and the opaque demo
+            window floats on top of it like an app window on a desktop wallpaper. */}
         <Reveal variants={cardPlace} amount={0.2} delay={0.2} className="mt-12 relative" style={{ perspective: "1200px" }}>
-          <div className="rounded-xl border border-border bg-card overflow-hidden shadow-2xl ring-1 ring-black/40">
-            <InteractiveDemo t={t} />
+          <div
+            className="rounded-2xl p-3 sm:p-5 border border-border/60 shadow-2xl"
+            style={{
+              backgroundImage: "url('/art-bg.webp')",
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+          >
+            <div className="rounded-xl border border-border bg-card overflow-hidden shadow-xl ring-1 ring-black/30">
+              <InteractiveDemo t={t} />
+            </div>
           </div>
         </Reveal>
       </div>

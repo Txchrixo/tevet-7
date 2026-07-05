@@ -698,3 +698,23 @@ Work Log:
 Stage Summary:
 - The painted wallpaper now lives behind the InteractiveDemo window in the Hero (where the user wanted it), giving the "app window on a painted desktop wallpaper" effect from the Cursor reference. The FinalCTA is back to its clean heptagon-only state.
 - 0 files added (art-bg.webp already in public/ from Task 46), 1 file modified (landing-page.tsx: Hero + FinalCTA).
+
+---
+Task ID: 48
+Agent: main
+Task: Revert the full-Hero wallpaper; instead add the artwork as a framed background layer ONLY behind the preview window (a "cadre"), full-bleed within the frame, window floating on top. Minimal diff, no other changes.
+
+Work Log:
+- Reverted the Hero section background to its original state: HeptagonPattern opacity 0.04 + the from-primary/5 gradient. Removed the full-section wallpaper layer + top scrim + bottom transition that were added in Task 47.
+- Added ONLY a framed artwork layer immediately around the preview window:
+  * The existing demo card wrapper (the <Reveal> with cardPlace variant) now wraps a NEW outer container: rounded-2xl, p-3 (sm:p-5), border border-border/60, shadow-2xl, with background-image: url('/art-bg.webp'), background-size cover, background-position center. This is the "cadre" — the painting is full-bleed within this frame.
+  * The opaque demo window (rounded-xl border border-border bg-card overflow-hidden shadow-xl ring-1 ring-black/30) sits INSIDE the frame with the padding (p-3/sm:p-5) showing the painting as a decorative matting/border on all 4 sides.
+- No other components, styles, copy, or logic touched. FinalCTA remains reverted (heptagon-only, from Task 47). The rest of the landing page is unchanged.
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings in layout.tsx).
+  * Dev server: GET / 200, clean compile, zero runtime errors.
+  * Agent Browser: screenshot captured, demo role switcher (Alexis → customer orders table with Ferme du Vallon / Vignoble / Maraîchage) still works, all subsequent sections render.
+  * VLM analysis confirmed all 5 criteria: (1) artwork visible ONLY as a framed border/matting around the demo window, NOT covering the whole hero, (2) the headline/buttons area is the normal dark page background, (3) demo window clearly sits ON TOP of the artwork frame, opaque, with the painting visible as a thin border on all 4 sides, (4) headline readable, (5) overall reads as the window being matted/framed by the artwork (decorative frame immediately around the window, not a full-section wallpaper).
+
+Stage Summary:
+- The artwork now frames only the preview window (a "cadre"), matching the user's request. Minimal diff: only the Hero section's demo-card block was modified (reverted the full-section wallpaper + added the framed container). 1 file changed (landing-page.tsx), 0 files added.
