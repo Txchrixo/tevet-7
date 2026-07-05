@@ -27,7 +27,7 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from app.auth.dependencies import get_current_user
@@ -171,13 +171,27 @@ async def signup_endpoint(body: SignupRequest) -> dict[str, Any]:
 
 
 @router.post("/auth/login")
-async def login_endpoint(body: LoginRequest) -> dict[str, Any]:
+async def login_endpoint(body: LoginRequest, request: Request) -> dict[str, Any]:
     """Verify credentials and return a JWT with the user's active tenant.
 
     Returns 401 on wrong email/password. The JWT's claims include
     ``tenant_id``, ``role``, ``producer_id`` from the user's active
     membership — set by ``POST /api/tenants/{id}/activate``.
+
+    Rate-limited: 5 attempts per minute per IP (brute-force protection).
     """
+    # ── Rate limit (brute-force protection) ──
+    from app.auth.rate_limit import check_auth_rate_limit, get_client_ip
+    client_ip = get_client_ip(request)
+    allowed, retry_after = check_auth_rate_limit(client_ip)
+    if not allowed:
+        logger.warning("Auth rate limit exceeded for IP=%s", client_ip)
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Trop de tentatives. Réessayez dans {int(retry_after) + 1}s.",
+            headers={"Retry-After": str(int(retry_after) + 1)},
+        )
+
     tracer, ctx, span = _start_auth_span("auth_login", email=body.email)
     t0 = time.monotonic()
     try:
