@@ -110,6 +110,7 @@ const T = {
       { title: "Product", links: ["Features", "Pricing", "Demo", "Docs"] },
       { title: "Company", links: ["About", "Contact"] },
       { title: "Legal", links: ["Terms", "Privacy"] },
+      { title: "Connect", links: ["X (Twitter)", "GitHub", "LinkedIn"] },
     ],
     socialLinks: [
       { label: "GitHub", href: "https://github.com/Txchrixo/tevet-7" },
@@ -207,6 +208,7 @@ const T = {
       { title: "Produit", links: ["Fonctionnalités", "Tarifs", "Démo", "Documentation"] },
       { title: "Entreprise", links: ["À propos", "Contact"] },
       { title: "Légal", links: ["CGV", "Confidentialité"] },
+      { title: "Connect", links: ["X (Twitter)", "GitHub", "LinkedIn"] },
     ],
     socialLinks: [
       { label: "GitHub", href: "https://github.com/Txchrixo/tevet-7" },
@@ -554,6 +556,7 @@ function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l:
       "Fonctionnalités": "#features", "Tarifs": "#pricing", "Démo": "#demo", "Documentation": "/docs",
       "À propos": "/about", "Contact": "/contact",
       "CGV": "/terms", "Confidentialité": "/privacy",
+      "X (Twitter)": "https://x.com", "GitHub": "https://github.com/Txchrixo/tevet-7", "LinkedIn": "#",
     };
     return map[link] || "#";
   };
@@ -568,7 +571,7 @@ function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l:
         {/* 3 columns */}
         <div className="flex flex-wrap gap-8 mb-8">
           {t.footerCols.map((col) => (
-            <div key={col.title} className="w-1/2 sm:w-1/3 md:w-auto lg:flex-1 min-w-[120px]">
+            <div key={col.title} className="w-1/2 sm:w-1/4 md:w-auto lg:flex-1 min-w-[120px]">
               <h4 className="text-xs font-medium text-foreground mb-3 uppercase tracking-wider">{col.title}</h4>
               <ul className="space-y-2">{col.links.map((link) => (<li key={link}><a href={linkHref(link)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">{link}</a></li>))}</ul>
             </div>
@@ -577,11 +580,7 @@ function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l:
         {/* Bottom bar: copyright + social links + language switcher */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 border-t border-border/50">
           <p className="text-xs text-muted-foreground">© 2025 {APP_NAME}. {t.rights}</p>
-          <div className="flex items-center gap-4">
-            {t.socialLinks.map((s) => (<a key={s.label} href={s.href} className="text-xs text-muted-foreground hover:text-foreground transition-colors">{s.label}</a>))}
-            <span className="text-border">|</span>
-            <LanguageSwitcher lang={lang} setLang={setLang} />
-          </div>
+          <LanguageSwitcher lang={lang} setLang={setLang} />
         </div>
       </div>
     </footer>
