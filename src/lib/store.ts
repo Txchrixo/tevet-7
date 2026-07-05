@@ -388,8 +388,6 @@ async function callBackendChat(message: string): Promise<AssistantResponse> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  // When a demo identity override is active, send body identity (no JWT) so
-  // the backend uses the override's producer_id/role instead of the JWT's.
   const useJwt = token && !override;
   if (useJwt) headers["authorization"] = `Bearer ${token}`;
 
@@ -415,15 +413,97 @@ async function callBackendChat(message: string): Promise<AssistantResponse> {
     }
   }
   if (!res.ok) {
-    const message =
+    const msg =
       typeof parsed === "object" && parsed && "detail" in parsed
         ? String((parsed as { detail: unknown }).detail)
         : typeof parsed === "object" && parsed && "message" in parsed
           ? String((parsed as { message: unknown }).message)
           : `Chat backend ${res.status} ${res.statusText}`;
-    throw new Error(message);
+    throw new Error(msg);
   }
   return adaptBackendResponse(parsed);
+}
+
+/**
+ * Phase A2 — SSE streaming chat. Reads the stream chunk by chunk and
+ * updates the assistant message progressively. Falls back to the
+ * non-streaming callBackendChat if the stream fails.
+ */
+async function callBackendChatStream(
+  message: string,
+  onChunk: (chunk: string) => void,
+  onStep: (title: string) => void,
+): Promise<AssistantResponse> {
+  const token = getAuthToken();
+  const override = useCopilotStore.getState().demoIdentityOverride;
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  const useJwt = token && !override;
+  if (useJwt) headers["authorization"] = `Bearer ${token}`;
+
+  const body: Record<string, unknown> = { message };
+  if (override) {
+    body.identity_id = override.id;
+    body.producer_id = override.producerId;
+    body.role = override.kind;
+  }
+
+  const res = await fetch("/api/chat/stream", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok || !res.body) {
+    // Fallback to non-streaming.
+    return callBackendChat(message);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullResponse: AssistantResponse | null = null;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE events (separated by \n\n).
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || "";
+
+      for (const evt of events) {
+        const line = evt.trim();
+        if (!line.startsWith("data: ")) continue;
+        const jsonStr = line.slice(6);
+        try {
+          const data = JSON.parse(jsonStr);
+          if (data.type === "step") {
+            onStep(data.title || "");
+          } else if (data.type === "chunk") {
+            onChunk(data.content || "");
+          } else if (data.type === "done") {
+            fullResponse = adaptBackendResponse(data.response);
+          } else if (data.type === "error") {
+            throw new Error(data.message || "stream error");
+          }
+        } catch {
+          // Ignore parse errors on partial data.
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!fullResponse) {
+    // Fallback if no done event received.
+    return callBackendChat(message);
+  }
+  return fullResponse;
 }
 
 export const useCopilotStore = create<CopilotState>((set, get) => ({
@@ -1200,21 +1280,56 @@ async function runBackendAssistant(
   });
 
   try {
-    const response = await callBackendChat(userText);
-    const assistantMessage: ChatMessage = {
-      id: makeId("a"),
+    // Phase A2 — use streaming SSE for real-time answer display.
+    const assistantId = makeId("a");
+    // Create a placeholder assistant message that will be updated as chunks arrive.
+    const placeholderMessage: ChatMessage = {
+      id: assistantId,
       role: "assistant",
-      content: response.answer,
-      response,
+      content: "",
       createdAt: Date.now(),
-      streaming: false,
+      streaming: true,
     };
-    const inspectorWasOpen = get().inspectorOpen;
     set({
-      messages: [...get().messages, assistantMessage],
-      isStreaming: false,
-      selectedMessageId: inspectorWasOpen ? assistantMessage.id : null,
+      messages: [...get().messages, placeholderMessage],
     });
+
+    const response = await callBackendChatStream(
+      userText,
+      // onChunk — append text to the streaming message.
+      (chunk) => {
+        const msgs = get().messages;
+        const idx = msgs.findIndex((m) => m.id === assistantId);
+        if (idx >= 0) {
+          const updated = [...msgs];
+          updated[idx] = { ...updated[idx], content: updated[idx].content + chunk };
+          set({ messages: updated });
+        }
+      },
+      // onStep — could show step progress in the UI (future enhancement).
+      () => {},
+    );
+
+    // Finalize the message with the full response.
+    const inspectorWasOpen = get().inspectorOpen;
+    const msgs = get().messages;
+    const idx = msgs.findIndex((m) => m.id === assistantId);
+    if (idx >= 0) {
+      const updated = [...msgs];
+      updated[idx] = {
+        ...updated[idx],
+        content: response.answer,
+        response,
+        streaming: false,
+      };
+      set({
+        messages: updated,
+        isStreaming: false,
+        selectedMessageId: inspectorWasOpen ? assistantId : null,
+      });
+    } else {
+      set({ isStreaming: false });
+    }
   } catch (err) {
     const message =
       err instanceof Error ? err.message : "Erreur inconnue";

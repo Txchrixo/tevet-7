@@ -44,6 +44,7 @@ import logging
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.agents.orchestrator import AgentOrchestrator
@@ -382,3 +383,137 @@ async def get_trace(trace_id: str) -> dict[str, Any]:
     if ca is not None and hasattr(ca, "isoformat"):
         row["created_at"] = ca.isoformat()
     return row
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /chat/stream — SSE streaming version (Phase A2)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+@router.post("/chat/stream")
+async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
+    """SSE streaming version of /chat.
+
+    Sends Server-Sent Events:
+    - {"type":"step","title":"Génération SQL..."} — progress updates
+    - {"type":"chunk","content":"Vos "} — answer text chunks (word by word)
+    - {"type":"done","response":{...full envelope...}} — final response
+
+    The frontend reads the stream and updates the message progressively.
+    Falls back to the non-streaming flow if any error occurs.
+    """
+    import asyncio
+    import json as json_mod
+
+    async def event_stream():
+        try:
+            # ── Auth (same dual-mode as /chat) ──
+            jwt_ctx: TenantContext | None = try_get_tenant_context(request)
+            if jwt_ctx is not None:
+                if not jwt_ctx.role or not jwt_ctx.tenant_id:
+                    yield f"data: {json_mod.dumps({'type': 'error', 'message': 'no active tenant'})}\n\n"
+                    return
+                role = jwt_ctx.role if jwt_ctx.role in ("producer", "admin") else "producer"
+                producer_id = jwt_ctx.producer_id
+                identity_id = jwt_ctx.email or f"user_{jwt_ctx.user_id}"
+                tenant_id = jwt_ctx.tenant_id
+            else:
+                if not req.identity_id or not req.role:
+                    yield f"data: {json_mod.dumps({'type': 'error', 'message': 'auth required'})}\n\n"
+                    return
+                role = req.role
+                producer_id = req.producer_id
+                identity_id = req.identity_id
+                tenant_id = "dp"
+
+            # ── Build tools (same as /chat) ──
+            yield f"data: {json_mod.dumps({'type': 'step', 'title': 'Connexion aux données…'})}\n\n"
+            try:
+                connector = await get_connector_for_tenant(tenant_id)
+            except TenantNotOnboardedError:
+                envelope = {
+                    "answer": "Votre workspace n'est pas encore configuré. Complétez l'onboarding pour activer l'agent.",
+                    "sql": None, "scope_clause": None, "chart": None,
+                    "tokens_in": 0, "tokens_out": 0, "latency_ms": 0,
+                    "tool_calls": [], "steps": [], "security_checks": [],
+                    "refused": True, "tables_touched": [], "sources": [],
+                    "ops_analysis": None, "forecast_predictions": None, "trace_id": None,
+                    "not_onboarded": True,
+                }
+                yield f"data: {json_mod.dumps({'type': 'done', 'response': envelope})}\n\n"
+                return
+
+            schema = connector.get_schema()
+            allowed_tables = connector.get_allowed_tables(role)
+            scope_column = "producer_id" if role == "producer" else None
+            scope_value = producer_id if role == "producer" else None
+
+            sql_tool = SqlReadTool(
+                connector=connector, schema=schema,
+                allowed_tables=allowed_tables, scope_column=scope_column,
+                scope_value=scope_value, role=role,
+            )
+            rag_tool = RagSearchTool(
+                connector=connector, tenant_id=tenant_id,
+                producer_id=producer_id, role=role, tracer=get_tracer(),
+            )
+            forecast_tool = ForecastTool(
+                connector=connector, tenant_id=tenant_id,
+                producer_id=producer_id, role=role, tracer=get_tracer(),
+            )
+            orchestrator = AgentOrchestrator(
+                sql_tool=sql_tool, role=role, producer_id=producer_id,
+                identity_id=identity_id, tracer=get_tracer(),
+                rag_tool=rag_tool, forecast_tool=forecast_tool,
+            )
+
+            # ── Run the agent ──
+            yield f"data: {json_mod.dumps({'type': 'step', 'title': 'Analyse de la question…'})}\n\n"
+            response = await orchestrator.run(req.message)
+
+            # Build the full envelope (same as /chat).
+            envelope = {
+                "answer": response.answer,
+                "sql": response.sql,
+                "scope_clause": response.scope_clause,
+                "chart": response.chart,
+                "tokens_in": response.tokens_in,
+                "tokens_out": response.tokens_out,
+                "latency_ms": response.latency_ms,
+                "tool_calls": response.tool_calls,
+                "steps": response.steps,
+                "security_checks": response.security_checks,
+                "refused": response.refused,
+                "tables_touched": response.tables_touched,
+                "sources": response.sources,
+                "ops_analysis": response.ops_analysis,
+                "forecast_predictions": response.forecast_predictions,
+                "trace_id": response.trace_id,
+            }
+
+            # ── Stream the answer word by word ──
+            answer = response.answer or ""
+            # Split into words but keep the separators (spaces, newlines).
+            import re
+            words = re.findall(r'\S+\s*|\s+', answer)
+            for word in words:
+                yield f"data: {json_mod.dumps({'type': 'chunk', 'content': word})}\n\n"
+                # Small delay for the typing effect (20ms per word).
+                await asyncio.sleep(0.02)
+
+            # ── Final event with the full envelope ──
+            yield f"data: {json_mod.dumps({'type': 'done', 'response': envelope})}\n\n"
+
+        except Exception as exc:
+            import json as json_mod
+            yield f"data: {json_mod.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
