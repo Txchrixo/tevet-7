@@ -85,7 +85,7 @@ export function ChatMessage({ message, selected, onSelect, isLast }: ChatMessage
               }
             }}
             className={cn(
-              "group cursor-pointer rounded-md border bg-background p-4 transition-colors",
+              "group cursor-pointer rounded-lg border bg-background p-4 transition-colors",
               response?.refused
                 ? "border-dashed border-border"
                 : "border-border",
@@ -189,7 +189,7 @@ export function TypingIndicator() {
         <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-accent">
           <BrandMark size={18} />
         </span>
-        <div className="rounded-md border border-border bg-background px-4 py-3">
+        <div className="rounded-lg border border-border bg-background px-4 py-3">
           <div className="flex items-center gap-1">
             {[0, 1, 2].map((i) => (
               <motion.span

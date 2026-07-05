@@ -16,6 +16,7 @@ import {
   Shield, Database, Zap, BarChart3, Lock, Users,
   ArrowRight, Check, Menu, X, ChevronDown,
   MessageSquare, Sparkles, TrendingUp, AlertTriangle,
+  Globe,
 } from "lucide-react";
 import { APP_NAME, APP_TAGLINE } from "@/lib/constants";
 import { BrandMark, BrandLogo } from "@/components/producer-copilot/brand-mark";
@@ -210,7 +211,7 @@ interface DemoScenario {
 const DEMO_SCENARIOS: DemoScenario[] = [
   {
     role: "producteur",
-    roleLabel: "Producteur",
+    roleLabel: "Marc · Producteur",
     q: "Quels sont mes 5 produits les plus vendus ce mois-ci ?",
     summary: "Voici vos 5 produits les plus vendus ce mois-ci. Les tomates représentent 22% de votre chiffre d'affaires.",
     table: {
@@ -239,38 +240,8 @@ const DEMO_SCENARIOS: DemoScenario[] = [
     chartColor: "accent",
   },
   {
-    role: "admin",
-    roleLabel: "Admin marketplace",
-    q: "Quel producteur a généré le plus de ventes ce mois-ci ?",
-    summary: "Voici le classement des producteurs par ventes ce mois-ci. La Ferme du Vallon est en tête avec 1 455,55 €.",
-    table: {
-      headers: ["Producteur", "Commandes", "Chiffre d'affaires"],
-      rows: [
-        ["Ferme du Vallon", "123", "1 455,55 €"],
-        ["Maraîchage Bio Soleil", "98", "1 203,20 €"],
-        ["Élevage du Vernet", "67", "890,40 €"],
-        ["Vignoble des Coteaux", "45", "1 739,49 €"],
-        ["Fromagerie du Col", "34", "542,10 €"],
-      ],
-    },
-    sql: "SELECT p.name AS name, COUNT(o.id) AS commandes, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN orders AS o ON oi.order_id = o.id JOIN producers AS p ON oi.producer_id = p.id GROUP BY p.name ORDER BY revenue DESC LIMIT 5",
-    scope: "FULL ACCESS",
-    tokens: "1 450",
-    latency: "3,1",
-    tagLabel: "SQL EXÉCUTÉ",
-    chartTitle: "Ventes par producteur",
-    chartData: [
-      { name: "Vallon", value: 1456, display: "1 456 €" },
-      { name: "Bio Soleil", value: 1203, display: "1 203 €" },
-      { name: "Vernet", value: 890, display: "890 €" },
-      { name: "Coteaux", value: 1739, display: "1 739 €" },
-      { name: "Col", value: 542, display: "542 €" },
-    ],
-    chartColor: "accent",
-  },
-  {
     role: "client",
-    roleLabel: "Client",
+    roleLabel: "Alexis · Client",
     q: "Quelles sont mes dernières commandes ?",
     summary: "Voici vos 5 dernières commandes. Votre prochaine livraison est prévue samedi 14 juillet.",
     table: {
@@ -295,6 +266,36 @@ const DEMO_SCENARIOS: DemoScenario[] = [
       { name: "07/07", value: 27, display: "27 €" },
       { name: "05/07", value: 16, display: "16 €" },
       { name: "03/07", value: 63, display: "63 €" },
+    ],
+    chartColor: "accent",
+  },
+  {
+    role: "admin",
+    roleLabel: "Maxime · Admin",
+    q: "Quel producteur a généré le plus de ventes ce mois-ci ?",
+    summary: "Voici le classement des producteurs par ventes ce mois-ci. La Ferme du Vallon est en tête avec 1 455,55 €.",
+    table: {
+      headers: ["Producteur", "Commandes", "Chiffre d'affaires"],
+      rows: [
+        ["Ferme du Vallon", "123", "1 455,55 €"],
+        ["Maraîchage Bio Soleil", "98", "1 203,20 €"],
+        ["Élevage du Vernet", "67", "890,40 €"],
+        ["Vignoble des Coteaux", "45", "1 739,49 €"],
+        ["Fromagerie du Col", "34", "542,10 €"],
+      ],
+    },
+    sql: "SELECT p.name AS name, COUNT(o.id) AS commandes, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN orders AS o ON oi.order_id = o.id JOIN producers AS p ON oi.producer_id = p.id GROUP BY p.name ORDER BY revenue DESC LIMIT 5",
+    scope: "FULL ACCESS",
+    tokens: "1 450",
+    latency: "3,1",
+    tagLabel: "SQL EXÉCUTÉ",
+    chartTitle: "Ventes par producteur",
+    chartData: [
+      { name: "Vallon", value: 1456, display: "1 456 €" },
+      { name: "Bio Soleil", value: 1203, display: "1 203 €" },
+      { name: "Vernet", value: 890, display: "890 €" },
+      { name: "Coteaux", value: 1739, display: "1 739 €" },
+      { name: "Col", value: 542, display: "542 €" },
     ],
     chartColor: "accent",
   },
@@ -357,22 +358,7 @@ function InteractiveDemo() {
         </div>
       </div>
 
-      {/* Role selector tabs (Producteur / Gestionnaire / Analyste) */}
-      <div className="flex border-b border-border">
-        {DEMO_SCENARIOS.map((s, i) => (
-          <button
-            key={s.role}
-            onClick={() => setActiveIdx(i)}
-            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
-              i === activeIdx
-                ? "text-foreground border-b-2 border-accent bg-secondary/10"
-                : "text-muted-foreground hover:text-foreground hover:bg-secondary/5"
-            }`}
-          >
-            {s.roleLabel}
-          </button>
-        ))}
-      </div>
+
 
       {/* Chat thread */}
       <div className="p-4 space-y-4 text-left">
@@ -386,7 +372,7 @@ function InteractiveDemo() {
             transition={{ duration: 0.15 }}
             className="flex justify-end"
           >
-            <div className="max-w-[80%] rounded-md rounded-br-sm bg-primary px-3 py-2 text-sm text-foreground text-left">
+            <div className="max-w-[80%] rounded-lg rounded-br-sm bg-primary px-3 py-2 text-sm text-foreground text-left">
               {active.q}
             </div>
           </motion.div>
@@ -409,7 +395,7 @@ function InteractiveDemo() {
               </span>
 
               {/* Response card */}
-              <div className="flex-1 min-w-0 rounded-md border border-border bg-background p-4 text-left">
+              <div className="flex-1 min-w-0 max-w-[640px] rounded-lg border border-border bg-background p-4 text-left">
                 {/* Summary text */}
                 <p className="text-sm text-foreground leading-relaxed font-body mb-3 text-left">
                   {active.summary}
@@ -516,7 +502,7 @@ function InteractiveDemo() {
               onClick={() => setActiveIdx(i)}
               className={`mx-1 underline-offset-2 hover:underline ${i === activeIdx ? "text-accent font-medium" : ""}`}
             >
-              {s.roleLabel.toLowerCase()}
+              {s.roleLabel}
             </button>
           ))}
         </span>
@@ -873,18 +859,60 @@ function FinalCTA({ onSignup }: { onSignup: () => void }) {
 // Footer
 // ─────────────────────────────────────────────────────────────────────────────
 
-function Footer() {
-  const cols = [
-    { title: "Produit", links: ["Fonctionnalités", "Tarifs", "Démo", "Documentation"] },
-    { title: "Entreprise", links: ["À propos", "Blog", "Contact", "Carrières"] },
-    { title: "Légal", links: ["CGV", "Politique de confidentialité", "Conditions d'utilisation", "RGPD"] },
-  ];
+function LanguageSwitcher({ lang, setLang }: { lang: "en" | "fr"; setLang: (l: "en" | "fr") => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <Globe size={14} />
+        {lang === "en" ? "English" : "Français"}
+        <ChevronDown size={12} className={`transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="absolute bottom-full right-0 mb-1 rounded-md border border-border bg-card py-1 min-w-[120px]">
+          <button
+            onClick={() => { setLang("en"); setOpen(false); }}
+            className={`block w-full px-3 py-1.5 text-left text-xs hover:bg-secondary/30 ${lang === "en" ? "text-accent font-medium" : "text-muted-foreground"}`}
+          >
+            English
+          </button>
+          <button
+            onClick={() => { setLang("fr"); setOpen(false); }}
+            className={`block w-full px-3 py-1.5 text-left text-xs hover:bg-secondary/30 ${lang === "fr" ? "text-accent font-medium" : "text-muted-foreground"}`}
+          >
+            Français
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Footer({ lang, setLang }: { lang: "en" | "fr"; setLang: (l: "en" | "fr") => void }) {
+  const cols = lang === "en"
+    ? [
+        { title: "Product", links: ["Features", "Pricing", "Demo", "Docs"] },
+        { title: "Resources", links: ["Download", "Changelog", "Help", "Status"] },
+        { title: "Company", links: ["About", "Blog", "Careers", "Contact"] },
+        { title: "Legal", links: ["Terms", "Privacy", "Security", "GDPR"] },
+        { title: "Connect", links: ["X (Twitter)", "GitHub", "LinkedIn"] },
+      ]
+    : [
+        { title: "Produit", links: ["Fonctionnalités", "Tarifs", "Démo", "Documentation"] },
+        { title: "Ressources", links: ["Téléchargement", "Changelog", "Aide", "Statut"] },
+        { title: "Entreprise", links: ["À propos", "Blog", "Carrières", "Contact"] },
+        { title: "Légal", links: ["CGV", "Confidentialité", "Sécurité", "RGPD"] },
+        { title: "Connect", links: ["X (Twitter)", "GitHub", "LinkedIn"] },
+      ];
 
   return (
     <footer className="border-t border-border px-4 py-12">
       <div className="max-w-5xl mx-auto">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-8">
-          <div className="col-span-2 md:col-span-1">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8 mb-8">
+          <div className="col-span-2 lg:col-span-1">
             <BrandLogo size={24} className="mb-2" />
             <p className="text-xs text-muted-foreground max-w-[200px]">{APP_TAGLINE}</p>
           </div>
@@ -894,20 +922,23 @@ function Footer() {
               <ul className="space-y-2">
                 {col.links.map((link) => (
                   <li key={link}>
-                    <a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">{link}</a>
+                    <a
+                      href={link === "GitHub" ? "https://github.com/Txchrixo/tevet-7" : "#"}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {link}
+                    </a>
                   </li>
                 ))}
               </ul>
             </div>
           ))}
         </div>
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 border-t border-border/50">
-          <p className="text-xs text-muted-foreground">© 2025 {APP_NAME}. Tous droits réservés.</p>
-          <div className="flex gap-4">
-            <a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Twitter</a>
-            <a href="https://github.com/Txchrixo/tevet-7" className="text-xs text-muted-foreground hover:text-foreground transition-colors">GitHub</a>
-            <a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">LinkedIn</a>
-          </div>
+        <div className="flex items-center justify-between gap-4 pt-8 border-t border-border/50">
+          <p className="text-xs text-muted-foreground">
+            © 2025 {APP_NAME}. {lang === "en" ? "All rights reserved." : "Tous droits réservés."}
+          </p>
+          <LanguageSwitcher lang={lang} setLang={setLang} />
         </div>
       </div>
     </footer>
@@ -924,6 +955,7 @@ interface LandingPageProps {
 }
 
 export function LandingPage({ onSignup, onDemo }: LandingPageProps) {
+  const [lang, setLang] = useState<"en" | "fr">("en");
   return (
     <div className="min-h-screen bg-background">
       <Navbar onSignup={onSignup} onDemo={onDemo} />
@@ -937,7 +969,7 @@ export function LandingPage({ onSignup, onDemo }: LandingPageProps) {
       <Pricing onSignup={onSignup} />
       <FAQ />
       <FinalCTA onSignup={onSignup} />
-      <Footer />
+      <Footer lang={lang} setLang={setLang} />
     </div>
   );
 }
