@@ -186,71 +186,117 @@ function Hero({ onSignup, onDemo }: { onSignup: () => void; onDemo: () => void }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Interactive Demo — reproduit EXACTEMENT le dashboard réel
+// Interactive Demo — démo interactive façon Cursor
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DEMO_QUESTIONS = [
+type DemoRole = "producteur" | "gestionnaire" | "analyste";
+
+interface DemoScenario {
+  role: DemoRole;
+  roleLabel: string;
+  q: string;
+  summary: string;
+  table: { headers: string[]; rows: (string | number)[][] };
+  sql: string | null;
+  scope: string;
+  tokens: string;
+  latency: string;
+  tagLabel: string;
+  chartTitle: string;
+  chartData: { name: string; value: number; display: string }[];
+  chartColor: "accent" | "amber";
+}
+
+const DEMO_SCENARIOS: DemoScenario[] = [
   {
+    role: "producteur",
+    roleLabel: "Producteur",
     q: "Quels sont mes 5 produits les plus vendus ce mois-ci ?",
-    a: "Top 5 des produits les plus vendus ce mois-ci :\n\n**Tomates cœur de bœuf**\n180 unités\n807,36 €\n\n**Courgettes**\n102 unités\n204,00 €\n\n**Carottes en bottes**\n95 unités\n142,50 €\n\n**Salade laitue**\n88 unités\n132,00 €\n\n**Pommes Gala**\n75 unités\n150,00 €\n\nLes tomates représentent 22% de votre chiffre d'affaires du mois. Pensez à anticiper le réassort pour le week-end.",
+    summary: "Voici vos 5 produits les plus vendus ce mois-ci. Les tomates représentent 22% de votre chiffre d'affaires.",
+    table: {
+      headers: ["Produit", "Unités", "Chiffre d'affaires"],
+      rows: [
+        ["Tomates cœur de bœuf", "180", "807,36 €"],
+        ["Courgettes", "102", "204,00 €"],
+        ["Carottes en bottes", "95", "142,50 €"],
+        ["Salade laitue", "88", "132,00 €"],
+        ["Pommes Gala", "75", "150,00 €"],
+      ],
+    },
     sql: "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE o.created_at >= date('2024-07-01', 'start of month') GROUP BY p.name ORDER BY units_sold DESC LIMIT 5",
-    tag: "execute_sql_query",
-    tagLabel: "SQL EXÉCUTÉ",
     scope: "FULL ACCESS",
     tokens: "1 168",
     latency: "2,7",
-    chart: {
-      title: "units_sold par name",
-      data: [
-        { name: "Tomates", value: 180 },
-        { name: "Courgettes", value: 102 },
-        { name: "Carottes", value: 95 },
-        { name: "Salade", value: 88 },
-        { name: "Pommes", value: 75 },
-      ],
-    },
-  },
-  {
-    q: "Quel stock va me manquer samedi ?",
-    a: "Voici les produits à risque de rupture samedi :\n\n1. **Poireaux**\n91% de risque (stock actuel : 2,8 unités)\n\n2. **Courgettes**\n90% de risque (stock : 0,9 unité)\n\n3. **Salade laitue**\n84% de risque (stock : 3,3 unités)\n\n4. **Carottes en bottes**\n79% de risque (stock épuisé)\n\n5. **Tomates cœur de bœuf**\n77% de risque (stock épuisé)\n\nJe vous recommande de réapprovisionner en priorité les poireaux et courgettes.",
-    sql: null,
-    tag: "predict_stock_shortage",
-    tagLabel: "ML · PRÉVISION",
-    scope: "SCOPE VÉRIFIÉ",
-    tokens: "1 580",
-    latency: "4,2",
-    chart: {
-      title: "Risque de rupture par produit",
-      data: [
-        { name: "Poireaux", value: 91 },
-        { name: "Courgettes", value: 90 },
-        { name: "Salade", value: 84 },
-        { name: "Carottes", value: 79 },
-        { name: "Tomates", value: 77 },
-      ],
-    },
-  },
-  {
-    q: "Combien j'ai gagné net de commission en juin ?",
-    a: "**Synthèse de vos revenus** de juin\n\n**Chiffre d'affaires brut**\n4 825,50 €\n\n**Commission marketplace** (12%)\n579,06 €\n\n**Revenu net**\n4 246,44 €\n\nSoit +15% par rapport à mai (3 692,54 €).",
-    sql: "SELECT SUM(oi.line_total_eur) AS brut, SUM(oi.line_total_eur) * 0.12 AS commission, SUM(oi.line_total_eur) * 0.88 AS net FROM order_items AS oi JOIN orders AS o ON oi.order_id = o.id WHERE o.created_at >= date('2024-06-01') AND o.created_at < date('2024-07-01')",
-    tag: "execute_sql_query",
     tagLabel: "SQL EXÉCUTÉ",
+    chartTitle: "Unités vendues par produit",
+    chartData: [
+      { name: "Tomates", value: 180, display: "180" },
+      { name: "Courgettes", value: 102, display: "102" },
+      { name: "Carottes", value: 95, display: "95" },
+      { name: "Salade", value: 88, display: "88" },
+      { name: "Pommes", value: 75, display: "75" },
+    ],
+    chartColor: "accent",
+  },
+  {
+    role: "gestionnaire",
+    roleLabel: "Gestionnaire",
+    q: "Combien j'ai gagné net de commission en juin ?",
+    summary: "Votre revenu net en juin s'élève à 4 246,44 €, soit +15% par rapport à mai.",
+    table: {
+      headers: ["Poste", "Montant", "Part"],
+      rows: [
+        ["Chiffre d'affaires brut", "4 825,50 €", "100%"],
+        ["Commission marketplace (12%)", "579,06 €", "12%"],
+        ["Revenu net", "4 246,44 €", "88%"],
+      ],
+    },
+    sql: "SELECT SUM(oi.line_total_eur) AS brut, SUM(oi.line_total_eur) * 0.12 AS commission, SUM(oi.line_total_eur) * 0.88 AS net FROM order_items AS oi JOIN orders AS o ON oi.order_id = o.id WHERE o.created_at >= date('2024-06-01') AND o.created_at < date('2024-07-01')",
     scope: "FULL ACCESS",
     tokens: "1 450",
     latency: "3,1",
-    chart: {
-      title: "Répartition du revenu",
-      data: [
-        { name: "Brut", value: 4825 },
-        { name: "Commission", value: 579 },
-        { name: "Net", value: 4246 },
+    tagLabel: "SQL EXÉCUTÉ",
+    chartTitle: "Répartition du revenu",
+    chartData: [
+      { name: "Brut", value: 4825, display: "4 826 €" },
+      { name: "Commission", value: 579, display: "579 €" },
+      { name: "Net", value: 4246, display: "4 246 €" },
+    ],
+    chartColor: "accent",
+  },
+  {
+    role: "analyste",
+    roleLabel: "Analyste",
+    q: "Quel stock va me manquer samedi ?",
+    summary: "5 produits sont à risque de rupture. Le modèle ML recommande de réapprovisionner les poireaux et courgettes en priorité.",
+    table: {
+      headers: ["Produit", "Risque", "Stock actuel", "Recommandation"],
+      rows: [
+        ["Poireaux", "91%", "2,8 unités", "Réappro urgent"],
+        ["Courgettes", "90%", "0,9 unité", "Réappro urgent"],
+        ["Salade laitue", "84%", "3,3 unités", "Surveiller"],
+        ["Carottes en bottes", "79%", "Épuisé", "Réappro"],
+        ["Tomates cœur de bœuf", "77%", "Épuisé", "Réappro"],
       ],
     },
+    sql: null,
+    scope: "SCOPE VÉRIFIÉ",
+    tokens: "1 580",
+    latency: "4,2",
+    tagLabel: "ML · PRÉVISION",
+    chartTitle: "Risque de rupture par produit",
+    chartData: [
+      { name: "Poireaux", value: 91, display: "91%" },
+      { name: "Courgettes", value: 90, display: "90%" },
+      { name: "Salade", value: 84, display: "84%" },
+      { name: "Carottes", value: 79, display: "79%" },
+      { name: "Tomates", value: 77, display: "77%" },
+    ],
+    chartColor: "amber",
   },
 ];
 
-// SQL keyword set for syntax highlighting (same as real SqlBlock)
+// SQL syntax highlighting (same tokenizer as real SqlBlock)
 const SQL_KEYWORDS = new Set([
   "SELECT", "FROM", "WHERE", "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "ON",
   "GROUP", "BY", "ORDER", "HAVING", "LIMIT", "AND", "OR", "IN", "NOT", "AS",
@@ -289,87 +335,134 @@ function renderSqlTokens(text: string) {
 
 function InteractiveDemo() {
   const [activeIdx, setActiveIdx] = useState(0);
-  const activeDemo = DEMO_QUESTIONS[activeIdx];
-  const maxChart = Math.max(...activeDemo.chart.data.map((d) => d.value));
-
-  // Parse markdown-style bold text (same as real Markdown component)
-  const renderText = (text: string) => {
-    return text.split("\n").map((line, i) => {
-      const parts = line.split(/\*\*(.+?)\*\*/g);
-      return (
-        <span key={i}>
-          {parts.map((part, j) =>
-            j % 2 === 1 ? (
-              <strong key={j} className="font-heading text-foreground">{part}</strong>
-            ) : (
-              <span key={j}>{part}</span>
-            )
-          )}
-          {i < text.split("\n").length - 1 && <br />}
-        </span>
-      );
-    });
-  };
+  const active = DEMO_SCENARIOS[activeIdx];
+  const maxChart = Math.max(...active.chartData.map((d) => d.value));
 
   return (
-    <div className="flex flex-col bg-background">
-      {/* Window header */}
+    <div className="flex flex-col bg-background text-left">
+      {/* Window header (Mac-style dots) */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-secondary/20">
         <div className="flex items-center gap-2">
-          <BrandMark size={16} />
+          <BrandMark size={16} className="shrink-0" />
           <span className="text-xs text-muted-foreground">Tevet-7 · Drive Producteur</span>
         </div>
-        <div className="flex gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-muted-foreground/20" />
-          <div className="w-2.5 h-2.5 rounded-full bg-muted-foreground/20" />
-          <div className="w-2.5 h-2.5 rounded-full bg-muted-foreground/20" />
+        <div className="flex gap-2">
+          <div className="w-3 h-3 rounded-full bg-red-500/80" />
+          <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+          <div className="w-3 h-3 rounded-full bg-green-500/80" />
         </div>
       </div>
 
-      {/* Chat thread (left-aligned, NOT centered) */}
+      {/* Role selector tabs (Producteur / Gestionnaire / Analyste) */}
+      <div className="flex border-b border-border">
+        {DEMO_SCENARIOS.map((s, i) => (
+          <button
+            key={s.role}
+            onClick={() => setActiveIdx(i)}
+            className={`flex-1 px-3 py-2 text-xs font-medium transition-colors ${
+              i === activeIdx
+                ? "text-foreground border-b-2 border-accent bg-secondary/10"
+                : "text-muted-foreground hover:text-foreground hover:bg-secondary/5"
+            }`}
+          >
+            {s.roleLabel}
+          </button>
+        ))}
+      </div>
+
+      {/* Chat thread */}
       <div className="p-4 space-y-4 text-left">
-        {/* User message (right-aligned) */}
+        {/* User question */}
         <AnimatePresence mode="wait">
           <motion.div
             key={`q-${activeIdx}`}
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
+            transition={{ duration: 0.15 }}
             className="flex justify-end"
           >
             <div className="max-w-[80%] rounded-md rounded-br-sm bg-primary px-3 py-2 text-sm text-foreground text-left">
-              {activeDemo.q}
+              {active.q}
             </div>
           </motion.div>
         </AnimatePresence>
 
-        {/* Assistant message (left-aligned, avatar + card) */}
+        {/* Assistant response */}
         <AnimatePresence mode="wait">
           <motion.div
             key={`a-${activeIdx}`}
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2, delay: 0.05 }}
-            className="flex justify-start"
+            transition={{ duration: 0.15, delay: 0.05 }}
+            className="flex justify-start text-left"
           >
-            <div className="flex items-start gap-2.5 w-full">
-              {/* Avatar (responsive: shrinks on mobile) */}
-              <span className="flex w-8 h-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-accent">
+            <div className="flex items-start gap-2.5 w-full text-left">
+              {/* Avatar */}
+              <span className="flex w-8 h-8 shrink-0 items-center justify-center rounded-md border border-border bg-background">
                 <BrandMark size={18} className="shrink-0" />
               </span>
 
-              {/* Response card (full width, left-aligned text) */}
-              <div className="flex-1 min-w-0 rounded-md border border-border bg-background p-4">
-                {/* Text content (left-aligned) */}
-                <div className="text-sm text-foreground leading-relaxed font-body text-left">
-                  {renderText(activeDemo.a)}
+              {/* Response card */}
+              <div className="flex-1 min-w-0 rounded-md border border-border bg-background p-4 text-left">
+                {/* Summary text */}
+                <p className="text-sm text-foreground leading-relaxed font-body mb-3 text-left">
+                  {active.summary}
+                </p>
+
+                {/* Data table (properly formatted, like a real report) */}
+                <div className="overflow-x-auto mb-3 text-left">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-border">
+                        {active.table.headers.map((h, i) => (
+                          <th key={i} className={`py-1.5 px-2 font-heading text-muted-foreground font-medium ${i === 0 ? "text-left" : "text-right"}`}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {active.table.rows.map((row, ri) => (
+                        <tr key={ri} className="border-b border-border/40 hover:bg-secondary/10 transition-colors">
+                          {row.map((cell, ci) => (
+                            <td key={ci} className={`py-1.5 px-2 ${ci === 0 ? "text-left text-foreground font-body" : "text-right text-muted-foreground tabular-nums"}`}>
+                              {cell}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
 
-                {/* SQL block (syntax-highlighted, collapsible) */}
-                {activeDemo.sql && (
-                  <div className="mt-3">
+                {/* Chart */}
+                <div className="rounded-md border border-border bg-background p-3 mb-3 text-left">
+                  <div className="mb-3">
+                    <span className="font-heading text-xs text-foreground">{active.chartTitle}</span>
+                  </div>
+                  <div className="h-32 flex items-end justify-between gap-2 px-1">
+                    {active.chartData.map((item, i) => (
+                      <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end min-w-0">
+                        <span className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
+                          {item.display}
+                        </span>
+                        <motion.div
+                          initial={{ height: 0 }}
+                            animate={{ height: `${(item.value / maxChart) * 100}%` }}
+                          transition={{ duration: 0.4, delay: i * 0.06 }}
+                          className={`w-full rounded-t-sm min-h-[4px] ${active.chartColor === "amber" ? "bg-amber-600/60" : "bg-accent"}`}
+                        />
+                        <span className="text-[10px] text-muted-foreground truncate max-w-full">{item.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* SQL block (syntax-highlighted) */}
+                {active.sql && (
+                  <div className="mb-3 text-left">
                     <details className="group">
                       <summary className="flex cursor-pointer items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground hover:text-foreground list-none">
                         <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180 shrink-0" />
@@ -378,55 +471,30 @@ function InteractiveDemo() {
                       </summary>
                       <div className="mt-1.5 rounded-md border border-border bg-secondary/20 p-2.5 overflow-x-auto">
                         <pre className="text-[11px] leading-relaxed font-mono">
-                          <code>{renderSqlTokens(activeDemo.sql)}</code>
+                          <code>{renderSqlTokens(active.sql)}</code>
                         </pre>
                       </div>
                     </details>
                   </div>
                 )}
 
-                {/* Chart (same style as real ChartDisplay) */}
-                <div className="mt-3">
-                  <div className="rounded-md border border-border bg-background p-3">
-                    <div className="mb-3">
-                      <span className="font-heading text-xs text-foreground">{activeDemo.chart.title}</span>
-                    </div>
-                    <div className="h-36 flex items-end justify-between gap-2 px-1">
-                      {activeDemo.chart.data.map((item, i) => (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end min-w-0">
-                          <span className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
-                            {activeDemo.tag === "predict_stock_shortage" ? `${item.value}%` : item.value.toLocaleString("fr-FR")}
-                          </span>
-                          <motion.div
-                            initial={{ height: 0 }}
-                            animate={{ height: `${(item.value / maxChart) * 100}%` }}
-                            transition={{ duration: 0.4, delay: i * 0.06 }}
-                            className={`w-full rounded-t-sm min-h-[4px] ${activeDemo.tag === "predict_stock_shortage" ? "bg-amber-600/60" : "bg-accent"}`}
-                          />
-                          <span className="text-[10px] text-muted-foreground truncate max-w-full">{item.name}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Footer (exact copy of real dashboard footer) */}
-                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+                {/* Footer */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] uppercase tracking-wide text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
                     <Check size={12} className="text-accent shrink-0" />
-                    {activeDemo.scope}
+                    {active.scope}
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <span className="font-heading text-foreground tabular-nums">{activeDemo.tokens}</span>
+                    <span className="font-heading text-foreground tabular-nums">{active.tokens}</span>
                     tokens
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <span className="font-heading text-foreground tabular-nums">{activeDemo.latency}</span>
+                    <span className="font-heading text-foreground tabular-nums">{active.latency}</span>
                     s
                   </span>
                   <span className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-1.5 text-[10px] text-muted-foreground whitespace-nowrap">
                     <Database size={10} className="shrink-0" />
-                    {activeDemo.tagLabel}
+                    {active.tagLabel}
                   </span>
                 </div>
               </div>
@@ -435,18 +503,19 @@ function InteractiveDemo() {
         </AnimatePresence>
       </div>
 
-      {/* Question selector */}
-      <div className="border-t border-border p-3 flex flex-wrap gap-2">
-        {DEMO_QUESTIONS.map((d, i) => (
-          <button key={i} onClick={() => setActiveIdx(i)}
-            className={`rounded-full px-3 py-1 text-xs transition-all whitespace-nowrap ${
-              i === activeIdx
-                ? "bg-accent text-accent-foreground"
-                : "border border-border text-muted-foreground hover:text-foreground hover:border-accent/50"
-            }`}>
-            {d.tagLabel}
-          </button>
-        ))}
+      {/* Bottom: role hint */}
+      <div className="border-t border-border px-4 py-2 text-center">
+        <span className="text-[10px] text-muted-foreground/60">
+          Testez en tant que {DEMO_SCENARIOS.map((s, i) => (
+            <button
+              key={s.role}
+              onClick={() => setActiveIdx(i)}
+              className={`mx-1 underline-offset-2 hover:underline ${i === activeIdx ? "text-accent font-medium" : ""}`}
+            >
+              {s.roleLabel.toLowerCase()}
+            </button>
+          ))}
+        </span>
       </div>
     </div>
   );
