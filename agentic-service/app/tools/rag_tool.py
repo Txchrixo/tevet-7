@@ -297,6 +297,31 @@ class RagSearchTool:
                             producer_id=row.producer_id,
                         )
                     )
+
+            # ── Semantic reranking (Phase A5) ──
+            # FTS5 gives keyword matches; the reranker improves precision for
+            # synonyms/paraphrases ("payé" → "règlement").
+            if len(chunks) > 1:
+                try:
+                    from app.tools.semantic_reranker import rerank
+                    chunk_dicts = [
+                        {"content": c.content, "document_id": c.document_id,
+                         "document_title": c.document_title, "chunk_index": c.chunk_index,
+                         "score": c.score, "producer_id": c.producer_id}
+                        for c in chunks
+                    ]
+                    reranked = rerank(question, chunk_dicts, top_k=len(chunks))
+                    chunks = [
+                        RagChunk(
+                            content=r["content"], document_id=r["document_id"],
+                            document_title=r["document_title"], chunk_index=r["chunk_index"],
+                            score=r["score"], producer_id=r["producer_id"],
+                        )
+                        for r in reranked
+                    ]
+                except Exception:  # noqa: BLE001
+                    logger.debug("Semantic reranker failed, using FTS5 order")
+
             latency_ms = int((time.monotonic() - started) * 1000)
             if span is not None and self.tracer is not None:
                 self.tracer.end_span(
