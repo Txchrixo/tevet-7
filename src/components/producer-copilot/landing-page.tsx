@@ -288,7 +288,7 @@ function Navbar({ t, onLogin, onSignup }: { t: typeof T.en; onLogin: () => void;
 
   return (
     <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? "bg-background/90 backdrop-blur-md border-b border-border" : "bg-transparent"}`}>
-      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div className="max-w-[1230px] mx-auto px-4 lg:px-0 h-16 flex items-center justify-between">
         {/* Logo: clickable → scroll to top (home) */}
         <a href="#" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="cursor-pointer">
           <BrandLogo size={26} />
@@ -303,7 +303,7 @@ function Navbar({ t, onLogin, onSignup }: { t: typeof T.en; onLogin: () => void;
             triggered from the Hero's "View demo" button. */}
         <div className="flex items-center gap-2 sm:gap-3">
           <button onClick={onLogin} className="hidden sm:block text-sm text-muted-foreground hover:text-foreground transition-colors">{t.navLogin}</button>
-          <button onClick={onSignup} className="rounded-md bg-primary px-3 sm:px-4 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap">{t.navTry}</button>
+          <button onClick={onSignup} className="rounded-lg bg-primary px-3 sm:px-4 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap">{t.navTry}</button>
           {/* Hamburger: only on < md */}
           <button className="md:hidden text-foreground ml-1" onClick={() => setMobileOpen(!mobileOpen)}>
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -368,14 +368,14 @@ function Hero({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void; o
           (themed scrollbar) to reveal the full agent answer. */}
       <Reveal variants={cardPlace} amount={0.2} delay={0.2} className="relative mx-auto mt-12 w-full max-w-[1230px]" style={{ perspective: "1200px" }}>
         <div
-          className="rounded-2xl border border-border/60 shadow-2xl flex items-stretch justify-center h-[480px] sm:h-[560px] lg:h-[720px] px-3 py-3 sm:px-4 sm:py-4 lg:px-[75px] lg:py-[50px]"
+          className="rounded-lg border border-border/60 shadow-2xl flex items-stretch justify-center h-[480px] sm:h-[560px] lg:h-[720px] px-3 py-3 sm:px-4 sm:py-4 lg:px-[75px] lg:py-[50px]"
           style={{
             backgroundImage: "url('/art-bg.webp')",
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
         >
-          <div className="rounded-xl border border-border bg-card overflow-hidden shadow-xl ring-1 ring-black/30 w-full h-full">
+          <div className="rounded-lg border border-border bg-card overflow-hidden shadow-xl ring-1 ring-black/30 w-full h-full">
             <InteractiveDemo t={t} />
           </div>
         </div>

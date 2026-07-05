@@ -772,3 +772,24 @@ Work Log:
 
 Stage Summary:
 - Desktop: frame 1230x720, window 1080x620 (exact targets hit). Mobile/tablet: fluid responsive scaling with smaller frame heights (480/560/720) and reduced padding. Content area fills the window and scrolls internally with the themed scrollbar. 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 51
+Agent: main
+Task: Align navbar with the bg art frame (logo left = frame left, Try free right = frame right) and make the window + frame radius match the CTA button radius.
+
+Work Log:
+- Navbar width: changed container from `max-w-6xl mx-auto px-4` → `max-w-[1230px] mx-auto px-4 lg:px-0`. On desktop (lg+): `lg:px-0` removes horizontal padding so the navbar content (logo → Try free) spans the full 1230px = exactly the frame width. On mobile/tablet (< lg): `px-4` keeps 16px breathing room, and the frame is `w-full` inside the section's `px-4`, so they align naturally at 16px.
+- Radius consistency: the CTA buttons (Hero) use `rounded-lg`. Changed:
+  * Frame: `rounded-2xl` → `rounded-lg`
+  * Window: `rounded-xl` → `rounded-lg`
+  * Navbar "Try free": `rounded-md` → `rounded-lg` (was inconsistent with Hero CTAs)
+  Now all three (frame, window, CTA buttons) compute to the same border-radius.
+- Verification (Agent Browser, measured via getBoundingClientRect + getComputedStyle):
+  * Desktop 1440px: logo_left=105, frame_left=105 (aligned ✓); cta_right=1335, frame_right=1335 (aligned ✓); frame_radius=6px, window_radius=6px, cta_radius=6px (all match ✓).
+  * Mobile 390px: logo_left=16, frame_left=16 (aligned ✓).
+  * VLM analysis confirmed: navbar logo left edge aligned with frame left edge, Try free right edge aligned with frame right edge, all three elements (frame, window, CTA) have same border radius, everything aligned and consistent.
+  * bun run lint → exit 0. Dev server clean, zero runtime errors.
+
+Stage Summary:
+- Navbar now aligns exactly with the bg art frame on all breakpoints (logo left = frame left, Try free right = frame right). Frame, window, and CTA buttons all share the same `rounded-lg` radius. 1 file modified (landing-page.tsx), 0 added.
