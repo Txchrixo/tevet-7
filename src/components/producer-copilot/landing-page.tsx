@@ -263,24 +263,30 @@ function Navbar({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void;
   return (
     <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? "bg-background/90 backdrop-blur-md border-b border-border" : "bg-transparent"}`}>
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-        <BrandLogo size={26} />
-        <div className="hidden lg:flex items-center gap-6">
+        {/* Logo: clickable → scroll to top (home) */}
+        <a href="#" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="cursor-pointer">
+          <BrandLogo size={26} />
+        </a>
+        {/* Nav links: hidden on < md */}
+        <div className="hidden md:flex items-center gap-6">
           {navLinks.map((l) => (<a key={l.href} href={l.href} className="text-sm text-muted-foreground hover:text-foreground transition-colors">{l.label}</a>))}
         </div>
-        <div className="hidden lg:flex items-center gap-3">
-          <button onClick={onDemo} className="text-sm text-muted-foreground hover:text-foreground transition-colors">{t.navLogin}</button>
-          <button onClick={onSignup} className="rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground">{t.navTry}</button>
+        {/* CTAs: "Log in" hidden on < sm, "Try free" always visible */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button onClick={onDemo} className="hidden sm:block text-sm text-muted-foreground hover:text-foreground transition-colors">{t.navLogin}</button>
+          <button onClick={onSignup} className="rounded-md bg-primary px-3 sm:px-4 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground whitespace-nowrap">{t.navTry}</button>
+          {/* Hamburger: only on < md */}
+          <button className="md:hidden text-foreground ml-1" onClick={() => setMobileOpen(!mobileOpen)}>
+            {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
         </div>
-        <button className="lg:hidden text-foreground" onClick={() => setMobileOpen(!mobileOpen)}>
-          {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
       </div>
       <AnimatePresence>
         {mobileOpen && (
-          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="lg:hidden bg-background border-b border-border overflow-hidden">
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="md:hidden bg-background border-b border-border overflow-hidden">
             <div className="px-4 py-4 space-y-3">
               {navLinks.map((l) => (<a key={l.href} href={l.href} onClick={() => setMobileOpen(false)} className="block text-sm text-muted-foreground hover:text-foreground">{l.label}</a>))}
-              <button onClick={onSignup} className="block w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-foreground text-center">{t.navTry}</button>
+              <button onClick={onDemo} className="block w-full text-left text-sm text-muted-foreground hover:text-foreground">{t.navLogin}</button>
             </div>
           </motion.div>
         )}
@@ -534,14 +540,14 @@ function LanguageSwitcher({ lang, setLang }: { lang: Lang; setLang: (l: Lang) =>
 
 function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l: Lang) => void }) {
   return (
-    <footer className="border-t border-border px-4 py-12">
-      <div className="max-w-5xl mx-auto">
-        {/* Use flex-wrap with fixed widths for responsive columns */}
+    <footer className="relative border-t border-border px-4 py-12 overflow-hidden">
+      {/* Filigree: large BrandMark watermark in the background */}
+      <div className="absolute -right-8 -bottom-8 pointer-events-none opacity-[0.03]">
+        <BrandMark size={280} />
+      </div>
+      <div className="relative max-w-5xl mx-auto">
+        {/* Columns: no logo column, just the 5 link columns */}
         <div className="flex flex-wrap gap-8 mb-8">
-          <div className="w-full sm:w-1/2 md:w-1/4 lg:w-auto lg:flex-1">
-            <BrandLogo size={24} className="mb-2" />
-            <p className="text-xs text-muted-foreground max-w-[200px]">{t.tagline}</p>
-          </div>
           {t.footerCols.map((col) => (
             <div key={col.title} className="w-1/2 sm:w-1/4 md:w-auto lg:flex-1 min-w-[120px]">
               <h4 className="text-xs font-medium text-foreground mb-3 uppercase tracking-wider">{col.title}</h4>
