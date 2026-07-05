@@ -250,12 +250,49 @@ const DEMO_QUESTIONS = [
   },
 ];
 
+// SQL keyword set for syntax highlighting (same as real SqlBlock)
+const SQL_KEYWORDS = new Set([
+  "SELECT", "FROM", "WHERE", "JOIN", "LEFT", "RIGHT", "INNER", "OUTER", "ON",
+  "GROUP", "BY", "ORDER", "HAVING", "LIMIT", "AND", "OR", "IN", "NOT", "AS",
+  "DESC", "ASC", "COUNT", "SUM", "COALESCE", "DISTINCT", "CASE", "WHEN", "THEN",
+  "ELSE", "END", "DATE", "ROUND", "MAX", "MIN", "AVG",
+]);
+
+function renderSqlTokens(text: string) {
+  const tokenRe = /('(?:[^']|'')*')|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|([(),.;*=<>+\-/]+)|(\s+)|([^\s])/g;
+  const nodes: React.ReactNode[] = [];
+  let m: RegExpExecArray | null;
+  let key = 0;
+  while ((m = tokenRe.exec(text)) !== null) {
+    const [full, str, num, ident, punct, ws] = m;
+    if (str) {
+      nodes.push(<span key={key++} className="text-foreground/90">{str}</span>);
+    } else if (num) {
+      nodes.push(<span key={key++} className="font-heading text-muted-foreground tabular-nums">{num}</span>);
+    } else if (ident) {
+      const upper = ident.toUpperCase();
+      if (SQL_KEYWORDS.has(upper)) {
+        nodes.push(<span key={key++} className="font-medium text-accent/90">{ident}</span>);
+      } else {
+        nodes.push(<span key={key++} className="text-foreground">{ident}</span>);
+      }
+    } else if (punct) {
+      nodes.push(<span key={key++} className="text-muted-foreground">{punct}</span>);
+    } else if (ws) {
+      nodes.push(ws);
+    } else {
+      nodes.push(full);
+    }
+  }
+  return nodes;
+}
+
 function InteractiveDemo() {
   const [activeIdx, setActiveIdx] = useState(0);
   const activeDemo = DEMO_QUESTIONS[activeIdx];
   const maxChart = Math.max(...activeDemo.chart.data.map((d) => d.value));
 
-  // Parse the text into segments (bold + normal)
+  // Parse markdown-style bold text (same as real Markdown component)
   const renderText = (text: string) => {
     return text.split("\n").map((line, i) => {
       const parts = line.split(/\*\*(.+?)\*\*/g);
@@ -289,9 +326,9 @@ function InteractiveDemo() {
         </div>
       </div>
 
-      {/* Chat thread */}
-      <div className="p-4 space-y-4">
-        {/* User message */}
+      {/* Chat thread (left-aligned, NOT centered) */}
+      <div className="p-4 space-y-4 text-left">
+        {/* User message (right-aligned) */}
         <AnimatePresence mode="wait">
           <motion.div
             key={`q-${activeIdx}`}
@@ -301,13 +338,13 @@ function InteractiveDemo() {
             transition={{ duration: 0.2 }}
             className="flex justify-end"
           >
-            <div className="max-w-[80%] rounded-md rounded-br-sm bg-primary px-3 py-2 text-sm text-foreground">
+            <div className="max-w-[80%] rounded-md rounded-br-sm bg-primary px-3 py-2 text-sm text-foreground text-left">
               {activeDemo.q}
             </div>
           </motion.div>
         </AnimatePresence>
 
-        {/* Assistant message */}
+        {/* Assistant message (left-aligned, avatar + card) */}
         <AnimatePresence mode="wait">
           <motion.div
             key={`a-${activeIdx}`}
@@ -317,35 +354,38 @@ function InteractiveDemo() {
             transition={{ duration: 0.2, delay: 0.05 }}
             className="flex justify-start"
           >
-            <div className="flex items-start gap-2.5 max-w-[92%]">
-              {/* Avatar */}
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-accent">
-                <BrandMark size={18} />
+            <div className="flex items-start gap-2.5 w-full">
+              {/* Avatar (responsive: shrinks on mobile) */}
+              <span className="flex w-8 h-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-accent">
+                <BrandMark size={18} className="shrink-0" />
               </span>
 
-              {/* Response card */}
-              <div className="flex-1 rounded-md border border-border bg-background p-4">
-                {/* Text content */}
-                <div className="text-sm text-foreground leading-relaxed font-body">
+              {/* Response card (full width, left-aligned text) */}
+              <div className="flex-1 min-w-0 rounded-md border border-border bg-background p-4">
+                {/* Text content (left-aligned) */}
+                <div className="text-sm text-foreground leading-relaxed font-body text-left">
                   {renderText(activeDemo.a)}
                 </div>
 
-                {/* SQL block */}
+                {/* SQL block (syntax-highlighted, collapsible) */}
                 {activeDemo.sql && (
                   <div className="mt-3">
                     <details className="group">
-                      <summary className="flex cursor-pointer items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground hover:text-foreground">
-                        <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
+                      <summary className="flex cursor-pointer items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground hover:text-foreground list-none">
+                        <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180 shrink-0" />
+                        <Database size={11} className="shrink-0" />
                         SQL exécuté
                       </summary>
-                      <pre className="mt-1.5 rounded-md border border-border bg-secondary/20 p-2 text-[10px] text-muted-foreground overflow-x-auto">
-                        <code>{activeDemo.sql}</code>
-                      </pre>
+                      <div className="mt-1.5 rounded-md border border-border bg-secondary/20 p-2.5 overflow-x-auto">
+                        <pre className="text-[11px] leading-relaxed font-mono">
+                          <code>{renderSqlTokens(activeDemo.sql)}</code>
+                        </pre>
+                      </div>
                     </details>
                   </div>
                 )}
 
-                {/* Chart */}
+                {/* Chart (same style as real ChartDisplay) */}
                 <div className="mt-3">
                   <div className="rounded-md border border-border bg-background p-3">
                     <div className="mb-3">
@@ -353,8 +393,8 @@ function InteractiveDemo() {
                     </div>
                     <div className="h-36 flex items-end justify-between gap-2 px-1">
                       {activeDemo.chart.data.map((item, i) => (
-                        <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
-                          <span className="text-[10px] text-muted-foreground tabular-nums">
+                        <div key={i} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end min-w-0">
+                          <span className="text-[10px] text-muted-foreground tabular-nums whitespace-nowrap">
                             {activeDemo.tag === "predict_stock_shortage" ? `${item.value}%` : item.value.toLocaleString("fr-FR")}
                           </span>
                           <motion.div
@@ -370,10 +410,10 @@ function InteractiveDemo() {
                   </div>
                 </div>
 
-                {/* Footer */}
+                {/* Footer (exact copy of real dashboard footer) */}
                 <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] uppercase tracking-wide text-muted-foreground">
                   <span className="inline-flex items-center gap-1">
-                    <Check size={12} className="text-accent" />
+                    <Check size={12} className="text-accent shrink-0" />
                     {activeDemo.scope}
                   </span>
                   <span className="inline-flex items-center gap-1">
@@ -384,8 +424,8 @@ function InteractiveDemo() {
                     <span className="font-heading text-foreground tabular-nums">{activeDemo.latency}</span>
                     s
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-1.5 text-[10px] text-muted-foreground">
-                    <Database size={10} />
+                  <span className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-1.5 text-[10px] text-muted-foreground whitespace-nowrap">
+                    <Database size={10} className="shrink-0" />
                     {activeDemo.tagLabel}
                   </span>
                 </div>
@@ -399,7 +439,7 @@ function InteractiveDemo() {
       <div className="border-t border-border p-3 flex flex-wrap gap-2">
         {DEMO_QUESTIONS.map((d, i) => (
           <button key={i} onClick={() => setActiveIdx(i)}
-            className={`rounded-full px-3 py-1 text-xs transition-all ${
+            className={`rounded-full px-3 py-1 text-xs transition-all whitespace-nowrap ${
               i === activeIdx
                 ? "bg-accent text-accent-foreground"
                 : "border border-border text-muted-foreground hover:text-foreground hover:border-accent/50"
