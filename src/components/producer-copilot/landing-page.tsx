@@ -360,22 +360,22 @@ function Hero({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void; o
           </RevealItem>
         </RevealGroup>
       </div>
-      {/* Demo window framed by the artwork. Sits in its own wider container
-          (max-w-5xl) so the frame is more rectangular than the 4xl text column
-          above. The opaque demo window floats on top of the full-bleed
-          painting; the window's content area scrolls internally (themed
-          scrollbar) to keep the window short — the agent's full answer is
-          revealed by scrolling. */}
-      <Reveal variants={cardPlace} amount={0.2} delay={0.2} className="relative mx-auto mt-12 max-w-5xl" style={{ perspective: "1200px" }}>
+      {/* Demo window framed by the artwork. Desktop target: frame 1230×720,
+          window 1080×620 (75px horizontal matting, 50px vertical matting).
+          Responsive: frame shrinks to w-full with smaller heights on
+          mobile (480px) and tablet (560px); padding reduces too. The window
+          fills the frame's content box; its content area scrolls internally
+          (themed scrollbar) to reveal the full agent answer. */}
+      <Reveal variants={cardPlace} amount={0.2} delay={0.2} className="relative mx-auto mt-12 w-full max-w-[1230px]" style={{ perspective: "1200px" }}>
         <div
-          className="rounded-2xl p-3 sm:p-5 border border-border/60 shadow-2xl"
+          className="rounded-2xl border border-border/60 shadow-2xl flex items-stretch justify-center h-[480px] sm:h-[560px] lg:h-[720px] px-3 py-3 sm:px-4 sm:py-4 lg:px-[75px] lg:py-[50px]"
           style={{
             backgroundImage: "url('/art-bg.webp')",
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
         >
-          <div className="rounded-xl border border-border bg-card overflow-hidden shadow-xl ring-1 ring-black/30">
+          <div className="rounded-xl border border-border bg-card overflow-hidden shadow-xl ring-1 ring-black/30 w-full h-full">
             <InteractiveDemo t={t} />
           </div>
         </div>
@@ -456,12 +456,12 @@ function InteractiveDemo({ t }: { t: typeof T.en }) {
   const maxChart = Math.max(...data.chartData.map((d) => d.value));
 
   return (
-    <div className="flex flex-col bg-background text-left">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-secondary/20">
+    <div className="flex flex-col bg-background text-left h-full">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-secondary/20 shrink-0">
         <div className="flex items-center gap-2"><BrandMark size={16} className="shrink-0" /><span className="text-xs text-muted-foreground">{APP_NAME} · Drive Producteur</span></div>
         <div className="flex gap-2"><div className="w-3 h-3 rounded-full bg-red-500/80" /><div className="w-3 h-3 rounded-full bg-yellow-500/80" /><div className="w-3 h-3 rounded-full bg-green-500/80" /></div>
       </div>
-      <div className="p-4 space-y-4 text-left max-h-[360px] overflow-y-auto demo-scroll">
+      <div className="p-4 space-y-4 text-left flex-1 min-h-0 overflow-y-auto demo-scroll">
         <AnimatePresence mode="wait">
           <motion.div key={`q-${activeIdx}`} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} className="flex justify-end">
             <div className="max-w-[80%] rounded-lg rounded-br-sm bg-primary px-3 py-2 text-sm text-foreground text-left">{scenario.q}</div>
@@ -495,7 +495,7 @@ function InteractiveDemo({ t }: { t: typeof T.en }) {
           </motion.div>
         </AnimatePresence>
       </div>
-      <div className="border-t border-border px-4 py-2 text-center">
+      <div className="border-t border-border px-4 py-2 text-center shrink-0">
         <span className="text-[10px] text-muted-foreground/60">{t.tryAs} {t.demoScenarios.map((s, i) => (<button key={s.role} onClick={() => setActiveIdx(i)} className={`mx-1 underline-offset-2 hover:underline ${i === activeIdx ? "text-accent font-medium" : ""}`}>{s.roleLabel}</button>))}</span>
       </div>
     </div>
