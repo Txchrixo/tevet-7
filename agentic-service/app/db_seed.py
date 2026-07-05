@@ -494,6 +494,23 @@ tenant_configs = Table(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# LLM response cache (Phase A/SOLID refactor)
+# ─────────────────────────────────────────────────────────────────────────────
+# Caches LLM responses by prompt hash so repeated questions return instantly
+# without consuming tokens. Critical for dev: the eval runs 78+ calls; the
+# 2nd pass is 100% cached.
+llm_cache = Table(
+    "llm_cache",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("prompt_hash", String, nullable=False, unique=True, index=True),
+    Column("response_json", Text, nullable=False),
+    Column("model", String, nullable=False),
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Engine singleton
 # ─────────────────────────────────────────────────────────────────────────────
 

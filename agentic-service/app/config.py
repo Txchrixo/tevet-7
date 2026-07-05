@@ -66,16 +66,43 @@ class Settings(BaseSettings):
         return v
 
     # ── LLM ──────────────────────────────────────────────────────────────────
-    # Provider-agnostic: works with OpenAI, DeepSeek, OpenRouter, Groq,
-    # Mistral, any OpenAI-compatible endpoint. Just change base_url + key + model.
-    openai_api_key: str = Field(default="sk-replace-me", description="LLM API key (works with any OpenAI-compatible provider).")
-    llm_model: str = Field(default="gpt-4o-mini", description="Default chat model (e.g. gpt-4o-mini, deepseek-chat, meta-llama/llama-3.3-70b-instruct).")
+    # Multi-provider: the ModelRouter builds a fallback chain from whichever
+    # keys are present, in priority order: Groq → DeepSeek → OpenRouter → Gemini.
+    # Each provider has its own base_url + key + model.
+
+    # Groq — primary (14,400 req/day free, function calling, fast).
+    groq_api_key: str = Field(default="", description="Groq API key (console.groq.com).")
+    groq_model: str = Field(default="llama-3.3-70b-versatile", description="Groq model.")
+
+    # DeepSeek direct — backup (paid but cheap, high quality).
+    deepseek_api_key: str = Field(default="", description="DeepSeek direct API key.")
+    deepseek_base_url: str = Field(default="https://api.deepseek.com/v1", description="DeepSeek API base URL.")
+    deepseek_model: str = Field(default="deepseek-chat", description="DeepSeek model name.")
+
+    # OpenRouter — tertiary (free models via :free suffix).
+    openai_api_key: str = Field(default="sk-replace-me", description="OpenRouter API key.")
     llm_base_url: str = Field(
-        default="",
-        description="OpenAI-compatible base URL. Empty = OpenAI default. "
-        "Examples: https://openrouter.ai/api/v1, https://api.deepseek.com, "
-        "https://api.groq.com/openai/v1, https://api.mistral.ai/v1",
+        default="https://openrouter.ai/api/v1",
+        description="OpenRouter base URL (used when openai_api_key is set).",
     )
+    llm_fallback_models: str = Field(
+        default="meta-llama/llama-3.3-70b-instruct:free",
+        description="Comma-separated free OpenRouter models for the tertiary tier.",
+    )
+
+    # Gemini — last resort (Google AI Studio free tier).
+    gemini_api_key: str = Field(default="", description="Google AI Studio Gemini API key.")
+    gemini_base_url: str = Field(
+        default="https://generativelanguage.googleapis.com/v1beta/openai/",
+        description="Gemini OpenAI-compatible base URL.",
+    )
+    gemini_model: str = Field(default="gemini-2.0-flash-001", description="Gemini model name.")
+
+    # LLM cache TTL (seconds).
+    llm_cache_ttl_seconds: int = Field(default=3600, description="LLM response cache TTL in seconds (default 1h).")
+
+    # Legacy (kept for backward compat — the router uses groq_model/deepseek_model/etc).
+    llm_model: str = Field(default="gpt-4o-mini", description="DEPRECATED — kept for backward compat.")
     embedding_model: str = Field(
         default="text-embedding-3-small", description="Default embedding model for RAG."
     )

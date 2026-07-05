@@ -55,9 +55,9 @@ DATASET_PATH = EVAL_DIR / "dataset.json"
 REPORT_PATH = EVAL_DIR / "report.json"
 BACKEND_URL = "http://localhost:8001/api/chat"
 HEALTH_URL = "http://localhost:8001/health"
-TIMEOUT_PER_CASE = 10.0
+TIMEOUT_PER_CASE = 60.0
 HEALTH_TIMEOUT = 5.0
-CONCURRENCY = 5
+CONCURRENCY = 1
 PASS_RATE_THRESHOLD = 0.80
 
 INTENT_RE = re.compile(r"Intention détectée\s*:\s*(\w+)")

@@ -268,19 +268,17 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
         )
         # ── Phase A1: LLM orchestrator (function calling) with fallback ──
         from app.config import get_settings
+        from app.agents.provider_factory import build_providers
+        from app.agents.model_router import ModelRouter
+        from app.agents.llm_orchestrator import LLMOrchestrator
+
         settings = get_settings()
+        providers = build_providers(settings)
 
         response = None
-        if settings.openai_api_key and settings.openai_api_key != "sk-replace-me":
+        if providers:
             try:
-                from openai import AsyncOpenAI
-                from app.agents.llm_orchestrator import LLMOrchestrator
-
-                llm_kwargs: dict[str, Any] = {"api_key": settings.openai_api_key}
-                if settings.llm_base_url:
-                    llm_kwargs["base_url"] = settings.llm_base_url
-                llm_client = AsyncOpenAI(**llm_kwargs)
-
+                router = ModelRouter(providers=providers, cache_enabled=True)
                 llm_orch = LLMOrchestrator(
                     sql_tool=sql_tool,
                     rag_tool=rag_tool,
@@ -290,8 +288,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
                     identity_id=identity_id,
                     tracer=get_tracer(),
                     schema=schema,
-                    llm_client=llm_client,
-                    model=settings.llm_model,
+                    router=router,
                 )
                 response = await llm_orch.run(req.message, history=req.history)
                 logger.info("LLM orchestrator succeeded — tokens=%d/%d latency=%dms",
@@ -299,6 +296,20 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             except Exception as exc:
                 logger.warning("LLM orchestrator failed (%s) — falling back to rule-based", exc)
                 response = None
+
+        # Heuristic: detect "bad" LLM responses (empty answer, or SQL present
+        # but no chart for analytical intents) → fall back to rule-based.
+        if response is not None and not response.refused:
+            if not response.answer or not response.answer.strip():
+                logger.info("LLM response is bad (empty answer) — falling back to rule-based")
+                response = None
+            elif response.sql and not response.chart:
+                # SQL but no chart → likely 0 rows or wrong aliases.
+                from app.agents.orchestrator import classify_question
+                intent = classify_question(req.message, role)
+                if intent in ("top_products", "weekly_sales", "stock_shortfall", "net_revenue"):
+                    logger.info("LLM response is bad (intent=%s sql=True chart=False) — falling back", intent)
+                    response = None
 
         if response is None:
             # Rule-based fallback.

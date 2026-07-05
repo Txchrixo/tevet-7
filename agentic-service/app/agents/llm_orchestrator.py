@@ -167,8 +167,7 @@ class LLMOrchestrator:
         identity_id: str = "",
         tracer: Tracer | None = None,
         schema: dict | None = None,
-        llm_client: Any = None,
-        model: str = "gpt-4o-mini",
+        router: Any = None,
     ) -> None:
         self.sql_tool = sql_tool
         self.rag_tool = rag_tool
@@ -178,8 +177,7 @@ class LLMOrchestrator:
         self.identity_id = identity_id
         self.tracer = tracer
         self._schema = schema or {}
-        self._llm = llm_client
-        self._model = model
+        self._router = router
 
     # ── Schema rendering (compact, ~200 tokens) ──────────────────────────
 
@@ -385,30 +383,28 @@ class LLMOrchestrator:
         # ── Step 1: LLM analysis (function calling) ──
         t = time.monotonic()
         try:
-            response = await self._llm.chat.completions.create(
-                model=self._model,
+            result = await self._router.chat(
                 messages=messages,
                 tools=TOOL_DEFINITIONS,
                 tool_choice="auto",
                 temperature=0.0,
                 max_tokens=800,
             )
-            total_tokens_in += response.usage.prompt_tokens
-            total_tokens_out += response.usage.completion_tokens
+            model_used = result.model
+            total_tokens_in += result.usage.prompt_tokens
+            total_tokens_out += result.usage.completion_tokens
         except Exception as exc:
             logger.warning("LLM orchestrator: first call failed: %s", exc)
             raise
 
         steps.append(StepTrace(
             index=1, title="Analyse de la question",
-            detail=f"LLM ({self._model}) — {response.usage.completion_tokens} tokens",
+            detail=f"LLM ({model_used}) — {result.usage.completion_tokens} tokens",
             status="ok", duration_ms=int((time.monotonic() - t) * 1000),
         ))
 
-        msg = response.choices[0].message
-
         # ── No tool calls → direct response (greetings, conversation) ──
-        if not msg.tool_calls:
+        if not result.tool_calls:
             latency_ms = int((time.monotonic() - started_at) * 1000)
             steps.append(StepTrace(
                 index=2, title="Réponse directe",
@@ -416,7 +412,7 @@ class LLMOrchestrator:
                 status="ok", duration_ms=0,
             ))
             return AgentResponse(
-                answer=msg.content or "",
+                answer=result.content or "",
                 sql=None, scope_clause=None, chart=None,
                 tokens_in=total_tokens_in, tokens_out=total_tokens_out,
                 latency_ms=latency_ms,
@@ -428,14 +424,17 @@ class LLMOrchestrator:
             )
 
         # ── Execute tool calls ──
-        messages.append(msg)  # Add assistant message with tool calls
+        # Reconstruct the assistant message in OpenAI dict shape for the next LLM call.
+        from app.agents.llm_adapters import tool_calls_to_openai_dict
+        messages.append({
+            "role": "assistant",
+            "content": result.content or "",
+            "tool_calls": tool_calls_to_openai_dict(result.tool_calls),
+        })
 
-        for tc in msg.tool_calls:
-            fn_name = tc.function.name
-            try:
-                fn_args = json.loads(tc.function.arguments)
-            except json.JSONDecodeError:
-                fn_args = {}
+        for tc in result.tool_calls:
+            fn_name = tc.name
+            fn_args = tc.arguments  # already parsed dict
             tool_calls.append(fn_name)
 
             t = time.monotonic()
@@ -469,16 +468,19 @@ class LLMOrchestrator:
 
         # ── Step 3: LLM synthesis (generate final answer from tool results) ──
         t = time.monotonic()
+        synth_model = "unknown"
+        synth_tokens = 0
         try:
-            synth_response = await self._llm.chat.completions.create(
-                model=self._model,
+            synth_result = await self._router.chat(
                 messages=messages,
                 temperature=0.3,
                 max_tokens=500,
             )
-            total_tokens_in += synth_response.usage.prompt_tokens
-            total_tokens_out += synth_response.usage.completion_tokens
-            final_answer = synth_response.choices[0].message.content or ""
+            synth_model = synth_result.model
+            total_tokens_in += synth_result.usage.prompt_tokens
+            total_tokens_out += synth_result.usage.completion_tokens
+            synth_tokens = synth_result.usage.completion_tokens
+            final_answer = synth_result.content or ""
         except Exception as exc:
             logger.warning("LLM orchestrator: synthesis failed: %s", exc)
             final_answer = (
@@ -488,7 +490,7 @@ class LLMOrchestrator:
 
         steps.append(StepTrace(
             index=3, title="Synthèse de la réponse",
-            detail=f"LLM ({self._model}) — {synth_response.usage.completion_tokens if 'synth_response' in dir() else '?'} tokens",
+            detail=f"LLM ({synth_model}) — {synth_tokens} tokens",
             status="ok", duration_ms=int((time.monotonic() - t) * 1000),
         ))
 
