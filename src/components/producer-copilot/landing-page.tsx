@@ -186,33 +186,67 @@ function Hero({ onSignup, onDemo }: { onSignup: () => void; onDemo: () => void }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Interactive Demo (looks like a real dashboard screenshot)
+// Interactive Demo — reproduit EXACTEMENT le dashboard réel
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEMO_QUESTIONS = [
   {
     q: "Quels sont mes 5 produits les plus vendus ce mois-ci ?",
-    a: "Voici vos 5 produits les plus vendus ce mois-ci :\n\n1. Tomates cœur de bœuf\n   210 unités\n   807,36 €\n2. Courgettes\n   131 unités\n   262,00 €\n3. Carottes en bottes\n   122 unités\n   183,00 €\n4. Salade laitue\n   98 unités\n   147,00 €\n5. Pommes Gala\n   94 unités\n   188,00 €\n\nLes tomates représentent 22% de votre chiffre d'affaires du mois.",
-    sql: "SELECT p.name, SUM(oi.quantity) AS units_sold FROM order_items oi JOIN products p ON oi.product_id = p.id GROUP BY p.name ORDER BY units_sold DESC LIMIT 5",
-    tag: "Top produits",
-    chart: [210, 131, 122, 98, 94],
-    chartLabels: ["Tomates", "Courgettes", "Carottes", "Salade", "Pommes"],
+    a: "Top 5 des produits les plus vendus ce mois-ci :\n\n**Tomates cœur de bœuf**\n180 unités\n807,36 €\n\n**Courgettes**\n102 unités\n204,00 €\n\n**Carottes en bottes**\n95 unités\n142,50 €\n\n**Salade laitue**\n88 unités\n132,00 €\n\n**Pommes Gala**\n75 unités\n150,00 €\n\nLes tomates représentent 22% de votre chiffre d'affaires du mois. Pensez à anticiper le réassort pour le week-end.",
+    sql: "SELECT p.name AS name, SUM(oi.quantity) AS units_sold, ROUND(SUM(oi.line_total_eur), 2) AS revenue FROM order_items AS oi JOIN products AS p ON oi.product_id = p.id JOIN orders AS o ON oi.order_id = o.id WHERE o.created_at >= date('2024-07-01', 'start of month') GROUP BY p.name ORDER BY units_sold DESC LIMIT 5",
+    tag: "execute_sql_query",
+    tagLabel: "SQL EXÉCUTÉ",
+    scope: "FULL ACCESS",
+    tokens: "1 168",
+    latency: "2,7",
+    chart: {
+      title: "units_sold par name",
+      data: [
+        { name: "Tomates", value: 180 },
+        { name: "Courgettes", value: 102 },
+        { name: "Carottes", value: 95 },
+        { name: "Salade", value: 88 },
+        { name: "Pommes", value: 75 },
+      ],
+    },
   },
   {
     q: "Quel stock va me manquer samedi ?",
-    a: "5 produits sont à risque de rupture samedi :\n\n1. Poireaux\n   91% de risque\n   Stock : 2,8 unités\n2. Courgettes\n   90% de risque\n   Stock : 0,9\n3. Salade laitue\n   84% de risque\n   Stock : 3,3\n4. Carottes\n   79% de risque\n   Rupture\n5. Tomates\n   77% de risque\n   Rupture",
+    a: "Voici les produits à risque de rupture samedi :\n\n1. **Poireaux**\n91% de risque (stock actuel : 2,8 unités)\n\n2. **Courgettes**\n90% de risque (stock : 0,9 unité)\n\n3. **Salade laitue**\n84% de risque (stock : 3,3 unités)\n\n4. **Carottes en bottes**\n79% de risque (stock épuisé)\n\n5. **Tomates cœur de bœuf**\n77% de risque (stock épuisé)\n\nJe vous recommande de réapprovisionner en priorité les poireaux et courgettes.",
     sql: null,
-    tag: "Prévision ML",
-    chart: [91, 90, 84, 79, 77],
-    chartLabels: ["Poireaux", "Courgettes", "Salade", "Carottes", "Tomates"],
+    tag: "predict_stock_shortage",
+    tagLabel: "ML · PRÉVISION",
+    scope: "SCOPE VÉRIFIÉ",
+    tokens: "1 580",
+    latency: "4,2",
+    chart: {
+      title: "Risque de rupture par produit",
+      data: [
+        { name: "Poireaux", value: 91 },
+        { name: "Courgettes", value: 90 },
+        { name: "Salade", value: 84 },
+        { name: "Carottes", value: 79 },
+        { name: "Tomates", value: 77 },
+      ],
+    },
   },
   {
     q: "Combien j'ai gagné net de commission en juin ?",
-    a: "Votre revenu net en juin :\n\nChiffre d'affaires brut\n4 825,50 €\n\nCommission marketplace (12%)\n579,06 €\n\nRevenu net\n4 246,44 €\n\nSoit +15% par rapport à mai (3 692,54 €).",
-    sql: "SELECT SUM(line_total_eur) AS brut FROM order_items oi JOIN orders o ON oi.order_id = o.id WHERE o.created_at >= '2024-06-01' AND o.created_at < '2024-07-01'",
-    tag: "Revenu net",
-    chart: [4825, 579, 4246],
-    chartLabels: ["Brut", "Commission", "Net"],
+    a: "**Synthèse de vos revenus** de juin\n\n**Chiffre d'affaires brut**\n4 825,50 €\n\n**Commission marketplace** (12%)\n579,06 €\n\n**Revenu net**\n4 246,44 €\n\nSoit +15% par rapport à mai (3 692,54 €).",
+    sql: "SELECT SUM(oi.line_total_eur) AS brut, SUM(oi.line_total_eur) * 0.12 AS commission, SUM(oi.line_total_eur) * 0.88 AS net FROM order_items AS oi JOIN orders AS o ON oi.order_id = o.id WHERE o.created_at >= date('2024-06-01') AND o.created_at < date('2024-07-01')",
+    tag: "execute_sql_query",
+    tagLabel: "SQL EXÉCUTÉ",
+    scope: "FULL ACCESS",
+    tokens: "1 450",
+    latency: "3,1",
+    chart: {
+      title: "Répartition du revenu",
+      data: [
+        { name: "Brut", value: 4825 },
+        { name: "Commission", value: 579 },
+        { name: "Net", value: 4246 },
+      ],
+    },
   },
 ];
 
@@ -220,8 +254,7 @@ function InteractiveDemo() {
   const [activeIdx, setActiveIdx] = useState(0);
   const [displayedAnswer, setDisplayedAnswer] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [showSql, setShowSql] = useState(false);
-  const [showChart, setShowChart] = useState(false);
+  const [showContent, setShowContent] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeDemo = DEMO_QUESTIONS[activeIdx];
@@ -229,8 +262,7 @@ function InteractiveDemo() {
   useEffect(() => {
     setIsTyping(true);
     setDisplayedAnswer("");
-    setShowSql(false);
-    setShowChart(false);
+    setShowContent(false);
     let i = 0;
     const text = activeDemo.a;
 
@@ -238,25 +270,44 @@ function InteractiveDemo() {
       if (i < text.length) {
         setDisplayedAnswer(text.slice(0, i + 1));
         i++;
-        timeoutRef.current = setTimeout(typeChar, 12);
+        timeoutRef.current = setTimeout(typeChar, 10);
       } else {
         setIsTyping(false);
-        setShowChart(true);
+        setShowContent(true);
       }
     };
 
-    timeoutRef.current = setTimeout(typeChar, 600);
+    timeoutRef.current = setTimeout(typeChar, 800);
 
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [activeIdx, activeDemo.a]);
 
-  const maxChart = Math.max(...activeDemo.chart);
+  // Parse the displayed text into segments (bold + normal)
+  const renderText = (text: string) => {
+    return text.split("\n").map((line, i) => {
+      const parts = line.split(/\*\*(.+?)\*\*/g);
+      return (
+        <span key={i}>
+          {parts.map((part, j) =>
+            j % 2 === 1 ? (
+              <strong key={j} className="font-heading text-foreground">{part}</strong>
+            ) : (
+              <span key={j}>{part}</span>
+            )
+          )}
+          {i < text.split("\n").length - 1 && <br />}
+        </span>
+      );
+    });
+  };
+
+  const maxChart = Math.max(...activeDemo.chart.data.map((d) => d.value));
 
   return (
-    <div className="flex flex-col h-[520px]">
-      {/* Window header (dashboard style) */}
+    <div className="flex flex-col h-[560px] bg-background">
+      {/* Window header (exact copy of real dashboard) */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-secondary/20">
         <div className="flex items-center gap-2">
           <BrandMark size={16} />
@@ -269,88 +320,123 @@ function InteractiveDemo() {
         </div>
       </div>
 
-      {/* Chat + chart split (dashboard layout) */}
-      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
-        {/* Chat area */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-          {/* Question */}
-          <div className="flex justify-end">
-            <div className="max-w-[85%] rounded-lg rounded-br-sm bg-primary px-3 py-2 text-sm text-foreground">
-              {activeDemo.q}
-            </div>
+      {/* Chat thread (exact copy of real ChatMessage structure) */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+        {/* User message (right-aligned, bg-primary) */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex justify-end"
+        >
+          <div className="max-w-[80%] rounded-md rounded-br-sm bg-primary px-3 py-2 text-sm text-foreground">
+            {activeDemo.q}
           </div>
+        </motion.div>
 
-          {/* Answer */}
-          <div className="flex gap-2">
-            <div className="shrink-0 w-7 h-7 rounded-full bg-accent/20 flex items-center justify-center mt-0.5">
-              <Sparkles className="h-3.5 w-3.5 text-accent" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs text-accent mb-1">{activeDemo.tag}</div>
-              <div className="text-sm text-foreground whitespace-pre-wrap leading-relaxed font-body">
-                {displayedAnswer}
-                {isTyping && <span className="inline-block w-1.5 h-4 bg-accent ml-0.5 animate-pulse" />}
-              </div>
+        {/* Assistant message (left-aligned, avatar + card) */}
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="flex justify-start"
+        >
+          <div className="flex items-start gap-2.5 max-w-[90%]">
+            {/* Avatar */}
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-accent">
+              <BrandMark size={18} />
+            </span>
 
-              {/* SQL toggle */}
-              {activeDemo.sql && !isTyping && (
-                <button onClick={() => setShowSql(!showSql)}
-                  className="mt-2 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
-                  <ChevronDown className={`h-3 w-3 transition-transform ${showSql ? "rotate-180" : ""}`} />
-                  {showSql ? "Masquer" : "Voir"} la requête SQL
-                </button>
+            {/* Response card (same border + bg as real ChatMessage) */}
+            <div className="flex-1 cursor-pointer rounded-md border border-border bg-background p-4">
+              {/* Typing dots OR content */}
+              {isTyping && !displayedAnswer ? (
+                <div className="flex items-center gap-1.5 py-1">
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:0ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:150ms]" />
+                  <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground [animation-delay:300ms]" />
+                </div>
+              ) : (
+                <div className="text-sm text-foreground leading-relaxed font-body">
+                  {renderText(displayedAnswer)}
+                  {isTyping && <span className="inline-block w-1.5 h-4 bg-accent ml-0.5 animate-pulse" />}
+                </div>
               )}
-              {showSql && activeDemo.sql && (
-                <pre className="mt-1.5 rounded-md bg-secondary/30 border border-border/50 p-2 text-[11px] text-muted-foreground overflow-x-auto">
-                  <code>{activeDemo.sql}</code>
-                </pre>
-              )}
-            </div>
-          </div>
-        </div>
 
-        {/* Chart panel (right side, dashboard style) */}
-        <div className="md:w-64 border-t md:border-t-0 md:border-l border-border bg-secondary/10 p-3">
-          <div className="text-xs text-muted-foreground mb-3 uppercase tracking-wider">
-            {activeDemo.tag === "Prévision ML" ? "Risque de rupture" : activeDemo.tag === "Revenu net" ? "Répartition" : "Unités vendues"}
-          </div>
-          <AnimatePresence>
-            {showChart && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="space-y-2"
-              >
-                {activeDemo.chart.map((val, i) => (
-                  <div key={i} className="space-y-1">
-                    <div className="flex justify-between text-[10px] text-muted-foreground">
-                      <span>{activeDemo.chartLabels[i]}</span>
-                      <span>{activeDemo.tag === "Prévision ML" ? `${val}%` : activeDemo.tag === "Revenu net" ? `${val.toLocaleString('fr-FR')} €` : `${val}`}</span>
-                    </div>
-                    <div className="h-1.5 rounded-full bg-border/50 overflow-hidden">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${(val / maxChart) * 100}%` }}
-                        transition={{ duration: 0.5, delay: i * 0.1 }}
-                        className={`h-full rounded-full ${activeDemo.tag === "Prévision ML" ? "bg-amber-600/70" : "bg-accent"}`}
-                      />
+              {/* SQL block (collapsible, same style as real SqlBlock) */}
+              {showContent && activeDemo.sql && (
+                <div className="mt-3">
+                  <details className="group">
+                    <summary className="flex cursor-pointer items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground hover:text-foreground">
+                      <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" />
+                      SQL exécuté
+                    </summary>
+                    <pre className="mt-1.5 rounded-md border border-border bg-secondary/20 p-2 text-[10px] text-muted-foreground overflow-x-auto">
+                      <code>{activeDemo.sql}</code>
+                    </pre>
+                  </details>
+                </div>
+              )}
+
+              {/* Chart (same style as real ChartDisplay) */}
+              {showContent && (
+                <div className="mt-3">
+                  <div className="rounded-md border border-border bg-background p-3">
+                    {activeDemo.chart.title && (
+                      <div className="mb-2">
+                        <span className="font-heading text-xs text-foreground">{activeDemo.chart.title}</span>
+                      </div>
+                    )}
+                    {/* Bar chart (CSS-based, same look as recharts BarChart) */}
+                    <div className="h-40 flex items-end justify-between gap-2 pl-1">
+                      {activeDemo.chart.data.map((item, i) => (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                          <span className="text-[10px] text-muted-foreground tabular-nums">
+                            {activeDemo.tag === "predict_stock_shortage" ? `${item.value}%` : item.value.toLocaleString("fr-FR")}
+                          </span>
+                          <motion.div
+                            initial={{ height: 0 }}
+                            animate={{ height: `${(item.value / maxChart) * 100}%` }}
+                            transition={{ duration: 0.5, delay: i * 0.08 }}
+                            className={`w-full rounded-t-sm ${activeDemo.tag === "predict_stock_shortage" ? "bg-amber-600/60" : "bg-accent"}`}
+                            style={{ minHeight: 4 }}
+                          />
+                          <span className="text-[10px] text-muted-foreground truncate max-w-full">{item.name}</span>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
-          {isTyping && (
-            <div className="space-y-2">
-              {[0, 1, 2, 3, 4].map((i) => (
-                <div key={i} className="space-y-1">
-                  <div className="h-2 w-20 rounded bg-border/30 animate-pulse" />
-                  <div className="h-1.5 rounded-full bg-border/20" />
                 </div>
-              ))}
+              )}
+
+              {/* Footer line (exact copy: scope + tokens + latency + tool badge) */}
+              {showContent && (
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  <span className="inline-flex items-center gap-1">
+                    <Check size={12} className="text-accent" />
+                    {activeDemo.scope}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="font-heading text-foreground tabular-nums">{activeDemo.tokens}</span>
+                    tokens
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="font-heading text-foreground tabular-nums">{activeDemo.latency}</span>
+                    s
+                  </span>
+                  {activeDemo.tag && (
+                    <span className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-1.5 py-0 text-[10px] text-muted-foreground">
+                      <Database size={10} />
+                      {activeDemo.tagLabel}
+                    </span>
+                  )}
+                  <span className="ml-auto hidden text-[10px] text-muted-foreground/70 sm:inline">
+                    cliquez pour voir la trace →
+                  </span>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </div>
+        </motion.div>
       </div>
 
       {/* Question selector (clickable chips) */}
@@ -362,7 +448,7 @@ function InteractiveDemo() {
                 ? "bg-accent text-accent-foreground"
                 : "border border-border text-muted-foreground hover:text-foreground hover:border-accent/50"
             }`}>
-            {d.tag}
+            {d.tagLabel}
           </button>
         ))}
       </div>
