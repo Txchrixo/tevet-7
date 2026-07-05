@@ -218,3 +218,27 @@
 .toaster [data-sonner-toast] [data-description] {
   color: var(--muted-foreground);
 }
+
+/* #33: Light theme */
+:root.light {
+  --background: #F5F2E8;
+  --foreground: #2D3A2F;
+  --card: #FFFFFF;
+  --card-foreground: #2D3A2F;
+  --popover: #FFFFFF;
+  --popover-foreground: #2D3A2F;
+  --primary: #5A6B4A;
+  --primary-foreground: #F5F2E8;
+  --secondary: #E8E0C9;
+  --secondary-foreground: #2D3A2F;
+  --muted: #E8E0C9;
+  --muted-foreground: #605E58;
+  --accent: #5A6B4A;
+  --accent-foreground: #F5F2E8;
+  --destructive: #B91C1C;
+  --destructive-foreground: #F5F2E8;
+  --border: #D4CFB8;
+  --input: #D4CFB8;
+  --ring: #5A6B4A;
+  --radius: 0.5rem;
+}

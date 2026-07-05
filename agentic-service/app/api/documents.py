@@ -167,6 +167,13 @@ async def upload_document(
     )
     t0 = time.monotonic()
     try:
+        # ── Upload validation (#15) ──
+        MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+        ALLOWED_CONTENT_TYPES = {
+            "application/pdf", "text/plain", "text/markdown",
+            "application/octet-stream",  # some browsers send this for .pdf
+        }
+
         # ── Resolve content ──
         if source_type == "pdf":
             if file is None:
@@ -174,7 +181,19 @@ async def upload_document(
                     status_code=400,
                     detail="source_type=pdf requires a 'file' upload field.",
                 )
+            # Validate content-type
+            if file.content_type and file.content_type not in ALLOWED_CONTENT_TYPES:
+                raise HTTPException(
+                    status_code=415,
+                    detail=f"Unsupported file type: {file.content_type}. Allowed: PDF, text, markdown.",
+                )
             file_bytes = await file.read()
+            # Validate file size
+            if len(file_bytes) > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File too large: {len(file_bytes)} bytes. Max: {MAX_FILE_SIZE} bytes (10 MB).",
+                )
             if not file_bytes:
                 raise HTTPException(status_code=400, detail="Uploaded PDF is empty.")
             extracted = _extract_pdf_text(file_bytes)

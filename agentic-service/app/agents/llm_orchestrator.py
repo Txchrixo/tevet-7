@@ -168,6 +168,7 @@ class LLMOrchestrator:
         tracer: Tracer | None = None,
         schema: dict | None = None,
         router: Any = None,
+        system_prompt_override: str | None = None,
     ) -> None:
         self.sql_tool = sql_tool
         self.rag_tool = rag_tool
@@ -178,6 +179,7 @@ class LLMOrchestrator:
         self.tracer = tracer
         self._schema = schema or {}
         self._router = router
+        self._system_prompt_override = system_prompt_override
 
     # ── Schema rendering (compact, ~200 tokens) ──────────────────────────
 
@@ -201,8 +203,13 @@ class LLMOrchestrator:
     def _build_system_prompt(self) -> str:
         """Build the system prompt (~350 tokens).
 
-        Compact but complete: role, schema, rules, tool descriptions.
+        If system_prompt_override is set (#24 agent customization), use it
+        instead of the default prompt. This allows tenants to customize the
+        agent's tone, language, or persona.
         """
+        if self._system_prompt_override:
+            return self._system_prompt_override
+
         schema_text = self._render_compact_schema()
         scope_col = self.sql_tool.scope_column or "producer_id"
         scope_val = self.sql_tool.scope_value or "admin"

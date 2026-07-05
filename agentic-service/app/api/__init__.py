@@ -41,3 +41,8 @@ __all__ = [
     "router",
 ]
 
+
+# Phase #23: API versioning - v1 router that bundles all sub-routers
+from fastapi import APIRouter as _APIRouter
+
+v1_router = _APIRouter()

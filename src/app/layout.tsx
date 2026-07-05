@@ -17,22 +17,14 @@ export default function RootLayout({
   return (
     <html lang="fr" className="dark" suppressHydrationWarning>
       <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#2D3A2F" />
+        <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+        <link rel="apple-touch-icon" href="/icon.svg" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font -- Tevet-7 design system loads Caudex + Manrope via <link> tags per spec (no next/font). */}
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Caudex:wght@400;500;600&display=swap"
-        />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font -- see above. */}
-        <link
-          rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500&display=swap"
-        />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caudex:wght@400;500;600&display=swap" />
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500&display=swap" />
       </head>
       <body className="font-body antialiased bg-background text-foreground">
         <ThemeProvider

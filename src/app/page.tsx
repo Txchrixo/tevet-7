@@ -25,6 +25,7 @@ import { BrandMark } from "@/components/producer-copilot/brand-mark";
 import { CreateWorkspace } from "@/components/producer-copilot/create-workspace";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { LandingPage } from "@/components/producer-copilot/landing-page";
+import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
 
 function Home() {
   const adminView = useCopilotStore((s) => s.adminView);
@@ -39,6 +40,26 @@ function Home() {
   React.useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+
+  // #27: Keyboard shortcuts (Cmd+K, Esc, Cmd+Enter)
+  useKeyboardShortcuts({
+    onFocusInput: () => {
+      const input = document.querySelector('textarea[data-chat-input]') as HTMLTextAreaElement;
+      if (input) input.focus();
+    },
+    onCloseInspector: () => {
+      if (useCopilotStore.getState().inspectorOpen) {
+        useCopilotStore.getState().setInspectorOpen(false);
+      }
+    },
+    onSendMessage: () => {
+      const input = document.querySelector('textarea[data-chat-input]') as HTMLTextAreaElement;
+      if (input && input.value.trim()) {
+        useCopilotStore.getState().sendMessage(input.value.trim());
+        input.value = '';
+      }
+    },
+  });
 
   // While we're checking the stored JWT, render a minimal placeholder so the
   // AuthScreen doesn't flash before we know whether the user is logged in.

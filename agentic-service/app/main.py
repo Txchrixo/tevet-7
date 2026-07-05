@@ -89,8 +89,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # once the bug is fixed.
     # cron = DemoResetCron(interval_seconds=86400)
     # await cron.start()
+    # #30: DB backup cron
+    from app.admin.backup_cron import DbBackupCron
+    from app.admin.retention import DataRetentionCron
+    backup_cron = DbBackupCron(interval_s=86400, max_backups=7)
+    retention_cron = DataRetentionCron(retention_days=90)
+    await retention_cron.start()
+    await backup_cron.start()
     yield
     # await cron.stop()
+    await backup_cron.stop()
+    await retention_cron.stop()
     logger.info("Tevet-7 shutting down - version=%s", __version__)
     await dispose_engine()
 
