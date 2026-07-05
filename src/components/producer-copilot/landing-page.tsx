@@ -108,10 +108,12 @@ const T = {
     ctaButton: "Get started now",
     footerCols: [
       { title: "Product", links: ["Features", "Pricing", "Demo", "Docs"] },
-      { title: "Resources", links: ["Download", "Changelog", "Help", "Status"] },
-      { title: "Company", links: ["About", "Blog", "Careers", "Contact"] },
-      { title: "Legal", links: ["Terms", "Privacy", "Security", "GDPR"] },
-      { title: "Connect", links: ["X (Twitter)", "GitHub", "LinkedIn"] },
+      { title: "Company", links: ["About", "Contact"] },
+      { title: "Legal", links: ["Terms", "Privacy"] },
+    ],
+    socialLinks: [
+      { label: "GitHub", href: "https://github.com/Txchrixo/tevet-7" },
+      { label: "LinkedIn", href: "#" },
     ],
     rights: "All rights reserved.",
     tryAs: "Try as",
@@ -203,10 +205,12 @@ const T = {
     ctaButton: "Commencer maintenant",
     footerCols: [
       { title: "Produit", links: ["Fonctionnalités", "Tarifs", "Démo", "Documentation"] },
-      { title: "Ressources", links: ["Téléchargement", "Changelog", "Aide", "Statut"] },
-      { title: "Entreprise", links: ["À propos", "Blog", "Carrières", "Contact"] },
-      { title: "Légal", links: ["CGV", "Confidentialité", "Sécurité", "RGPD"] },
-      { title: "Connect", links: ["X (Twitter)", "GitHub", "LinkedIn"] },
+      { title: "Entreprise", links: ["À propos", "Contact"] },
+      { title: "Légal", links: ["CGV", "Confidentialité"] },
+    ],
+    socialLinks: [
+      { label: "GitHub", href: "https://github.com/Txchrixo/tevet-7" },
+      { label: "LinkedIn", href: "#" },
     ],
     rights: "Tous droits réservés.",
     tryAs: "Testez en tant que",
@@ -541,6 +545,19 @@ function LanguageSwitcher({ lang, setLang }: { lang: Lang; setLang: (l: Lang) =>
 }
 
 function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l: Lang) => void }) {
+  // Map link labels to routes
+  const linkHref = (link: string): string => {
+    const map: Record<string, string> = {
+      "Features": "#features", "Pricing": "#pricing", "Demo": "#demo", "Docs": "/docs",
+      "About": "/about", "Contact": "/contact",
+      "Terms": "/terms", "Privacy": "/privacy",
+      "Fonctionnalités": "#features", "Tarifs": "#pricing", "Démo": "#demo", "Documentation": "/docs",
+      "À propos": "/about", "Contact": "/contact",
+      "CGV": "/terms", "Confidentialité": "/privacy",
+    };
+    return map[link] || "#";
+  };
+
   return (
     <footer className="relative border-t border-border px-4 py-12 overflow-hidden">
       {/* Filigree: large BrandMark watermark in the background */}
@@ -548,18 +565,23 @@ function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l:
         <BrandMark size={280} />
       </div>
       <div className="relative max-w-5xl mx-auto">
-        {/* Columns: no logo column, just the 5 link columns */}
+        {/* 3 columns */}
         <div className="flex flex-wrap gap-8 mb-8">
           {t.footerCols.map((col) => (
-            <div key={col.title} className="w-1/2 sm:w-1/4 md:w-auto lg:flex-1 min-w-[120px]">
+            <div key={col.title} className="w-1/2 sm:w-1/3 md:w-auto lg:flex-1 min-w-[120px]">
               <h4 className="text-xs font-medium text-foreground mb-3 uppercase tracking-wider">{col.title}</h4>
-              <ul className="space-y-2">{col.links.map((link) => (<li key={link}><a href={link === "GitHub" ? "https://github.com/Txchrixo/tevet-7" : "#"} className="text-xs text-muted-foreground hover:text-foreground transition-colors">{link}</a></li>))}</ul>
+              <ul className="space-y-2">{col.links.map((link) => (<li key={link}><a href={linkHref(link)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">{link}</a></li>))}</ul>
             </div>
           ))}
         </div>
-        <div className="flex items-center justify-between gap-4 pt-8 border-t border-border/50">
+        {/* Bottom bar: copyright + social links + language switcher */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 border-t border-border/50">
           <p className="text-xs text-muted-foreground">© 2025 {APP_NAME}. {t.rights}</p>
-          <LanguageSwitcher lang={lang} setLang={setLang} />
+          <div className="flex items-center gap-4">
+            {t.socialLinks.map((s) => (<a key={s.label} href={s.href} className="text-xs text-muted-foreground hover:text-foreground transition-colors">{s.label}</a>))}
+            <span className="text-border">|</span>
+            <LanguageSwitcher lang={lang} setLang={setLang} />
+          </div>
         </div>
       </div>
     </footer>
