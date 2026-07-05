@@ -511,6 +511,34 @@ llm_cache = Table(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Conversation persistence (Phase B4)
+# ─────────────────────────────────────────────────────────────────────────────
+conversations = Table(
+    "conversations",
+    metadata,
+    Column("id", String, primary_key=True),  # uuid4 hex
+    Column("tenant_id", String, ForeignKey("tenants.id"), nullable=False, index=True),
+    Column("user_id", Integer, ForeignKey("users.id"), nullable=True),
+    Column("title", String, nullable=True),
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+    Column("updated_at", DateTime, nullable=False, default=datetime.utcnow),
+)
+
+messages = Table(
+    "messages",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("conversation_id", String, ForeignKey("conversations.id"), nullable=False, index=True),
+    Column("role", String, nullable=False),  # 'user' | 'assistant'
+    Column("content", Text, nullable=False),
+    Column("sql", Text, nullable=True),
+    Column("tokens_in", Integer, nullable=False, default=0),
+    Column("tokens_out", Integer, nullable=False, default=0),
+    Column("created_at", DateTime, nullable=False, default=datetime.utcnow),
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Engine singleton
 # ─────────────────────────────────────────────────────────────────────────────
 

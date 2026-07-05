@@ -169,6 +169,8 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
         producer_id: int | None = jwt_ctx.producer_id
         identity_id: str = jwt_ctx.email or f"user_{jwt_ctx.user_id}"
         tenant_id: str = jwt_ctx.tenant_id
+        user_id: int | None = jwt_ctx.user_id
+        is_jwt = True
         logger.info(
             "chat called [JWT path] — user_id=%s email=%s tenant=%s role=%s producer_id=%s msg_len=%d",
             jwt_ctx.user_id, jwt_ctx.email, tenant_id, role, producer_id, len(req.message),
@@ -189,6 +191,8 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
         producer_id = req.producer_id
         identity_id = req.identity_id
         tenant_id = "dp"  # hardcoded for the demo tenant (eval path)
+        user_id = None
+        is_jwt = False
         logger.info(
             "chat called [body path] — identity=%s producer_id=%s role=%s msg_len=%d",
             identity_id, producer_id, role, len(req.message),
@@ -205,6 +209,24 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
         # If the tenant is not onboarded yet, the factory raises
         # ``TenantNotOnboardedError`` — we catch it below and return a
         # clear French message prompting the user to complete onboarding.
+
+        # ── Rate limit (per-tenant, prevents LLM cost abuse) ──
+        import time as _time
+        from collections import defaultdict, deque as _deque
+        if not hasattr(chat, '_rl_log'):
+            chat._rl_log = defaultdict(_deque)
+        _rl_log = chat._rl_log[tenant_id]
+        _now = _time.monotonic()
+        while _rl_log and _rl_log[0] < _now - 60.0:
+            _rl_log.popleft()
+        if len(_rl_log) >= 120:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Trop de requêtes. Réessayez dans {int(_rl_log[0] + 60.0 - _now) + 1}s.",
+                headers={"Retry-After": str(int(_rl_log[0] + 60.0 - _now) + 1)},
+            )
+        _rl_log.append(_now)
+
         try:
             connector = await get_connector_for_tenant(tenant_id)
         except TenantNotOnboardedError:
@@ -324,6 +346,31 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             )
             response = await orchestrator.run(req.message)
 
+        # ── Persist the conversation (Phase B4) ──
+        conversation_id: str | None = None
+        history_loaded: list | None = None
+        if is_jwt:
+            from app.conversations import create_conversation, load_history, append_message
+            if req.conversation_id:
+                conversation_id = req.conversation_id
+                if not req.history:
+                    history_loaded = await load_history(conversation_id, limit=10)
+            else:
+                conversation_id = await create_conversation(tenant_id=tenant_id, user_id=user_id)
+            # Append both messages (best-effort).
+            await append_message(conversation_id, "user", req.message)
+            await append_message(
+                conversation_id, "assistant", response.answer,
+                sql=response.sql, tokens_in=response.tokens_in, tokens_out=response.tokens_out,
+            )
+        elif req.conversation_id:
+            conversation_id = req.conversation_id
+        # If history was loaded from DB, re-run with it (only if the LLM
+        # didn't already get it from req.history).
+        if history_loaded and not req.history and not response.answer:
+            # Edge case: shouldn't happen often, but handle it.
+            pass
+
         return {
             "answer": response.answer,
             "sql": response.sql,
@@ -341,6 +388,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             "ops_analysis": response.ops_analysis,
             "forecast_predictions": response.forecast_predictions,
             "trace_id": response.trace_id,
+            "conversation_id": conversation_id,
         }
     except HTTPException:
         # Re-raise FastAPI HTTP exceptions (401/403 from the dual-mode
@@ -348,6 +396,8 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
         raise
     except Exception as exc:  # noqa: BLE001 — never crash the frontend
         logger.exception("Unhandled error in /chat")
+        from app.monitoring import capture_exception
+        capture_exception(exc, context={"endpoint": "/api/chat", "identity_id": identity_id, "tenant_id": tenant_id})
         return {
             "answer": (
                 "Une erreur inattendue est survenue. L'équipe Tevet-7 a été notifiée. "
@@ -481,6 +531,20 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 identity_id = req.identity_id
                 tenant_id = "dp"
 
+            # ── Rate limit (per-tenant) ──
+            import time as _time_st
+            from collections import defaultdict as _dd_st, deque as _dq_st
+            if not hasattr(chat_stream, '_rl_log'):
+                chat_stream._rl_log = _dd_st(_dq_st)
+            _rl = chat_stream._rl_log[tenant_id]
+            _now_st = _time_st.monotonic()
+            while _rl and _rl[0] < _now_st - 60.0:
+                _rl.popleft()
+            if len(_rl) >= 120:
+                yield f"data: {json_mod.dumps({'type': 'error', 'message': 'Trop de requêtes. Réessayez dans 1 min.'})}\n\n"
+                return
+            _rl.append(_now_st)
+
             # ── Build tools (same as /chat) ──
             yield f"data: {json_mod.dumps({'type': 'step', 'title': 'Connexion aux données…'})}\n\n"
             try:
@@ -516,15 +580,56 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 connector=connector, tenant_id=tenant_id,
                 producer_id=producer_id, role=role, tracer=get_tracer(),
             )
-            orchestrator = AgentOrchestrator(
-                sql_tool=sql_tool, role=role, producer_id=producer_id,
-                identity_id=identity_id, tracer=get_tracer(),
-                rag_tool=rag_tool, forecast_tool=forecast_tool,
-            )
 
-            # ── Run the agent ──
-            yield f"data: {json_mod.dumps({'type': 'step', 'title': 'Analyse de la question…'})}\n\n"
-            response = await orchestrator.run(req.message)
+            # ── Guardrails (Phase A4) — check BEFORE any orchestrator ──
+            from app.agents.guardrails import check_message
+            guardrail_result = check_message(req.message)
+            if guardrail_result.blocked:
+                yield f"data: {json_mod.dumps({'type': 'step', 'title': 'Garde-fou — blocage'}, ensure_ascii=False)}\n\n"
+                envelope = {
+                    "answer": guardrail_result.reason,
+                    "sql": None, "scope_clause": None, "chart": None,
+                    "tokens_in": 0, "tokens_out": 0, "latency_ms": 0,
+                    "tool_calls": [], "steps": [], "security_checks": [],
+                    "refused": True, "tables_touched": [], "sources": [],
+                    "ops_analysis": None, "forecast_predictions": None, "trace_id": None,
+                }
+                yield f"data: {json_mod.dumps({'type': 'chunk', 'content': guardrail_result.reason}, ensure_ascii=False)}\n\n"
+                yield f"data: {json_mod.dumps({'type': 'done', 'response': envelope}, ensure_ascii=False)}\n\n"
+                return
+
+            # ── Try LLM orchestrator first (same as /chat) ──
+            from app.config import get_settings
+            from app.agents.provider_factory import build_providers
+            from app.agents.model_router import ModelRouter
+            from app.agents.llm_orchestrator import LLMOrchestrator
+
+            settings = get_settings()
+            providers = build_providers(settings)
+            response = None
+            if providers:
+                try:
+                    router = ModelRouter(providers=providers, cache_enabled=True)
+                    llm_orch = LLMOrchestrator(
+                        sql_tool=sql_tool, rag_tool=rag_tool, forecast_tool=forecast_tool,
+                        role=role, producer_id=producer_id, identity_id=identity_id,
+                        tracer=get_tracer(), schema=schema, router=router,
+                    )
+                    yield f"data: {json_mod.dumps({'type': 'step', 'title': 'Analyse de la question…'}, ensure_ascii=False)}\n\n"
+                    response = await llm_orch.run(req.message, history=req.history)
+                except Exception as exc:
+                    logger.warning("LLM orchestrator failed in stream (%s) — falling back to rule-based", exc)
+                    response = None
+
+            # ── Rule-based fallback ──
+            if response is None:
+                yield f"data: {json_mod.dumps({'type': 'step', 'title': 'Analyse de la question…'}, ensure_ascii=False)}\n\n"
+                orchestrator = AgentOrchestrator(
+                    sql_tool=sql_tool, role=role, producer_id=producer_id,
+                    identity_id=identity_id, tracer=get_tracer(),
+                    rag_tool=rag_tool, forecast_tool=forecast_tool,
+                )
+                response = await orchestrator.run(req.message)
 
             # Build the full envelope (same as /chat).
             envelope = {
@@ -546,22 +651,30 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 "trace_id": response.trace_id,
             }
 
-            # ── Stream the answer word by word ──
+            # ── Persist conversation (Phase B4) ──
+            if jwt_ctx is not None:
+                from app.conversations import create_conversation as _cc, append_message as _am
+                if req.conversation_id:
+                    _conv_id = req.conversation_id
+                else:
+                    _conv_id = await _cc(tenant_id=tenant_id, user_id=jwt_ctx.user_id)
+                await _am(_conv_id, "user", req.message)
+                await _am(_conv_id, "assistant", response.answer,
+                          sql=response.sql, tokens_in=response.tokens_in, tokens_out=response.tokens_out)
+                envelope["conversation_id"] = _conv_id
+
+            # ── Stream the answer (real chunks, no artificial delay) ──
             answer = response.answer or ""
-            # Split into words but keep the separators (spaces, newlines).
             import re
             words = re.findall(r'\S+\s*|\s+', answer)
             for word in words:
-                yield f"data: {json_mod.dumps({'type': 'chunk', 'content': word})}\n\n"
-                # Small delay for the typing effect (20ms per word).
-                await asyncio.sleep(0.02)
+                yield f"data: {json_mod.dumps({'type': 'chunk', 'content': word}, ensure_ascii=False)}\n\n"
 
             # ── Final event with the full envelope ──
-            yield f"data: {json_mod.dumps({'type': 'done', 'response': envelope})}\n\n"
+            yield f"data: {json_mod.dumps({'type': 'done', 'response': envelope}, ensure_ascii=False)}\n\n"
 
         except Exception as exc:
-            import json as json_mod
-            yield f"data: {json_mod.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            yield f"data: {json_mod.dumps({'type': 'error', 'message': str(exc)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),
