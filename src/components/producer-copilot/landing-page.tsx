@@ -694,12 +694,41 @@ function FinalCTA({ t, onSignup }: { t: typeof T.en; onSignup: () => void }) {
   return (
     <section className="relative py-24 px-4 border-t border-border/50 overflow-hidden">
       <HeptagonPattern opacity={0.05} />
+      {/*
+        Painted wallpaper behind the brandmark.
+        The art_bg oil painting fills the section, darkened (brightness 0.2,
+        desaturated) so it reads as a moody desktop wallpaper rather than a
+        bright image. A radial vignette overlay fades the painting into the
+        page background toward the section edges, focusing the painted
+        texture directly behind the heptagon — like a brandmark icon sitting
+        on a painted desktop wallpaper.
+      */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: "url('/art-bg.webp')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            filter: "brightness(0.2) saturate(0.6) contrast(1.08)",
+          }}
+        />
+        {/* Radial vignette: transparent in the center (painting shows through
+            behind the heptagon), fades to the page background at the edges. */}
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(ellipse 55% 65% at 50% 42%, transparent 0%, transparent 35%, var(--background) 88%)",
+          }}
+        />
+      </div>
       <div className="relative max-w-2xl mx-auto text-center">
         {/* The heptagon outline draws itself in (strokeDashoffset), then the
-            top-vertex node pops in — "the call crystallizes". Replaces the
-            static BrandMark with the animated HeptagonDraw. */}
+            top-vertex node pops in — "the call crystallizes". Sits on top of
+            the painted wallpaper like an app icon on a desktop. */}
         <Reveal variants={scaleIn} amount={0.5} className="flex justify-center mb-4">
-          <HeptagonDraw size={40} />
+          <HeptagonDraw size={48} />
         </Reveal>
         <h2 className="font-heading text-3xl md:text-4xl text-foreground mb-4">
           <WordReveal text={t.ctaTitle} stagger={0.08} delay={0.3} />

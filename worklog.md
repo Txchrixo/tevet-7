@@ -648,3 +648,29 @@ Stage Summary:
 - Animation metaphors: blur-focus (SocialProof), tension/resolution slide (ProblemSolution), diagonal cascade (Features), sequential unfold + line draw (HowItWorks), 3D card-place (UseCases), elevation (Pricing), haze-clear (FAQ), heptagon crystallize + word reveal (FinalCTA), settle (Footer).
 - All animations respect prefers-reduced-motion (accessibility).
 - 1 file created (landing-motion.tsx, ~280 lines), 1 file modified (landing-page.tsx).
+
+---
+Task ID: 46
+Agent: main
+Task: Add painted-wallpaper background behind the brandmark in the FinalCTA, mimicking the Cursor reference image (app window floating on a painted desktop wallpaper). User provided art_bg.webp (an oil painting cityscape).
+
+Work Log:
+- Analyzed both images with the VLM skill:
+  * Reference (Cursor screenshot): an app window floats on a painted, artistic desktop background — soft textured landscape, muted tones. The "wallpaper" is external to the app, surrounding it.
+  * art_bg.webp: a vibrant oil painting cityscape (light blue sky, warm red/yellow buildings, green foliage, visible impasto brushstrokes). Bright/colorful by default — needs darkening to fit the Tevet-7 dark green theme.
+- Copied /home/z/my-project/upload/art_bg.webp → /home/z/my-project/public/art-bg.webp so it's servable as a static asset.
+- Modified the FinalCTA section in src/components/producer-copilot/landing-page.tsx:
+  * Added an absolutely-positioned background layer (pointer-events-none, inset-0) containing two stacked divs:
+    1. The painting: background-image url('/art-bg.webp'), background-size cover, background-position center, filter brightness(0.2) saturate(0.6) contrast(1.08) — darkens + slightly mutes so it reads as a moody wallpaper, not a bright image.
+    2. A radial vignette overlay: radial-gradient(ellipse 55% 65% at 50% 42%, transparent 0%→35%, var(--background) 88%) — keeps the painting visible directly behind the heptagon (centered focal point) and fades it into the page background at the section edges. No harsh edges.
+  * Bumped the HeptagonDraw from size 40 → 48 so the brandmark reads as a clear focal "icon" on the wallpaper.
+  * Kept the HeptagonDraw's existing path-draw animation (strokeDashoffset) + scaleIn reveal, the WordReveal headline, and the scaleIn button — all sit on top of the painted wallpaper.
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings in layout.tsx).
+  * Dev server: GET / 200, clean compile.
+  * Agent Browser: scrolled to FinalCTA, screenshot captured, zero runtime/console errors.
+  * VLM analysis of the screenshot confirmed: (1) painted oil-painting background visible behind the heptagon (buildings + palm trees, muted earthy tones, visible brushstrokes), (2) heptagon clearly visible floating on top, (3) headline "Ready to talk to your data?" readable, (4) moody/darkened wallpaper feel (not too bright, not too dark, texture discernible), (5) smooth fade into the page background at edges with no harsh edges.
+
+Stage Summary:
+- The FinalCTA brandmark (animated heptagon) now sits on a painted desktop wallpaper, matching the Cursor reference's "app icon on a painted wallpaper" aesthetic. The art_bg oil painting is darkened + radially vignetted so it integrates with Tevet-7's dark green theme while keeping the painterly texture visible directly behind the brandmark.
+- 1 file added (public/art-bg.webp), 1 file modified (landing-page.tsx FinalCTA section).
