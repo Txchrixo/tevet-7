@@ -164,7 +164,8 @@ function CopilotHome() {
                       />
                     ))}
                   </AnimatePresence>
-                  {isStreaming && <TypingIndicator />}
+                  {/* Phase A2: TypingIndicator removed — the streaming message
+                      card now shows its own typing dots internally. */}
                 </div>
               )}
             </div>

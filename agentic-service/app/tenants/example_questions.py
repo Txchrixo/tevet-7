@@ -157,9 +157,84 @@ def _is_forbidden_table(name: str) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _humanize_table_name(name: str) -> str:
+    """Convert a table name to a human-readable French label.
+
+    'order_items' → 'lignes de commande'
+    'products' → 'produits'
+    'stocks' → 'stocks'
+    'orders' → 'commandes'
+    'producers' → 'producteurs'
+    'shops' → 'points de vente'
+    'payments' → 'paiements'
+    'pickup_bookings' → 'réservations de retrait'
+    Generic: replace _ with space, add French article.
+    """
+    n = name.lower().replace("-", "_")
+    known = {
+        "orders": "commandes",
+        "order_items": "lignes de commande",
+        "products": "produits",
+        "producers": "producteurs",
+        "stocks": "stocks",
+        "shops": "points de vente",
+        "payments": "paiements",
+        "pickup_bookings": "réservations de retrait",
+        "documents": "documents",
+        "users": "utilisateurs",
+        "tenants": "tenants",
+    }
+    if n in known:
+        return known[n]
+    # Generic: replace _ with space.
+    return n.replace("_", " ")
+
+
+def _humanize_column_name(name: str) -> str:
+    """Convert a column name to a human-readable French label.
+
+    'price_eur' → 'prix'
+    'total_amount' → 'montant total'
+    'quantity' → 'quantité'
+    'units_sold' → 'unités vendues'
+    'category' → 'catégorie'
+    """
+    n = name.lower()
+    known = {
+        "price_eur": "prix",
+        "total_amount": "montant total",
+        "quantity": "quantité",
+        "units_sold": "unités vendues",
+        "revenue": "chiffre d'affaires",
+        "amount": "montant",
+        "category": "catégorie",
+        "status": "statut",
+        "name": "nom",
+        "display_name": "nom",
+        "legal_name": "nom légal",
+        "created_at": "date de création",
+        "email": "email",
+        "phone": "téléphone",
+        "is_active": "actif",
+        "is_organic": "bio",
+        "vat_rate": "TVA",
+        "unit": "unité",
+        "available": "disponible",
+        "reserved": "réservé",
+        "stock_level": "niveau de stock",
+    }
+    if n in known:
+        return known[n]
+    # Generic: replace _ with space.
+    return n.replace("_", " ")
+
+
 def _table_question(table: dict[str, Any]) -> str | None:
     """Generate one example question for ``table``, or ``None`` if the
     table should be skipped (audit table, no columns, etc.).
+
+    Uses humanized names (not raw column names) so the user never sees
+    'price_eur' — they see 'prix'.
     """
     tname = (table.get("name") or "").strip()
     if not tname or _is_forbidden_table(tname):
@@ -168,32 +243,33 @@ def _table_question(table: dict[str, Any]) -> str | None:
     if not columns:
         return None
 
+    tname_human = _humanize_table_name(tname)
     metrics = [c for c in columns if _is_metric(_column_name(c), _column_type(c))]
     groups = [c for c in columns if _is_group(_column_name(c), _column_type(c))]
     statuses = [c for c in columns if _is_status(_column_name(c), _column_type(c))]
     dates = [c for c in columns if _is_date(_column_name(c), _column_type(c))]
     names = [c for c in columns if _is_name(_column_name(c), _column_type(c))]
 
-    # Priority 1: metric × group → "total de X par Y".
+    # Priority 1: metric × group → "total du prix par catégorie".
     if metrics and groups:
-        return (
-            f"Quel est le total de {_column_name(metrics[0])} "
-            f"par {_column_name(groups[0])} ?"
-        )
+        metric_label = _humanize_column_name(_column_name(metrics[0]))
+        group_label = _humanize_column_name(_column_name(groups[0]))
+        return f"Quel est le total {metric_label} par {group_label} ?"
     # Priority 2: status column → count by status.
     if statuses:
-        return f"Combien de {tname} par statut ?"
+        return f"Combien de {tname_human} par statut ?"
     # Priority 3: metric only → simple total.
     if metrics:
-        return f"Quel est le total de {_column_name(metrics[0])} ?"
+        metric_label = _humanize_column_name(_column_name(metrics[0]))
+        return f"Quel est le total {metric_label} ?"
     # Priority 4: date column → last-7-days filter.
     if dates:
-        return f"Quelles sont les {tname} des 7 derniers jours ?"
+        return f"Quelles sont les {tname_human} des 7 derniers jours ?"
     # Priority 5: name column → top 5.
     if names:
-        return f"Quels sont les 5 {tname} les plus fréquents ?"
+        return f"Quels sont les 5 {tname_human} les plus fréquents ?"
     # Priority 6: fallback count.
-    return f"Combien y a-t-il de {tname} ?"
+    return f"Combien y a-t-il de {tname_human} ?"
 
 
 # ─────────────────────────────────────────────────────────────────────────────

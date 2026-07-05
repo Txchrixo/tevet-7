@@ -598,7 +598,24 @@ async def _format_generic_result(
     col_names = list(first_row.keys())
 
     # ── Build markdown table ──
-    header = "| " + " | ".join(col_names) + " |"
+    # Clean up column names for display (COUNT(*) → Nombre, etc.).
+    display_names = []
+    for c in col_names:
+        cl = c.lower()
+        if "count" in cl and "*" in c:
+            display_names.append("Nombre")
+        elif "count" in cl:
+            display_names.append("Nombre")
+        elif "sum" in cl:
+            display_names.append("Total")
+        elif "avg" in cl:
+            display_names.append("Moyenne")
+        elif "total" in cl:
+            display_names.append("Total")
+        else:
+            display_names.append(c)
+
+    header = "| " + " | ".join(display_names) + " |"
     separator = "|" + "|".join(["---"] * len(col_names)) + "|"
     table_rows = []
     for row in rows[:20]:  # Limit to 20 rows in the table.
@@ -606,7 +623,10 @@ async def _format_generic_result(
         for c in col_names:
             v = row.get(c, "")
             if isinstance(v, float):
-                vals.append(f"{v:.2f}".replace(".", ","))
+                # Round to 2 decimals and use comma (French format).
+                vals.append(f"{round(v, 2):.2f}".replace(".", ","))
+            elif isinstance(v, int):
+                vals.append(str(v))
             else:
                 vals.append(str(v))
         table_rows.append("| " + " | ".join(vals) + " |")
@@ -616,6 +636,8 @@ async def _format_generic_result(
     if len(rows) == 1 and len(col_names) == 1:
         # Single value (e.g., COUNT, SUM, AVG).
         val = first_row[col_names[0]]
+        if isinstance(val, float):
+            val = f"{round(val, 2):.2f}".replace(".", ",")
         answer = f"**Résultat** : {val}"
     elif len(rows) <= 5:
         answer = f"Voici les résultats ({len(rows)} ligne(s)) :\n\n{table_md}"
