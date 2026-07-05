@@ -718,3 +718,29 @@ Work Log:
 
 Stage Summary:
 - The artwork now frames only the preview window (a "cadre"), matching the user's request. Minimal diff: only the Hero section's demo-card block was modified (reverted the full-section wallpaper + added the framed container). 1 file changed (landing-page.tsx), 0 files added.
+
+---
+Task ID: 49
+Agent: main
+Task: Make the artwork frame more rectangular (wider, less tall) and reduce the demo window height via an internal themed scroll so the full agent answer is revealed by scrolling.
+
+Work Log:
+- Moved the demo frame OUT of the Hero's `max-w-4xl mx-auto text-center` text column into its own `max-w-5xl mx-auto` container. The headline/subtitle/buttons stay in the 4xl column; the frame is now ~128px wider, making it visibly rectangular (the painting matting is wider on the left/right than on the top/bottom).
+- Capped the InteractiveDemo content area (`p-4 space-y-4`) to `max-h-[360px] overflow-y-auto demo-scroll`. The title bar (BrandMark + mac dots, border-b) and the footer (Marc/Alexis/Maxime switcher, border-t) stay FIXED — only the middle content (question bubble + answer card: summary + table + chart + SQL + metadata) scrolls. This keeps the window short; the agent's full answer is revealed by scrolling inside.
+- Added a themed scrollbar via a single `<style>` block at the top of the LandingPage component (injected once):
+  * `.demo-scroll` Firefox: `scrollbar-width: thin; scrollbar-color: var(--border) transparent;`
+  * WebKit: 6px width, transparent track, `var(--border)` thumb with 3px radius, `var(--accent)` thumb on hover.
+  Matches the Tevet-7 design tokens (border color normally, accent green on hover).
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings in layout.tsx).
+  * Dev server: GET / 200, clean compile, zero runtime errors.
+  * Agent Browser + VLM analysis:
+    - Frame is clearly rectangular (~2.5:1 width:height ratio), painting matting wider on left/right than top/bottom.
+    - Demo window shorter: ~60-70% of answer card visible without scrolling; chart + SQL + metadata revealed by scrolling.
+    - Internal scroll verified programmatically: scrollHeight 618px (Marc) / 595px (Maxime), clientHeight 360px → ~258px revealed on scroll.
+    - Scrollbar thin + themed (dark green/olive, not default browser style).
+    - Title bar + footer stay fixed while middle content scrolls.
+    - Role switcher (Marc/Alexis/Maxime) still works, page scroll through all sections works.
+
+Stage Summary:
+- The artwork frame is now rectangular (wider than tall) and the demo window is short with a themed internal scroll that reveals the full agent answer. 1 file modified (landing-page.tsx), 0 added.

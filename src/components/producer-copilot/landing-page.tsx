@@ -359,25 +359,27 @@ function Hero({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void; o
             <button onClick={onDemo} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-7 py-3 text-base font-medium text-foreground transition-all hover:bg-secondary/40">{t.ctaDemo}</button>
           </RevealItem>
         </RevealGroup>
-        {/* Demo card rises with a subtle 3D tilt — "window opening into the product".
-            The card sits inside a framed artwork background (a "cadre"): the
-            art_bg painting is full-bleed within the frame, and the opaque demo
-            window floats on top of it like an app window on a desktop wallpaper. */}
-        <Reveal variants={cardPlace} amount={0.2} delay={0.2} className="mt-12 relative" style={{ perspective: "1200px" }}>
-          <div
-            className="rounded-2xl p-3 sm:p-5 border border-border/60 shadow-2xl"
-            style={{
-              backgroundImage: "url('/art-bg.webp')",
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }}
-          >
-            <div className="rounded-xl border border-border bg-card overflow-hidden shadow-xl ring-1 ring-black/30">
-              <InteractiveDemo t={t} />
-            </div>
-          </div>
-        </Reveal>
       </div>
+      {/* Demo window framed by the artwork. Sits in its own wider container
+          (max-w-5xl) so the frame is more rectangular than the 4xl text column
+          above. The opaque demo window floats on top of the full-bleed
+          painting; the window's content area scrolls internally (themed
+          scrollbar) to keep the window short — the agent's full answer is
+          revealed by scrolling. */}
+      <Reveal variants={cardPlace} amount={0.2} delay={0.2} className="relative mx-auto mt-12 max-w-5xl" style={{ perspective: "1200px" }}>
+        <div
+          className="rounded-2xl p-3 sm:p-5 border border-border/60 shadow-2xl"
+          style={{
+            backgroundImage: "url('/art-bg.webp')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        >
+          <div className="rounded-xl border border-border bg-card overflow-hidden shadow-xl ring-1 ring-black/30">
+            <InteractiveDemo t={t} />
+          </div>
+        </div>
+      </Reveal>
     </section>
   );
 }
@@ -459,7 +461,7 @@ function InteractiveDemo({ t }: { t: typeof T.en }) {
         <div className="flex items-center gap-2"><BrandMark size={16} className="shrink-0" /><span className="text-xs text-muted-foreground">{APP_NAME} · Drive Producteur</span></div>
         <div className="flex gap-2"><div className="w-3 h-3 rounded-full bg-red-500/80" /><div className="w-3 h-3 rounded-full bg-yellow-500/80" /><div className="w-3 h-3 rounded-full bg-green-500/80" /></div>
       </div>
-      <div className="p-4 space-y-4 text-left">
+      <div className="p-4 space-y-4 text-left max-h-[360px] overflow-y-auto demo-scroll">
         <AnimatePresence mode="wait">
           <motion.div key={`q-${activeIdx}`} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }} className="flex justify-end">
             <div className="max-w-[80%] rounded-lg rounded-br-sm bg-primary px-3 py-2 text-sm text-foreground text-left">{scenario.q}</div>
@@ -809,6 +811,16 @@ export function LandingPage({ onLogin, onSignup, onDemo }: LandingPageProps) {
   const t = T[lang];
   return (
     <div className="min-h-screen bg-background">
+      {/* Themed scrollbar for the demo window's internal scroll area.
+          Thin rail, border-colored thumb, accent on hover — matches the
+          Tevet-7 design tokens. */}
+      <style>{`
+        .demo-scroll { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+        .demo-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .demo-scroll::-webkit-scrollbar-track { background: transparent; }
+        .demo-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        .demo-scroll::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+      `}</style>
       <Navbar t={t} onLogin={onLogin} onSignup={onSignup} />
       <Hero t={t} onSignup={onSignup} onDemo={onDemo} />
       <SocialProof t={t} />
