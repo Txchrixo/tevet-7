@@ -20,6 +20,25 @@ import {
 import { APP_NAME } from "@/lib/constants";
 import { BrandMark, BrandLogo } from "@/components/producer-copilot/brand-mark";
 import { useCopilotStore } from "@/lib/store";
+import {
+  Reveal,
+  RevealGroup,
+  RevealItem,
+  HeptagonDraw,
+  WordReveal,
+  blurFocus,
+  slideFromLeft,
+  slideFromRight,
+  cardRise,
+  stepPop,
+  cardPlace,
+  tierRise,
+  tierElevate,
+  hazeClear,
+  fadeUp,
+  scaleIn,
+  staggerChildren,
+} from "./landing-motion";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // i18n dictionary
@@ -315,23 +334,37 @@ function Hero({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void; o
       <HeptagonPattern opacity={0.04} />
       <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent pointer-events-none" />
       <div className="relative max-w-4xl mx-auto text-center">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-          <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 mb-6">
-            <Sparkles className="h-3 w-3 text-accent" />
-            <span className="text-xs text-muted-foreground">{t.badge}</span>
-          </div>
-          <h1 className="font-heading text-4xl md:text-6xl text-foreground leading-tight mb-4">{t.heroTitle1}<br /><span className="text-accent">{t.heroTitle2}</span></h1>
+        {/* Badge scales in with a soft overshoot — "chip materializing" */}
+        <Reveal variants={scaleIn} amount={0.5} className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 mb-6">
+          <Sparkles className="h-3 w-3 text-accent" />
+          <span className="text-xs text-muted-foreground">{t.badge}</span>
+        </Reveal>
+        {/* Headline: word-by-word reveal, two lines. The second line (accent)
+            starts after the first so the color shift lands deliberately. */}
+        <h1 className="font-heading text-4xl md:text-6xl text-foreground leading-tight mb-4">
+          <WordReveal text={t.heroTitle1} stagger={0.08} />
+          <br />
+          <span className="text-accent">
+            <WordReveal text={t.heroTitle2} stagger={0.08} delay={0.3} />
+          </span>
+        </h1>
+        <Reveal variants={fadeUp} amount={0.5} delay={0.5}>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">{t.heroSubtitle}</p>
-          <div className="flex flex-col sm:flex-row gap-3 justify-center mb-6">
+        </Reveal>
+        <RevealGroup variants={staggerChildren(0.1, 0.65)} amount={0.5} className="flex flex-col sm:flex-row gap-3 justify-center mb-6">
+          <RevealItem variants={scaleIn}>
             <button onClick={onSignup} className="inline-flex items-center gap-2 rounded-lg bg-primary px-7 py-3 text-base font-medium text-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:scale-[1.02]">{t.ctaSignup}<ArrowRight className="h-4 w-4" /></button>
+          </RevealItem>
+          <RevealItem variants={scaleIn}>
             <button onClick={onDemo} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-7 py-3 text-base font-medium text-foreground transition-all hover:bg-secondary/40">{t.ctaDemo}</button>
-          </div>
-        </motion.div>
-        <motion.div initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.2 }} className="mt-12 relative">
+          </RevealItem>
+        </RevealGroup>
+        {/* Demo card rises with a subtle 3D tilt — "window opening into the product" */}
+        <Reveal variants={cardPlace} amount={0.2} delay={0.2} className="mt-12 relative" style={{ perspective: "1200px" }}>
           <div className="rounded-xl border border-border bg-card overflow-hidden shadow-2xl">
             <InteractiveDemo t={t} />
           </div>
-        </motion.div>
+        </Reveal>
       </div>
     </section>
   );
@@ -463,11 +496,20 @@ function SocialProof({ t }: { t: typeof T.en }) {
   return (
     <section className="py-10 border-y border-border/50">
       <div className="max-w-4xl mx-auto px-4">
-        <p className="text-center text-xs text-muted-foreground/60 mb-6 uppercase tracking-wider">{t.proofLabel}</p>
-        <div className="flex items-center justify-center gap-8 flex-wrap">
+        <Reveal variants={fadeUp} amount={0.4}>
+          <p className="text-center text-xs text-muted-foreground/60 mb-6 uppercase tracking-wider">{t.proofLabel}</p>
+        </Reveal>
+        <Reveal variants={blurFocus} amount={0.4} className="flex items-center justify-center">
           <img src="/drive-logo.png" alt="Drive Producteur" className="h-12 sm:h-16 md:h-20 opacity-40 brightness-75 saturate-50 hover:opacity-100 hover:brightness-100 hover:saturate-100 transition-all duration-300" />
-        </div>
-        <div className="flex items-center justify-center gap-8 mt-6 flex-wrap">{t.metrics.map((s) => (<div key={s.label} className="text-center"><div className="font-heading text-xl text-foreground">{s.value}</div><div className="text-[10px] text-muted-foreground">{s.label}</div></div>))}</div>
+        </Reveal>
+        <RevealGroup variants={staggerChildren(0.12, 0.1)} amount={0.4} className="flex items-center justify-center gap-8 mt-6 flex-wrap">
+          {t.metrics.map((s) => (
+            <RevealItem key={s.label} variants={blurFocus} className="text-center">
+              <div className="font-heading text-xl text-foreground">{s.value}</div>
+              <div className="text-[10px] text-muted-foreground">{s.label}</div>
+            </RevealItem>
+          ))}
+        </RevealGroup>
       </div>
     </section>
   );
@@ -475,64 +517,201 @@ function SocialProof({ t }: { t: typeof T.en }) {
 
 function ProblemSolution({ t }: { t: typeof T.en }) {
   return (
-    <section className="py-20 px-4"><div className="max-w-4xl mx-auto"><div className="grid md:grid-cols-2 gap-8">
-      <div className="space-y-4"><div className="flex items-center gap-2 text-destructive"><AlertTriangle className="h-5 w-5" /><span className="text-sm font-medium">{t.problemTitle}</span></div><h3 className="font-heading text-2xl text-foreground">{t.problemHeadline}</h3><ul className="space-y-2 text-sm text-muted-foreground">{t.problems.map((p, i) => (<li key={i} className="flex items-start gap-2"><X className="h-4 w-4 text-destructive/60 shrink-0 mt-0.5" />{p}</li>))}</ul></div>
-      <div className="space-y-4"><div className="flex items-center gap-2 text-accent"><Check className="h-5 w-5" /><span className="text-sm font-medium">{t.solutionTitle}</span></div><h3 className="font-heading text-2xl text-foreground">{t.solutionHeadline}</h3><ul className="space-y-2 text-sm text-muted-foreground">{t.solutions.map((s, i) => (<li key={i} className="flex items-start gap-2"><Check className="h-4 w-4 text-accent shrink-0 mt-0.5" />{s}</li>))}</ul></div>
-    </div></div></section>
+    <section className="py-20 px-4">
+      <div className="max-w-4xl mx-auto">
+        <div className="grid md:grid-cols-2 gap-8">
+          {/* Problem column: slides in from the left, slightly tilted — "heavier, dragging in" */}
+          <Reveal variants={slideFromLeft} amount={0.2} className="space-y-4">
+            <div className="flex items-center gap-2 text-destructive"><AlertTriangle className="h-5 w-5" /><span className="text-sm font-medium">{t.problemTitle}</span></div>
+            <h3 className="font-heading text-2xl text-foreground">{t.problemHeadline}</h3>
+            <RevealGroup variants={staggerChildren(0.08, 0.2)} className="space-y-2 text-sm text-muted-foreground">
+              {t.problems.map((p, i) => (
+                <RevealItem key={i} variants={fadeUp} className="flex items-start gap-2">
+                  <X className="h-4 w-4 text-destructive/60 shrink-0 mt-0.5" />{p}
+                </RevealItem>
+              ))}
+            </RevealGroup>
+          </Reveal>
+          {/* Solution column: slides in from the right, delayed — "lighter, resolving the tension" */}
+          <Reveal variants={slideFromRight} amount={0.2} delay={0.15} className="space-y-4">
+            <div className="flex items-center gap-2 text-accent"><Check className="h-5 w-5" /><span className="text-sm font-medium">{t.solutionTitle}</span></div>
+            <h3 className="font-heading text-2xl text-foreground">{t.solutionHeadline}</h3>
+            <RevealGroup variants={staggerChildren(0.08, 0.35)} className="space-y-2 text-sm text-muted-foreground">
+              {t.solutions.map((s, i) => (
+                <RevealItem key={i} variants={fadeUp} className="flex items-start gap-2">
+                  <Check className="h-4 w-4 text-accent shrink-0 mt-0.5" />{s}
+                </RevealItem>
+              ))}
+            </RevealGroup>
+          </Reveal>
+        </div>
+      </div>
+    </section>
   );
 }
 
 function Features({ t }: { t: typeof T.en }) {
   return (
-    <section id="features" className="py-20 px-4 border-t border-border/50"><div className="max-w-5xl mx-auto">
-      <h2 className="font-heading text-3xl text-foreground text-center mb-3">{t.featuresTitle}</h2>
-      <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">{t.featuresSubtitle}</p>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-border/30 rounded-lg overflow-hidden">{t.features.map((f) => (<div key={f.title} className="bg-card p-6 hover:bg-secondary/20 transition-colors"><f.icon className="h-6 w-6 text-accent mb-3" strokeWidth={1.5} /><h3 className="font-heading text-base text-foreground mb-1.5">{f.title}</h3><p className="text-sm text-muted-foreground leading-relaxed">{f.desc}</p></div>))}</div>
-    </div></section>
+    <section id="features" className="py-20 px-4 border-t border-border/50">
+      <div className="max-w-5xl mx-auto">
+        <Reveal variants={fadeUp} amount={0.3}>
+          <h2 className="font-heading text-3xl text-foreground text-center mb-3">{t.featuresTitle}</h2>
+        </Reveal>
+        <Reveal variants={fadeUp} amount={0.3} delay={0.1}>
+          <p className="text-center text-muted-foreground mb-12 max-w-xl mx-auto">{t.featuresSubtitle}</p>
+        </Reveal>
+        {/* Diagonal cascade: staggerChildren creates a sweep across the grid
+            (left-to-right, row-by-row) so cards "assemble" rather than pop together. */}
+        <RevealGroup variants={staggerChildren(0.08, 0.15)} amount={0.15} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-px bg-border/30 rounded-lg overflow-hidden">
+          {t.features.map((f) => (
+            <RevealItem key={f.title} variants={cardRise} className="bg-card p-6 hover:bg-secondary/20 transition-colors">
+              <f.icon className="h-6 w-6 text-accent mb-3" strokeWidth={1.5} />
+              <h3 className="font-heading text-base text-foreground mb-1.5">{f.title}</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">{f.desc}</p>
+            </RevealItem>
+          ))}
+        </RevealGroup>
+      </div>
+    </section>
   );
 }
 
 function HowItWorks({ t }: { t: typeof T.en }) {
   return (
-    <section id="how" className="py-20 px-4 border-t border-border/50"><div className="max-w-4xl mx-auto">
-      <h2 className="font-heading text-3xl text-foreground text-center mb-12">{t.howTitle}</h2>
-      <div className="grid md:grid-cols-3 gap-8">{t.howSteps.map((s) => (<div key={s.num} className="text-center"><div className="inline-flex items-center justify-center w-12 h-12 rounded-full border border-border mb-4"><s.icon className="h-5 w-5 text-accent" strokeWidth={1.5} /></div><div className="font-heading text-xs text-muted-foreground/50 mb-1">{s.num}</div><h3 className="font-heading text-base text-foreground mb-2">{s.title}</h3><p className="text-sm text-muted-foreground">{s.desc}</p></div>))}</div>
-    </div></section>
+    <section id="how" className="py-20 px-4 border-t border-border/50">
+      <div className="max-w-4xl mx-auto">
+        <Reveal variants={fadeUp} amount={0.3}>
+          <h2 className="font-heading text-3xl text-foreground text-center mb-12">{t.howTitle}</h2>
+        </Reveal>
+        {/* Sequential reveal: each step pops in one after another (0 / 0.25 / 0.5s)
+            so the process literally "unfolds" rather than appearing at once. */}
+        <RevealGroup variants={staggerChildren(0.25, 0.2)} amount={0.2} className="grid md:grid-cols-3 gap-8 relative">
+          {/* Connecting line that draws itself behind the steps (desktop only) */}
+          <motion.div
+            className="hidden md:block absolute top-6 left-[16.66%] right-[16.66%] h-px bg-border origin-left"
+            initial={{ scaleX: 0 }}
+            whileInView={{ scaleX: 1 }}
+            viewport={{ once: false, amount: 0.3 }}
+            transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1], delay: 0.3 }}
+          />
+          {t.howSteps.map((s) => (
+            <RevealItem key={s.num} variants={stepPop} className="text-center relative">
+              <div className="inline-flex items-center justify-center w-12 h-12 rounded-full border border-border bg-background mb-4 relative z-10"><s.icon className="h-5 w-5 text-accent" strokeWidth={1.5} /></div>
+              <div className="font-heading text-xs text-muted-foreground/50 mb-1">{s.num}</div>
+              <h3 className="font-heading text-base text-foreground mb-2">{s.title}</h3>
+              <p className="text-sm text-muted-foreground">{s.desc}</p>
+            </RevealItem>
+          ))}
+        </RevealGroup>
+      </div>
+    </section>
   );
 }
 
 function UseCases({ t }: { t: typeof T.en }) {
   return (
-    <section className="py-20 px-4 border-t border-border/50"><div className="max-w-4xl mx-auto">
-      <h2 className="font-heading text-3xl text-foreground text-center mb-12">{t.useCasesTitle}</h2>
-      <div className="grid md:grid-cols-3 gap-6">{t.useCases.map((c) => (<div key={c.title} className="rounded-lg border border-border bg-card p-5"><c.icon className="h-6 w-6 text-accent mb-3" strokeWidth={1.5} /><h3 className="font-heading text-base text-foreground mb-1.5">{c.title}</h3><p className="text-sm text-muted-foreground mb-3">{c.desc}</p><div className="rounded-md bg-secondary/20 border border-border/50 p-2.5"><p className="text-xs text-muted-foreground italic">{c.example}</p></div></div>))}</div>
-    </div></section>
+    <section className="py-20 px-4 border-t border-border/50">
+      <div className="max-w-4xl mx-auto">
+        <Reveal variants={fadeUp} amount={0.3}>
+          <h2 className="font-heading text-3xl text-foreground text-center mb-12">{t.useCasesTitle}</h2>
+        </Reveal>
+        {/* 3D card-place: each card tilts in from rotateX(10deg) as if laid on a
+            table, staggered. The perspective is set on the parent so the tilt
+            reads as depth, not a flat skew. */}
+        <RevealGroup variants={staggerChildren(0.14, 0.15)} amount={0.2} className="grid md:grid-cols-3 gap-6" style={{ perspective: "1000px" }}>
+          {t.useCases.map((c) => (
+            <RevealItem key={c.title} variants={cardPlace} className="rounded-lg border border-border bg-card p-5" style={{ transformStyle: "preserve-3d" }}>
+              <c.icon className="h-6 w-6 text-accent mb-3" strokeWidth={1.5} />
+              <h3 className="font-heading text-base text-foreground mb-1.5">{c.title}</h3>
+              <p className="text-sm text-muted-foreground mb-3">{c.desc}</p>
+              <div className="rounded-md bg-secondary/20 border border-border/50 p-2.5">
+                <p className="text-xs text-muted-foreground italic">{c.example}</p>
+              </div>
+            </RevealItem>
+          ))}
+        </RevealGroup>
+      </div>
+    </section>
   );
 }
 
 function Pricing({ t, onSignup }: { t: typeof T.en; onSignup: () => void }) {
   return (
-    <section id="pricing" className="py-20 px-4 border-t border-border/50"><div className="max-w-4xl mx-auto">
-      <h2 className="font-heading text-3xl text-foreground text-center mb-3">{t.pricingTitle}</h2>
-      <p className="text-center text-muted-foreground mb-12">{t.pricingSubtitle}</p>
-      <div className="grid md:grid-cols-3 gap-6">{t.pricing.map((tier) => (<div key={tier.name} className={`rounded-lg border p-6 ${tier.highlight ? "border-accent bg-accent/5" : "border-border bg-card"}`}>{tier.highlight && <span className="mb-3 inline-block rounded-full bg-accent/20 px-2.5 py-0.5 text-[10px] font-medium text-accent-foreground">{t.recommended}</span>}<h3 className="font-heading text-lg text-foreground mb-1">{tier.name}</h3><div className="mb-4"><span className="font-heading text-3xl text-foreground">{tier.price}</span><span className="text-sm text-muted-foreground">{tier.period}</span></div><ul className="space-y-1.5 mb-5">{tier.features.map((feat) => (<li key={feat} className="flex items-start gap-2 text-sm text-muted-foreground"><Check className="h-3.5 w-3.5 text-accent shrink-0 mt-0.5" />{feat}</li>))}</ul><button onClick={onSignup} className={`w-full rounded-md px-4 py-2 text-sm font-medium transition-colors ${tier.highlight ? "bg-primary text-foreground hover:bg-accent hover:text-accent-foreground" : "border border-border text-foreground hover:bg-secondary/40"}`}>{tier.cta}</button></div>))}</div>
-    </div></section>
+    <section id="pricing" className="py-20 px-4 border-t border-border/50">
+      <div className="max-w-4xl mx-auto">
+        <Reveal variants={fadeUp} amount={0.3}>
+          <h2 className="font-heading text-3xl text-foreground text-center mb-3">{t.pricingTitle}</h2>
+        </Reveal>
+        <Reveal variants={fadeUp} amount={0.3} delay={0.1}>
+          <p className="text-center text-muted-foreground mb-12">{t.pricingSubtitle}</p>
+        </Reveal>
+        {/* The highlighted (Pro) tier uses tierElevate (rises higher + scales up +
+            delayed) so it visibly "lifts above" the side tiers, which use tierRise.
+            This makes the recommendation feel physical, not just a colored border. */}
+        <RevealGroup variants={staggerChildren(0.1, 0.1)} amount={0.2} className="grid md:grid-cols-3 gap-6 items-start">
+          {t.pricing.map((tier) => (
+            <RevealItem key={tier.name} variants={tier.highlight ? tierElevate : tierRise} className={`rounded-lg border p-6 ${tier.highlight ? "border-accent bg-accent/5" : "border-border bg-card"}`}>
+              {tier.highlight && <span className="mb-3 inline-block rounded-full bg-accent/20 px-2.5 py-0.5 text-[10px] font-medium text-accent-foreground">{t.recommended}</span>}
+              <h3 className="font-heading text-lg text-foreground mb-1">{tier.name}</h3>
+              <div className="mb-4"><span className="font-heading text-3xl text-foreground">{tier.price}</span><span className="text-sm text-muted-foreground">{tier.period}</span></div>
+              <ul className="space-y-1.5 mb-5">{tier.features.map((feat) => (<li key={feat} className="flex items-start gap-2 text-sm text-muted-foreground"><Check className="h-3.5 w-3.5 text-accent shrink-0 mt-0.5" />{feat}</li>))}</ul>
+              <button onClick={onSignup} className={`w-full rounded-md px-4 py-2 text-sm font-medium transition-colors ${tier.highlight ? "bg-primary text-foreground hover:bg-accent hover:text-accent-foreground" : "border border-border text-foreground hover:bg-secondary/40"}`}>{tier.cta}</button>
+            </RevealItem>
+          ))}
+        </RevealGroup>
+      </div>
+    </section>
   );
 }
 
 function FAQ({ t }: { t: typeof T.en }) {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
   return (
-    <section id="faq" className="py-20 px-4 border-t border-border/50"><div className="max-w-2xl mx-auto">
-      <h2 className="font-heading text-3xl text-foreground text-center mb-12">{t.faqTitle}</h2>
-      <div className="space-y-2">{t.faqs.map((item, i) => (<div key={i} className="rounded-lg border border-border bg-card overflow-hidden"><button onClick={() => setOpenIdx(openIdx === i ? null : i)} className="w-full flex items-center justify-between px-4 py-3 text-left"><span className="text-sm font-medium text-foreground">{item.q}</span><ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform shrink-0 ml-2 ${openIdx === i ? "rotate-180" : ""}`} /></button><AnimatePresence>{openIdx === i && (<motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden"><p className="px-4 pb-4 text-sm text-muted-foreground leading-relaxed">{item.a}</p></motion.div>)}</AnimatePresence></div>))}</div>
-    </div></section>
+    <section id="faq" className="py-20 px-4 border-t border-border/50">
+      <div className="max-w-2xl mx-auto">
+        <Reveal variants={fadeUp} amount={0.3}>
+          <h2 className="font-heading text-3xl text-foreground text-center mb-12">{t.faqTitle}</h2>
+        </Reveal>
+        {/* Each question "surfaces from a haze": starts blurred + low, clears as
+            it enters. Staggered so they emerge one-by-one like thoughts forming. */}
+        <RevealGroup variants={staggerChildren(0.07, 0.1)} amount={0.15} className="space-y-2">
+          {t.faqs.map((item, i) => (
+            <RevealItem key={i} variants={hazeClear} className="rounded-lg border border-border bg-card overflow-hidden">
+              <button onClick={() => setOpenIdx(openIdx === i ? null : i)} className="w-full flex items-center justify-between px-4 py-3 text-left">
+                <span className="text-sm font-medium text-foreground">{item.q}</span>
+                <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform shrink-0 ml-2 ${openIdx === i ? "rotate-180" : ""}`} />
+              </button>
+              <AnimatePresence>{openIdx === i && (<motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden"><p className="px-4 pb-4 text-sm text-muted-foreground leading-relaxed">{item.a}</p></motion.div>)}</AnimatePresence>
+            </RevealItem>
+          ))}
+        </RevealGroup>
+      </div>
+    </section>
   );
 }
 
 function FinalCTA({ t, onSignup }: { t: typeof T.en; onSignup: () => void }) {
   return (
-    <section className="relative py-24 px-4 border-t border-border/50 overflow-hidden"><HeptagonPattern opacity={0.05} /><div className="relative max-w-2xl mx-auto text-center"><BrandMark size={40} className="mx-auto mb-4" /><h2 className="font-heading text-3xl md:text-4xl text-foreground mb-4">{t.ctaTitle}</h2><p className="text-muted-foreground mb-8">{t.ctaSubtitle}</p><button onClick={onSignup} className="inline-flex items-center gap-2 rounded-lg bg-primary px-8 py-3 text-base font-medium text-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:scale-[1.02]">{t.ctaButton}<ArrowRight className="h-4 w-4" /></button></div></section>
+    <section className="relative py-24 px-4 border-t border-border/50 overflow-hidden">
+      <HeptagonPattern opacity={0.05} />
+      <div className="relative max-w-2xl mx-auto text-center">
+        {/* The heptagon outline draws itself in (strokeDashoffset), then the
+            top-vertex node pops in — "the call crystallizes". Replaces the
+            static BrandMark with the animated HeptagonDraw. */}
+        <Reveal variants={scaleIn} amount={0.5} className="flex justify-center mb-4">
+          <HeptagonDraw size={40} />
+        </Reveal>
+        <h2 className="font-heading text-3xl md:text-4xl text-foreground mb-4">
+          <WordReveal text={t.ctaTitle} stagger={0.08} delay={0.3} />
+        </h2>
+        <Reveal variants={fadeUp} amount={0.5} delay={0.6}>
+          <p className="text-muted-foreground mb-8">{t.ctaSubtitle}</p>
+        </Reveal>
+        <Reveal variants={scaleIn} amount={0.5} delay={0.8}>
+          <button onClick={onSignup} className="inline-flex items-center gap-2 rounded-lg bg-primary px-8 py-3 text-base font-medium text-foreground transition-all hover:bg-accent hover:text-accent-foreground hover:scale-[1.02]">{t.ctaButton}<ArrowRight className="h-4 w-4" /></button>
+        </Reveal>
+      </div>
+    </section>
   );
 }
 
@@ -567,25 +746,33 @@ function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l:
 
   return (
     <footer className="relative border-t border-border px-4 py-12 overflow-hidden">
-      {/* Filigree: large BrandMark watermark in the background */}
-      <div className="absolute -right-8 -bottom-8 pointer-events-none opacity-[0.03]">
+      {/* Filigree: large BrandMark watermark in the background — slow fades in
+          to its resting opacity (0.03). Custom variant because fadeUp would
+          animate to opacity:1 which is wrong for a watermark. */}
+      <Reveal
+        variants={{ hidden: { opacity: 0 }, visible: { opacity: 0.03, transition: { duration: 1.6, ease: [0.16, 1, 0.3, 1] } } }}
+        amount={0.3}
+        className="absolute -right-8 -bottom-8 pointer-events-none"
+      >
         <BrandMark size={280} />
-      </div>
+      </Reveal>
       <div className="relative max-w-5xl mx-auto">
-        {/* 3 columns */}
-        <div className="flex flex-wrap gap-8 mb-8">
+        {/* Columns stagger in from below — the footer "settles into place" */}
+        <RevealGroup variants={staggerChildren(0.08, 0.1)} amount={0.2} className="flex flex-wrap gap-8 mb-8">
           {t.footerCols.map((col) => (
-            <div key={col.title} className="w-1/2 sm:w-1/4 md:w-auto lg:flex-1 min-w-[120px]">
+            <RevealItem key={col.title} variants={fadeUp} className="w-1/2 sm:w-1/4 md:w-auto lg:flex-1 min-w-[120px]">
               <h4 className="text-xs font-medium text-foreground mb-3 uppercase tracking-wider">{col.title}</h4>
               <ul className="space-y-2">{col.links.map((link) => (<li key={link}><a href={linkHref(link)} className="text-xs text-muted-foreground hover:text-foreground transition-colors">{link}</a></li>))}</ul>
-            </div>
+            </RevealItem>
           ))}
-        </div>
+        </RevealGroup>
         {/* Bottom bar: copyright + social links + language switcher */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 border-t border-border/50">
-          <p className="text-xs text-muted-foreground">© 2025 {APP_NAME}. {t.rights}</p>
-          <LanguageSwitcher lang={lang} setLang={setLang} />
-        </div>
+        <Reveal variants={fadeUp} amount={0.3} delay={0.3}>
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-8 border-t border-border/50">
+            <p className="text-xs text-muted-foreground">© 2025 {APP_NAME}. {t.rights}</p>
+            <LanguageSwitcher lang={lang} setLang={setLang} />
+          </div>
+        </Reveal>
       </div>
     </footer>
   );

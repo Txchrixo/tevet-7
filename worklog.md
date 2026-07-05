@@ -606,3 +606,45 @@ Work Log:
 Stage Summary:
 - The two navbar CTAs now lead to DIFFERENT forms (login vs signup) instead of both funneling to login. The demo is only triggered by the Hero "View demo" button, not by "Log in".
 - 3 files modified, 0 created. Backward compatible (AuthScreen initialMode defaults to "login").
+
+---
+Task ID: 45
+Agent: main
+Task: Add original, authentic scroll-reveal animations to each landing page section (down AND up). User wanted each section to have its own signature motion — not generic fade-in-up — showing a designer's hand.
+
+Work Log:
+- Created src/components/producer-copilot/landing-motion.tsx — a motion-primitives module with:
+  * usePrefersReducedMotion() hook — all animations disabled for accessibility (returns static elements).
+  * 10 named variant sets, each a metaphor: blurFocus, slideFromLeft (-1.2deg tilt, "heavier"), slideFromRight (+1.2deg, "resolving"), cardRise, stepPop (soft-back overshoot), cardPlace (rotateX 3D tilt), tierRise, tierElevate (y+scale 1.03+delayed), hazeClear (blur 4px→0), fadeUp, scaleIn.
+  * staggerChildren(stagger, delayChildren) factory for cascade reveals.
+  * <Reveal> single-element wrapper, <RevealGroup>+<RevealItem> stagger container/child. All use whileInView + viewport={{ once: false, amount }} for BIDIRECTIONAL replay (scroll down → animate in; scroll up → reset; scroll back → re-animate).
+  * <HeptagonDraw> — animated SVG heptagon path-draw (strokeDashoffset full→0 over 1.4s) + top-vertex node pops in after, for the FinalCTA. Uses useInView for bidirectional control.
+  * <WordReveal> — splits text into words, each masked behind overflow-hidden span, rises from y:110%→0 sequentially.
+  * Custom easing curves: EASE_OUT_EXPO [0.16,1,0.3,1] for reveals, EASE_SOFT_BACK [0.34,1.56,0.64,1] for pops.
+
+- Modified src/components/producer-copilot/landing-page.tsx — applied per-section signature animations:
+  * Hero: badge scaleIn (soft-back) → headline WordReveal (line 1, then line 2 accent delayed 0.3s) → subtitle fadeUp (0.5s delay) → CTA buttons scaleIn staggered (0.65s delay) → demo card cardPlace (3D rotateX tilt + perspective 1200px). Replaced the old generic fade-up-on-mount.
+  * SocialProof: proof-label fadeUp; logo blurFocus (blur 10px→0, "credibility comes into focus"); metrics stagger blurFocus (0.12s each, 0.1s delayChildren).
+  * ProblemSolution: problem column slideFromLeft (x:-48, rotate:-1.2°, "tension dragging in"); solution column slideFromRight (x:+48, rotate:+1.2°, delayed 0.15s, "resolving"); list items stagger fadeUp inside each column.
+  * Features: title+subtitle fadeUp; 6-card grid RevealGroup staggerChildren(0.08, 0.15) with cardRise variant — creates a diagonal cascade sweep across the grid. amount:0.15 so it triggers as the grid top enters.
+  * HowItWorks: title fadeUp; RevealGroup staggerChildren(0.25, 0.2) for sequential step reveal (0/0.25/0.5s — process "unfolds"); each step stepPop (scale 0→1 soft-back); added a connecting line (motion.div, scaleX 0→1, 1.2s, delayed 0.3s) that draws itself behind the step circles on desktop. Circles get bg-background + z-10 so the line passes behind them.
+  * UseCases: title fadeUp; RevealGroup staggerChildren(0.14, 0.15) with cardPlace variant (rotateX 10°→0, y:34→0) + perspective:1000px on parent + preserve-3d on cards — "cards placed on a table" 3D tilt.
+  * Pricing: title+subtitle fadeUp; RevealGroup staggerChildren(0.1, 0.1); side tiers use tierRise (y:24→0), highlighted Pro tier uses tierElevate (y:48→0, scale 0.94→1.03, delayed 0.1s) so it visibly "lifts above" the others. items-start on grid so the elevated scale doesn't cause misalignment.
+  * FAQ: title fadeUp; RevealGroup staggerChildren(0.07, 0.1); each item hazeClear (y:18, blur 4px → 0, "questions surfacing from haze"). Existing accordion expand/collapse preserved.
+  * FinalCTA: replaced static BrandMark with <HeptagonDraw size=40> (path draws itself in, node pops after); headline <WordReveal> (0.08s stagger, 0.3s delay); subtitle fadeUp (0.6s delay); button scaleIn (0.8s delay). Sequential crystallization.
+  * Footer: watermark BrandMark custom inline variant (opacity 0→0.03 over 1.6s — NOT fadeUp which would go to opacity:1); columns RevealGroup staggerChildren(0.08, 0.1) fadeUp; bottom bar fadeUp (0.3s delay).
+
+- Fixed a stray duplicate ")}" left from the FinalCTA one-liner edit.
+- Removed an accent-bar CSS keyframe experiment from Features that would have fired on mount (wrong timing vs scroll-reveal) — kept the diagonal cascade clean.
+- Removed md:-translate-y-2 from Pricing Pro tier (Tailwind transform conflict with Framer Motion y animation).
+
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings in layout.tsx).
+  * Dev server: all GET / 200, clean compiles.
+  * Agent Browser: scrolled through every section (Hero→SocialProof→ProblemSolution→Features→HowItWorks→UseCases→Pricing→FAQ→FinalCTA→Footer) — all content renders, nothing stuck in hidden state. Scrolled back up to Hero, then back down to Features — content re-revealed (bidirectional replay confirmed). Zero runtime errors, zero console errors.
+
+Stage Summary:
+- Every landing page section now has a DISTINCT, content-motivated scroll animation that replays in both directions. No generic fade-in-up anywhere.
+- Animation metaphors: blur-focus (SocialProof), tension/resolution slide (ProblemSolution), diagonal cascade (Features), sequential unfold + line draw (HowItWorks), 3D card-place (UseCases), elevation (Pricing), haze-clear (FAQ), heptagon crystallize + word reveal (FinalCTA), settle (Footer).
+- All animations respect prefers-reduced-motion (accessibility).
+- 1 file created (landing-motion.tsx, ~280 lines), 1 file modified (landing-page.tsx).
