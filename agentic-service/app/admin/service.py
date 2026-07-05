@@ -97,14 +97,15 @@ async def get_tenant_config(
 
 
 async def get_tenant_conversations(
-    db: AsyncSession, tenant_id: str, limit: int = 50
+    db: AsyncSession, tenant_id: str, limit: int = 50, offset: int = 0
 ) -> list[dict[str, Any]]:
-    """List recent traces for a tenant (newest first)."""
+    """List recent traces for a tenant (newest first, paginated)."""
     rows = (await db.execute(
         select(traces)
         .where(traces.c.tenant_id == tenant_id)
         .order_by(traces.c.created_at.desc())
         .limit(min(max(limit, 1), 500))
+        .offset(max(offset, 0))
     )).all()
     return [
         {
@@ -121,6 +122,15 @@ async def get_tenant_conversations(
         }
         for r in rows
     ]
+
+
+async def count_tenant_conversations(db: AsyncSession, tenant_id: str) -> int:
+    """Count total traces for a tenant (for pagination metadata)."""
+    from sqlalchemy import func
+    result = await db.execute(
+        select(func.count()).select_from(traces).where(traces.c.tenant_id == tenant_id)
+    )
+    return int(result.scalar() or 0)
 
 
 async def get_tenant_stats(
@@ -171,8 +181,8 @@ async def is_platform_owner(db: AsyncSession, user_id: int) -> bool:
     return bool(r and r.is_platform_owner)
 
 
-async def list_all_tenants(db: AsyncSession) -> list[dict[str, Any]]:
-    """List all tenants with member_count, conversation_count, total_cost_usd."""
+async def list_all_tenants(db: AsyncSession, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    """List all tenants with member_count, conversation_count, total_cost_usd (paginated)."""
     # Aggregate traces per tenant.
     trace_agg = (
         select(
@@ -214,6 +224,8 @@ async def list_all_tenants(db: AsyncSession) -> list[dict[str, Any]]:
         .outerjoin(trace_agg, trace_agg.c.tid == tenants.c.id)
         .outerjoin(cfg_agg, cfg_agg.c.tid == tenants.c.id)
         .order_by(tenants.c.created_at)
+        .limit(min(max(limit, 1), 500))
+        .offset(max(offset, 0))
     )).all()
 
     return [

@@ -37,14 +37,17 @@ async def admin_tenant_config(
     return await admin_service.get_tenant_config(db, ctx.tenant_id)
 
 
-@router.get("/tenants/{tenant_id}/conversations", response_model=list[dict[str, Any]])
+@router.get("/tenants/{tenant_id}/conversations")
 async def admin_tenant_conversations(
     ctx=Depends(require_tenant_admin),
     db: AsyncSession = Depends(get_db),
     limit: int = 50,
-) -> list[dict[str, Any]]:
-    """List recent traces for a tenant. Admins + platform owners only."""
-    return await admin_service.get_tenant_conversations(db, ctx.tenant_id, limit)
+    offset: int = 0,
+) -> dict[str, Any]:
+    """List recent traces for a tenant (paginated). Admins + platform owners only."""
+    items = await admin_service.get_tenant_conversations(db, ctx.tenant_id, limit, offset)
+    total = await admin_service.count_tenant_conversations(db, ctx.tenant_id)
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/tenants/{tenant_id}/stats", response_model=dict[str, Any])
@@ -56,13 +59,20 @@ async def admin_tenant_stats(
     return await admin_service.get_tenant_stats(db, ctx.tenant_id)
 
 
-@router.get("/platform/tenants", response_model=list[dict[str, Any]])
+@router.get("/platform/tenants")
 async def admin_platform_tenants(
     user=Depends(require_platform_owner),
     db: AsyncSession = Depends(get_db),
-) -> list[dict[str, Any]]:
-    """List all tenants (platform owner only)."""
-    return await admin_service.list_all_tenants(db)
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """List all tenants (platform owner only, paginated)."""
+    items = await admin_service.list_all_tenants(db, limit, offset)
+    from sqlalchemy import func, select as sa_select
+    from app.db_seed import tenants as tenants_table
+    total_result = await db.execute(sa_select(func.count()).select_from(tenants_table))
+    total = int(total_result.scalar() or 0)
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
 
 
 @router.get("/platform/stats", response_model=dict[str, Any])

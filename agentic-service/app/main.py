@@ -117,16 +117,19 @@ def create_app() -> FastAPI:
         redoc_url="/redoc",
     )
 
-    # CORS — wide open in dev, locked down via CORS_ORIGINS in prod.
-    origins = (
-        ["*"] if settings.cors_origins == "*" else settings.cors_origins.split(",")
-    )
+    # CORS — Phase B7 lockdown. "*" + credentials is invalid per spec.
+    if settings.cors_origins == "*":
+        origins = ["*"]
+        allow_credentials = False
+    else:
+        origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+        allow_credentials = True
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_credentials=allow_credentials,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
     )
 
     # Routers
