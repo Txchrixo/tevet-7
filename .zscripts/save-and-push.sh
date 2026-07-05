@@ -24,38 +24,43 @@ echo "=========================================="
 echo "[$(date '+%Y-%m-%d %H:%M:%S')] save-and-push: $MSG"
 echo "=========================================="
 
+# ── 0. Force the git identity to the repo owner (NEVER commit as "Z User") ──
+# This is a hard rule: all commits must be under Christian Nana / Txchrixo.
+git config user.name "Christian Nana"
+git config user.email "87042400+Txchrixo@users.noreply.github.com"
+
 # ── 1. Git add + commit ──
 echo "[1/3] Git commit..."
 git add -A
 if git diff --cached --quiet; then
-	echo "No changes to commit."
+        echo "No changes to commit."
 else
-	git commit -m "$MSG" --allow-empty-message
-	echo "Committed: $(git log -1 --oneline)"
+        git commit -m "$MSG" --allow-empty-message
+        echo "Committed: $(git log -1 --oneline)"
 fi
 
 # ── 2. Push to GitHub (non-force) ──
 echo "[2/3] Git push (origin/main, non-force)..."
 if git push origin main 2>&1; then
-	echo "Pushed to GitHub ✓"
+        echo "Pushed to GitHub ✓"
 else
-	echo "WARNING: push failed (auth or network). Commit is local."
-	echo "To fix: configure git credentials or use a PAT."
-	echo "The commit is safe locally + in repo.tar."
+        echo "WARNING: push failed (auth or network). Commit is local."
+        echo "To fix: configure git credentials or use a PAT."
+        echo "The commit is safe locally + in repo.tar."
 fi
 
 # ── 3. Update repo.tar (sandbox backup) ──
 echo "[3/3] Updating sandbox backup (repo.tar)..."
 tar -cf /home/sync/repo.tar.new \
-	--exclude='node_modules' \
-	--exclude='.venv' \
-	--exclude='dev.db' \
-	--exclude='__pycache__' \
-	--exclude='.next' \
-	--exclude='*.pyc' \
-	--exclude='download' \
-	--exclude='upload' \
-	-C "$PROJECT_DIR" . 2>/dev/null
+        --exclude='node_modules' \
+        --exclude='.venv' \
+        --exclude='dev.db' \
+        --exclude='__pycache__' \
+        --exclude='.next' \
+        --exclude='*.pyc' \
+        --exclude='download' \
+        --exclude='upload' \
+        -C "$PROJECT_DIR" . 2>/dev/null
 mv /home/sync/repo.tar.new /home/sync/repo.tar
 echo "repo.tar updated ($(stat -c '%s' /home/sync/repo.tar) bytes) ✓"
 
