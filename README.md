@@ -1,7 +1,7 @@
 <table align="center">
   <tr>
-    <td><img src="docs/screenshots/logo.svg" alt="logo" width="56" height="56" /></td>
-    <td><h1>Tevet-7</h1></td>
+    <td valign="middle"><img src="docs/screenshots/logo.svg" alt="logo" width="56" height="56" /></td>
+    <td valign="middle"><span style="font-size: 36px; font-weight: 700;">Tevet-7</span></td>
   </tr>
 </table>
 
