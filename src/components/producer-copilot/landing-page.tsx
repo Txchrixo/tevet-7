@@ -797,14 +797,17 @@ function FAQ({ t }: { t: typeof T.en }) {
       {/*
         Painted artwork behind the FAQ content, constrained to the page
         max-width (1230px, same as the navbar + Hero art frame) and rounded
-        with the same radius as the CTA buttons (rounded-lg). Only the BOTTOM
-        edge fades into the page background (for the transition to the
-        FinalCTA below); the top edge is NOT degraded — the painting is full
+        with rounded-xl corners. The art wrapper uses inset-y-0 (not h-full)
+        so it spans the FULL section height including the py-20 padding —
+        this way the bottom fade reaches all the way down to the FinalCTA
+        section below, with no dark green page-background band interrupting
+        the transition. Only the BOTTOM edge fades (for the FinalCTA
+        transition); the top edge is NOT degraded — the painting is full
         strength at the top, framed by the rounded corners.
       */}
-      <div className="absolute inset-0 flex justify-center pointer-events-none">
+      <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-[1230px] px-4 pointer-events-none">
         <div
-          className="relative w-full max-w-[1230px] h-full rounded-xl overflow-hidden"
+          className="relative w-full h-full rounded-xl overflow-hidden"
           style={{
             backgroundImage: "url('/art-bg-2.webp')",
             backgroundSize: "cover",

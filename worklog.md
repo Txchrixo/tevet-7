@@ -1030,3 +1030,21 @@ Work Log:
 
 Stage Summary:
 - FAQ artwork bottom fade is now tall (h-2/5) and progressive again. Radius bumped to rounded-xl (10px). Top stays full-strength. 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 61
+Agent: main
+Task: Fix the dark green band between the FAQ artwork bottom fade and the FinalCTA section that prevented the fade from blending into "Ready to talk to your data?".
+
+Work Log:
+- User feedback (with screenshot): "ya une sorte de ton vert fonce la dans faq qui empeche le degrade de limage de se fondre dans 'Ready to talk to your data?'".
+- VLM analysis of the screenshot confirmed: a visible color discontinuity — the FAQ painting faded into a dark green tone, then that dark green was abruptly replaced by the FinalCTA's solid dark green background. The fade didn't reach the FinalCTA.
+- Root cause: the FAQ section has `py-20` (80px top + 80px bottom padding). The art frame was positioned `absolute inset-0` inside the section, but `inset-0` respects the padding box — so the art frame stopped 80px short of the section's bottom edge, leaving a band of pure `bg-background` (dark green) between the art's bottom fade and the FinalCTA section. The fade ended before reaching the FinalCTA.
+- Fix: changed the art wrapper from `absolute inset-0 flex justify-center` (which respects padding) to `absolute inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-[1230px] px-4` — `inset-y-0` spans the FULL section height (border box, ignoring the py-20 padding), so the art frame now extends all the way to the bottom edge of the FAQ section. The bottom scrim (h-2/5) now fades the painting all the way down to the FinalCTA boundary, with no dark green page-background band in between.
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings).
+  * Dev server alive (PID 3042), HTTP 200, zero runtime errors.
+  * VLM analysis of the new screenshot confirmed: (1) no visible dark green band/strip between the FAQ painting fade and the FinalCTA, (2) FAQ painting fades smoothly and continuously all the way down into the FinalCTA background with no color discontinuity, (3) transition is smooth with no visible break.
+
+Stage Summary:
+- The FAQ artwork bottom fade now reaches all the way to the FinalCTA section, blending smoothly with no dark green band interrupting the transition. The art wrapper uses inset-y-0 (full section height, ignoring py-20 padding) instead of inset-0 (padding box). 1 file modified (landing-page.tsx), 0 added.
