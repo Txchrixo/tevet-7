@@ -271,7 +271,7 @@ function HeptagonPattern({ opacity = 0.03 }: { opacity?: number }) {
         if (rect.bottom < 0 || rect.top > window.innerHeight) return;
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        const mask = `radial-gradient(circle 220px at ${x}px ${y}px, black 0%, black 35%, transparent 72%)`;
+        const mask = `radial-gradient(circle 260px at ${x}px ${y}px, black 0%, black 38%, transparent 72%)`;
         s.style.WebkitMaskImage = mask;
         s.style.maskImage = mask;
       });
@@ -336,7 +336,7 @@ function HeptagonPattern({ opacity = 0.03 }: { opacity?: number }) {
         ref={spotlightRef}
         className="absolute inset-0"
         style={{
-          opacity: 5,
+          opacity: 7,
           WebkitMaskImage: "radial-gradient(circle 0px at -999px -999px, black 0%, transparent 70%)",
           maskImage: "radial-gradient(circle 0px at -999px -999px, black 0%, transparent 70%)",
         }}
@@ -344,7 +344,7 @@ function HeptagonPattern({ opacity = 0.03 }: { opacity?: number }) {
         <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" className="absolute inset-0">
           <defs>
             <pattern id="heptagon-pattern-bright" x="0" y="0" width="60" height="60" patternUnits="userSpaceOnUse">
-              <path d="M 30 8 L 47.7 18.5 L 50.5 38.5 L 37.6 53 L 22.4 53 L 9.5 38.5 L 12.3 18.5 Z" fill="none" stroke="var(--accent, #A8C090)" strokeWidth="1.5" />
+              <path d="M 30 8 L 47.7 18.5 L 50.5 38.5 L 37.6 53 L 22.4 53 L 9.5 38.5 L 12.3 18.5 Z" fill="none" stroke="var(--accent, #A8C090)" strokeWidth="1.75" />
             </pattern>
           </defs>
           <rect width="100%" height="100%" fill="url(#heptagon-pattern-bright)" />
@@ -795,43 +795,34 @@ function FAQ({ t }: { t: typeof T.en }) {
   return (
     <section id="faq" className="relative py-20 px-4 overflow-hidden">
       {/*
-        Painted wallpaper behind the FAQ section.
-        The art_bg_2 landscape photograph fills the section full-bleed,
-        darkened (brightness 0.18) so it reads as a moody backdrop. The FAQ
-        cards (bg-card, opaque) float on top of the wallpaper. Top + bottom
-        scrims fade the painting into the page background so the seam into
-        the adjacent sections (Pricing / FinalCTA) is clean.
+        Painted artwork behind the FAQ content, constrained to the page
+        max-width (1230px, same as the navbar + Hero art frame) and rounded
+        with the same radius as the CTA buttons (rounded-lg). Only the BOTTOM
+        edge fades into the page background (for the transition to the
+        FinalCTA below); the top edge is NOT degraded — the painting is full
+        strength at the top, framed by the rounded corners.
       */}
-      <div className="absolute inset-0 pointer-events-none">
+      <div className="absolute inset-0 flex justify-center pointer-events-none">
         <div
-          className="absolute inset-0"
+          className="relative w-full max-w-[1230px] h-full rounded-lg overflow-hidden"
           style={{
             backgroundImage: "url('/art-bg-2.webp')",
             backgroundSize: "cover",
             backgroundPosition: "center",
             filter: "brightness(0.85) saturate(0.85) contrast(1.03)",
           }}
-        />
-        {/* Smooth top + bottom scrims: very tall (h-2/5) with a multi-stop
-            ease curve so the painting fades in/out gradually over a large
-            area, melting into the adjacent sections (Pricing above, FinalCTA
-            below) with no abrupt seam. The gradient holds the page background
-            solid for the first 15%, then eases slowly to transparent across
-            the rest — a long, gentle fade rather than a short hard one. */}
-        <div
-          className="absolute inset-x-0 top-0 h-2/5"
-          style={{
-            background:
-              "linear-gradient(to bottom, var(--background) 0%, var(--background) 14%, color-mix(in srgb, var(--background) 75%, transparent) 35%, color-mix(in srgb, var(--background) 35%, transparent) 65%, transparent 100%)",
-          }}
-        />
-        <div
-          className="absolute inset-x-0 bottom-0 h-2/5"
-          style={{
-            background:
-              "linear-gradient(to top, var(--background) 0%, var(--background) 14%, color-mix(in srgb, var(--background) 75%, transparent) 35%, color-mix(in srgb, var(--background) 35%, transparent) 65%, transparent 100%)",
-          }}
-        />
+        >
+          {/* Bottom scrim only: fades the painting into the page background
+              for a smooth transition to the FinalCTA section below. The top
+              is left untouched (full-strength painting). */}
+          <div
+            className="absolute inset-x-0 bottom-0 h-1/3"
+            style={{
+              background:
+                "linear-gradient(to top, var(--background) 0%, var(--background) 14%, color-mix(in srgb, var(--background) 75%, transparent) 35%, color-mix(in srgb, var(--background) 35%, transparent) 65%, transparent 100%)",
+            }}
+          />
+        </div>
       </div>
       <div className="relative max-w-2xl mx-auto">
         <Reveal variants={fadeUp} amount={0.3}>

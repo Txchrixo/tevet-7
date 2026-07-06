@@ -977,3 +977,35 @@ Stage Summary:
 - FAQ art now fades very smoothly over a tall area (h-2/5) with a multi-stop ease gradient — no abrupt seam.
 - Footer background progresses gradually from the FinalCTA background (top) to the secondary tint (bottom) via a 4-stop gradient — smooth passage, no hard cut.
 - 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 59
+Agent: main
+Task: (1) FAQ art: constrain to page max-width, add rounded-lg radius (same as buttons), remove top degradation. (2) Make heptagon spotlight a bit more visible.
+
+Work Log:
+
+=== 1. FAQ art restructure ===
+- User: "limage derrier faq doit etre sujet au max width de page et ajoute a limage le meme radius que les btns, et en faissant que la partie en haut de limage ne soit plus degradee".
+- Rewrote the FAQ background layer in src/components/producer-copilot/landing-page.tsx:
+  * Was: full-bleed `absolute inset-0` painting + top scrim + bottom scrim (both h-2/5).
+  * Now: a centered container `max-w-[1230px]` (same as navbar + Hero art frame) with `rounded-lg overflow-hidden` (6px, same as CTA buttons). The painting is constrained to the page max-width and has rounded corners matching the buttons.
+  * Removed the TOP scrim entirely — the painting is now full-strength at the top (brightness 0.85 uniform, no gradient fade). Only the BOTTOM scrim remains (h-1/3) for the smooth transition to the FinalCTA below.
+- DOM verification: width=1230px, left margin=25px, right margin=25px (at 1280px viewport), borderRadius=6px (rounded-lg, matches CTA buttons).
+- VLM verification: "painted landscape clearly visible at full strength at the top, starts cleanly at the top edge (no gradual appearance)".
+
+=== 2. Heptagon spotlight more visible ===
+- User: "la lumiere quand on passe sur le filgramme elle est un peu trop discrete augmante la un peu plus".
+- Bumped the spotlight layer parameters in HeptagonPattern:
+  * opacity: 5 → 7 (brighter reveal zone)
+  * strokeWidth (bright pattern): 1.5 → 1.75 (thicker strokes in the revealed area)
+  * spotlight circle radius: 220px → 260px (larger revealed zone)
+  * mask solid stop: 35% → 38% (slightly larger fully-opaque center)
+- VLM verification: "clearly visible brighter circular zone, moderate prominence, tasteful — enhances visual hierarchy without distracting".
+
+- Overall verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings).
+  * Dev server alive (PID 3042), HTTP 200, zero runtime errors.
+
+Stage Summary:
+- FAQ artwork is now constrained to max-w-[1230px] with rounded-lg corners (same as buttons), top is full-strength (no degradation), bottom fades smoothly to FinalCTA. Heptagon spotlight is more visible (opacity 5→7, stroke 1.5→1.75, radius 220→260px). 1 file modified (landing-page.tsx), 0 added.
