@@ -856,3 +856,34 @@ Work Log:
 
 Stage Summary:
 - The FAQ section artwork is now clearly visible (brightness 0.85 vs previous 0.18). Scrims shortened (h-1/6 vs h-1/4) so the painting shows across more surface. FAQ cards slightly translucent (bg-card/90 + backdrop-blur) for a layered feel while staying readable. 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 55
+Agent: main
+Task: Remove all section separation lines (border-t/border-y) between sections, navbar bottom border, and footer top border (replaced with a different background color to mark the passage).
+
+Work Log:
+- Identified all section separation borders in src/components/producer-copilot/landing-page.tsx:
+  * Navbar (scrolled state): `border-b border-border` — REMOVED
+  * SocialProof: `border-y border-border/50` — REMOVED
+  * Features: `border-t border-border/50` — REMOVED
+  * HowItWorks: `border-t border-border/50` — REMOVED
+  * UseCases: `border-t border-border/50` — REMOVED
+  * Pricing: `border-t border-border/50` — REMOVED
+  * FAQ: `border-t border-border/50` — REMOVED
+  * FinalCTA: `border-t border-border/50` — REMOVED
+  * Footer: `border-t border-border` — REMOVED, replaced with `bg-secondary/20` (a muted darker green from the theme palette) to mark the passage into the footer via color contrast instead of a hard line.
+- Kept internal structural borders (not section separators):
+  * InteractiveDemo title bar `border-b border-border` (inside the demo window)
+  * InteractiveDemo table header/row borders (inside the demo table)
+  * InteractiveDemo metadata `border-t border-border` (inside the demo card)
+  * InteractiveDemo footer `border-t border-border` (inside the demo window)
+  * Footer internal divider `border-t border-border/50` between link columns and copyright bar (internal footer structure)
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings in layout.tsx).
+  * Dev server alive (PID 3042), GET / 200 in 44ms, hot recompile picked up the changes.
+  * Agent Browser screenshots captured at top/middle/footer positions.
+  * VLM analysis confirmed: (1) no visible horizontal separation lines between sections — transitions are seamless, (2) navbar has no bottom border line when scrolled, (3) footer has a subtly different background color (darker muted green, bg-secondary/20) marking the passage, (4) page flows smoothly from one section to the next without hard divider lines.
+
+Stage Summary:
+- All section separation lines removed. Navbar bottom border removed. Footer top border removed and replaced with bg-secondary/20 (a theme color) to mark the footer passage via color contrast. Internal structural borders (demo window, footer columns/copyright divider) preserved. 1 file modified (landing-page.tsx), 0 added.

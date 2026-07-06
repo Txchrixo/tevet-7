@@ -287,7 +287,7 @@ function Navbar({ t, onLogin, onSignup }: { t: typeof T.en; onLogin: () => void;
   ];
 
   return (
-    <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? "bg-background/90 backdrop-blur-md border-b border-border" : "bg-transparent"}`}>
+    <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? "bg-background/90 backdrop-blur-md" : "bg-transparent"}`}>
       <div className="max-w-[1230px] mx-auto px-4 lg:px-0 h-16 flex items-center justify-between">
         {/* Logo: clickable → scroll to top (home) */}
         <a href="#" onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="cursor-pointer">
@@ -508,7 +508,7 @@ function InteractiveDemo({ t }: { t: typeof T.en }) {
 
 function SocialProof({ t }: { t: typeof T.en }) {
   return (
-    <section className="py-10 border-y border-border/50">
+    <section className="py-10">
       <div className="max-w-4xl mx-auto px-4">
         <Reveal variants={fadeUp} amount={0.4}>
           <p className="text-center text-xs text-muted-foreground/60 mb-6 uppercase tracking-wider">{t.proofLabel}</p>
@@ -566,7 +566,7 @@ function ProblemSolution({ t }: { t: typeof T.en }) {
 
 function Features({ t }: { t: typeof T.en }) {
   return (
-    <section id="features" className="py-20 px-4 border-t border-border/50">
+    <section id="features" className="py-20 px-4">
       <div className="max-w-5xl mx-auto">
         <Reveal variants={fadeUp} amount={0.3}>
           <h2 className="font-heading text-3xl text-foreground text-center mb-3">{t.featuresTitle}</h2>
@@ -592,7 +592,7 @@ function Features({ t }: { t: typeof T.en }) {
 
 function HowItWorks({ t }: { t: typeof T.en }) {
   return (
-    <section id="how" className="py-20 px-4 border-t border-border/50">
+    <section id="how" className="py-20 px-4">
       <div className="max-w-4xl mx-auto">
         <Reveal variants={fadeUp} amount={0.3}>
           <h2 className="font-heading text-3xl text-foreground text-center mb-12">{t.howTitle}</h2>
@@ -624,7 +624,7 @@ function HowItWorks({ t }: { t: typeof T.en }) {
 
 function UseCases({ t }: { t: typeof T.en }) {
   return (
-    <section className="py-20 px-4 border-t border-border/50">
+    <section className="py-20 px-4">
       <div className="max-w-4xl mx-auto">
         <Reveal variants={fadeUp} amount={0.3}>
           <h2 className="font-heading text-3xl text-foreground text-center mb-12">{t.useCasesTitle}</h2>
@@ -651,7 +651,7 @@ function UseCases({ t }: { t: typeof T.en }) {
 
 function Pricing({ t, onSignup }: { t: typeof T.en; onSignup: () => void }) {
   return (
-    <section id="pricing" className="py-20 px-4 border-t border-border/50">
+    <section id="pricing" className="py-20 px-4">
       <div className="max-w-4xl mx-auto">
         <Reveal variants={fadeUp} amount={0.3}>
           <h2 className="font-heading text-3xl text-foreground text-center mb-3">{t.pricingTitle}</h2>
@@ -681,7 +681,7 @@ function Pricing({ t, onSignup }: { t: typeof T.en; onSignup: () => void }) {
 function FAQ({ t }: { t: typeof T.en }) {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
   return (
-    <section id="faq" className="relative py-20 px-4 border-t border-border/50 overflow-hidden">
+    <section id="faq" className="relative py-20 px-4 overflow-hidden">
       {/*
         Painted wallpaper behind the FAQ section.
         The art_bg_2 landscape photograph fills the section full-bleed,
@@ -737,7 +737,7 @@ function FAQ({ t }: { t: typeof T.en }) {
 
 function FinalCTA({ t, onSignup }: { t: typeof T.en; onSignup: () => void }) {
   return (
-    <section className="relative py-24 px-4 border-t border-border/50 overflow-hidden">
+    <section className="relative py-24 px-4 overflow-hidden">
       <HeptagonPattern opacity={0.05} />
       <div className="relative max-w-2xl mx-auto text-center">
         {/* The heptagon outline draws itself in (strokeDashoffset), then the
@@ -790,7 +790,7 @@ function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l:
   };
 
   return (
-    <footer className="relative border-t border-border px-4 py-12 overflow-hidden">
+    <footer className="relative bg-secondary/20 px-4 py-12 overflow-hidden">
       {/* Filigree: large BrandMark watermark in the background — slow fades in
           to its resting opacity (0.03). Custom variant because fadeUp would
           animate to opacity:1 which is wrong for a watermark. */}
