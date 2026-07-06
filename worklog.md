@@ -811,3 +811,27 @@ Work Log:
 
 Stage Summary:
 - The artwork frame now uses the new pastoral landscape painting (field, flowers, soft sky) instead of the previous cityscape. 1 file replaced (public/art-bg.webp), 0 code changes.
+
+---
+Task ID: 53
+Agent: main
+Task: Add art_bg_2.webp as a painted wallpaper background behind the FAQ section.
+
+Work Log:
+- Analyzed the new art_bg_2.webp with VLM: a landscape photograph with painterly vintage processing — soft greens (field), white (flowers), muted blues/grays (sea/sky), warm earthy tones (hills). Smooth texture with subtle grain, serene/nostalgic mood. Suitable as a dark background.
+- Copied /home/z/my-project/upload/art_bg_2.webp → /home/z/my-project/public/art-bg-2.webp so it's servable as a static asset.
+- Modified the FAQ section in src/components/producer-copilot/landing-page.tsx:
+  * Section: changed from `py-20 px-4 border-t border-border/50` to `relative py-20 px-4 border-t border-border/50 overflow-hidden`.
+  * Added an absolute background layer (pointer-events-none, inset-0) with the painting: background-image url('/art-bg-2.webp'), background-size cover, background-position center, filter brightness(0.18) saturate(0.55) contrast(1.08) — darkened + muted so it reads as a moody backdrop. The painting's texture (field, flowers, sky) stays discernible but subdued.
+  * Added top + bottom scrims: linear-gradient from var(--background) to transparent over the top 1/4, and transparent to var(--background) over the bottom 1/4. Fades the painting cleanly into the page background at both section seams (Pricing above, FinalCTA below) — no harsh edges.
+  * Content container: added `relative` so the FAQ title + accordion stack on top of the wallpaper.
+  * FAQ cards: already `bg-card` (opaque), added `shadow-lg` so they read as distinct floating surfaces on the wallpaper. Cards keep their rounded-lg border, hazeClear reveal animation, and accordion expand/collapse.
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings in layout.tsx).
+  * Dev server: GET / 200, clean compile, zero runtime errors.
+  * Agent Browser: screenshot captured at the FAQ section. Scrolled through Pricing → FAQ → FinalCTA; all sections render correctly.
+  * Accordion expand/collapse verified: clicked "Which AI models are supported?" → revealed the full answer text (Groq/Llama/DeepSeek/GLM-4.6/OpenRouter/Gemini).
+  * VLM analysis of the FAQ screenshot confirmed: (1) painted artwork background visible (dark, textured, gradient with organic patterns), (2) FAQ cards clearly floating on top, opaque, painting visible around/between them, (4) clean fades at top/bottom with no harsh seams, (5) moody atmospheric feel with layered aesthetic.
+
+Stage Summary:
+- The FAQ section now has the art_bg_2 landscape photograph as a painted wallpaper background (darkened + scrimmed), with the FAQ cards floating on top. 1 file added (public/art-bg-2.webp), 1 file modified (landing-page.tsx FAQ section).

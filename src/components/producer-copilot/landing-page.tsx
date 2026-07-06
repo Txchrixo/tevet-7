@@ -681,16 +681,46 @@ function Pricing({ t, onSignup }: { t: typeof T.en; onSignup: () => void }) {
 function FAQ({ t }: { t: typeof T.en }) {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
   return (
-    <section id="faq" className="py-20 px-4 border-t border-border/50">
-      <div className="max-w-2xl mx-auto">
+    <section id="faq" className="relative py-20 px-4 border-t border-border/50 overflow-hidden">
+      {/*
+        Painted wallpaper behind the FAQ section.
+        The art_bg_2 landscape photograph fills the section full-bleed,
+        darkened (brightness 0.18) so it reads as a moody backdrop. The FAQ
+        cards (bg-card, opaque) float on top of the wallpaper. Top + bottom
+        scrims fade the painting into the page background so the seam into
+        the adjacent sections (Pricing / FinalCTA) is clean.
+      */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: "url('/art-bg-2.webp')",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            filter: "brightness(0.18) saturate(0.55) contrast(1.08)",
+          }}
+        />
+        {/* Top + bottom scrims: fade the painting into the page background so
+            the transitions to Pricing (above) and FinalCTA (below) are clean. */}
+        <div
+          className="absolute inset-x-0 top-0 h-1/4"
+          style={{ background: "linear-gradient(to bottom, var(--background) 0%, transparent 100%)" }}
+        />
+        <div
+          className="absolute inset-x-0 bottom-0 h-1/4"
+          style={{ background: "linear-gradient(to top, var(--background) 0%, transparent 100%)" }}
+        />
+      </div>
+      <div className="relative max-w-2xl mx-auto">
         <Reveal variants={fadeUp} amount={0.3}>
           <h2 className="font-heading text-3xl text-foreground text-center mb-12">{t.faqTitle}</h2>
         </Reveal>
         {/* Each question "surfaces from a haze": starts blurred + low, clears as
-            it enters. Staggered so they emerge one-by-one like thoughts forming. */}
+            it enters. Staggered so they emerge one-by-one like thoughts forming.
+            The cards (bg-card, opaque) float on top of the painted wallpaper. */}
         <RevealGroup variants={staggerChildren(0.07, 0.1)} amount={0.15} className="space-y-2">
           {t.faqs.map((item, i) => (
-            <RevealItem key={i} variants={hazeClear} className="rounded-lg border border-border bg-card overflow-hidden">
+            <RevealItem key={i} variants={hazeClear} className="rounded-lg border border-border bg-card overflow-hidden shadow-lg">
               <button onClick={() => setOpenIdx(openIdx === i ? null : i)} className="w-full flex items-center justify-between px-4 py-3 text-left">
                 <span className="text-sm font-medium text-foreground">{item.q}</span>
                 <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform shrink-0 ml-2 ${openIdx === i ? "rotate-180" : ""}`} />
