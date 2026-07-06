@@ -251,7 +251,20 @@ const T = {
 
 function HeptagonPattern({ opacity = 0.03 }: { opacity?: number }) {
   return (
-    <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ opacity }}>
+    <div
+      className="absolute inset-0 pointer-events-none overflow-hidden"
+      style={{
+        opacity,
+        // Fade the pattern out toward the top + bottom edges so it melts into
+        // the adjacent sections instead of being cut hard at the seam. The
+        // mask is opaque from ~18% to ~82% of the height, transparent at the
+        // very top + bottom. WebKit + standard syntax for cross-browser.
+        WebkitMaskImage:
+          "linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)",
+        maskImage:
+          "linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)",
+      }}
+    >
       <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <pattern id="heptagon-pattern" x="0" y="0" width="60" height="60" patternUnits="userSpaceOnUse">
@@ -793,11 +806,19 @@ function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l:
     <footer className="relative bg-secondary/20 px-4 py-12 overflow-hidden">
       {/* Filigree: large BrandMark watermark in the background — slow fades in
           to its resting opacity (0.08). Custom variant because fadeUp would
-          animate to opacity:1 which is wrong for a watermark. */}
+          animate to opacity:1 which is wrong for a watermark. A radial mask
+          softens the edges so the heptagon melts into the footer instead of
+          being cut hard by the overflow-hidden boundary. */}
       <Reveal
         variants={{ hidden: { opacity: 0 }, visible: { opacity: 0.08, transition: { duration: 1.6, ease: [0.16, 1, 0.3, 1] } } }}
         amount={0.3}
         className="absolute -right-8 -bottom-8 pointer-events-none"
+        style={{
+          WebkitMaskImage:
+            "radial-gradient(ellipse at 35% 35%, black 35%, transparent 80%)",
+          maskImage:
+            "radial-gradient(ellipse at 35% 35%, black 35%, transparent 80%)",
+        }}
       >
         <BrandMark size={280} />
       </Reveal>

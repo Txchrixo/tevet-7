@@ -913,3 +913,25 @@ Work Log:
 
 Stage Summary:
 - All 3 heptagon filigrees (Hero pattern, FinalCTA pattern, Footer watermark) are now slightly more visible — visible but still subtle, adding textural depth without distracting from content. strokeWidth 0.5→0.75, opacities bumped from 0.03-0.05 → 0.08-0.11. 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 57
+Agent: main
+Task: Make heptagon filigrees fade out smoothly at section seams instead of being cut hard.
+
+Work Log:
+- Problem: the HeptagonPattern (Hero + FinalCTA) and the footer BrandMark watermark were rendered inside sections with `overflow-hidden`, so the pattern was sliced sharply at the top/bottom edges of each section — visible hard cut at the seam between sections.
+- Fix 1 — HeptagonPattern (src/components/producer-copilot/landing-page.tsx):
+  * Added a CSS mask (`maskImage` + `WebkitMaskImage`) with a vertical linear-gradient: `linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)`.
+  * The pattern is now opaque from 18% to 82% of the section height, and fades to transparent at the very top + bottom. This makes it melt naturally into the adjacent sections instead of being cut hard at the seam.
+- Fix 2 — Footer BrandMark watermark:
+  * Added a radial mask to the watermark's Reveal wrapper: `radial-gradient(ellipse at 35% 35%, black 35%, transparent 80%)`.
+  * The large heptagon (280px, positioned -right-8 -bottom-8) now has soft, feathered edges that blend into the footer background instead of being sliced by the overflow-hidden boundary.
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings).
+  * Dev server alive (PID 3042), HTTP 200.
+  * Agent Browser screenshots captured at Hero top seam + FinalCTA/footer seam.
+  * VLM analysis confirmed: (1) Hero top edge — heptagon pattern fades out smoothly/gradually, melts naturally into the background; (2) FinalCTA bottom edge — pattern fades out smoothly where FinalCTA meets the footer, no sharp cutoff; (3) Footer watermark — soft-edged, blends into the footer background without hard cut-off edges.
+
+Stage Summary:
+- All 3 heptagon filigrees (Hero pattern, FinalCTA pattern, Footer watermark) now fade out progressively toward section seams instead of being cut hard. HeptagonPattern uses a vertical linear-gradient mask (transparent 0%→black 18%→black 82%→transparent 100%); footer watermark uses a radial-gradient mask. 1 file modified (landing-page.tsx), 0 added.
