@@ -1009,3 +1009,24 @@ Work Log:
 
 Stage Summary:
 - FAQ artwork is now constrained to max-w-[1230px] with rounded-lg corners (same as buttons), top is full-strength (no degradation), bottom fades smoothly to FinalCTA. Heptagon spotlight is more visible (opacity 5→7, stroke 1.5→1.75, radius 220→260px). 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 60
+Agent: main
+Task: (1) Restore the smooth progressive bottom fade on the FAQ artwork (was "gâché" after the previous top-scrim removal shrank the bottom scrim too). (2) Increase the FAQ artwork radius a bit.
+
+Work Log:
+- User feedback: "la partie en bas de limage de faq doit contiuer son degrade progressive et smooth, la tu las gache. aussi augmante un peu le radius de limage en faq".
+- In the previous task (59) I had reduced the bottom scrim from h-2/5 to h-1/3 when restructuring the FAQ frame — that shortened the fade too much. Restored it:
+  * Bottom scrim height: h-1/3 → h-2/5 (taller fade area, 40% of the painting height = 258px measured).
+  * Kept the multi-stop ease curve gradient (var(--background) 0%→14% solid, →35% 75% mix, →65% 35% mix, →100% transparent) for a long, gentle blend.
+- Bumped the FAQ artwork radius: rounded-lg (6px) → rounded-xl (10px measured). Still matches the design system family but a bit more pronounced as requested.
+- Top of the painting remains full-strength (no top scrim) — unchanged from task 59.
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings).
+  * Dev server alive (PID 3042), HTTP 200, zero runtime errors.
+  * DOM measurement: width=1230px, borderRadius=10px, scrimHeight=258px (40% of painting).
+  * VLM analysis confirmed: (1) bottom fades smoothly and gradually over a large area (long gentle blend), (2) corners are rounded, (3) top is still full-strength (not degraded).
+
+Stage Summary:
+- FAQ artwork bottom fade is now tall (h-2/5) and progressive again. Radius bumped to rounded-xl (10px). Top stays full-strength. 1 file modified (landing-page.tsx), 0 added.
