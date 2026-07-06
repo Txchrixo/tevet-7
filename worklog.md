@@ -1065,3 +1065,24 @@ Work Log:
 
 Stage Summary:
 - The dark green band is gone. The FAQ artwork now stays visible for 75% of the section and only fades in the last quarter (h-1/4 scrim with an immediate ease gradient, no solid hold). The transition into the FinalCTA is smooth with no green block. 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 63
+Agent: main
+Task: Remove the dark green scrim entirely — use a CSS mask to fade the painting itself to transparent (no green overlay). Only round the TOP corners, not the bottom.
+
+Work Log:
+- User feedback (frustrated): "enleve cette peinture vert fonc ejen veux pas, cets pas difficile a comprendre je veux juste le degrade sur limage et le bottom radius doit meme pas etre applique seuleemnt le top".
+- Root cause of the persistent "dark green" issue: the scrim div used `var(--background)` (dark green, #2d3a2f) as its gradient color. No matter how short the scrim was, it always painted a layer of dark green ON TOP of the painting at the bottom. The user doesn't want dark green paint over the image — they want the image itself to just fade out.
+- Fix: removed the scrim div entirely. Instead, applied a CSS mask directly on the painting container:
+  * `maskImage: linear-gradient(to bottom, black 0%, black 72%, transparent 100%)`
+  * The painting is full-strength (opaque) from 0-72% of its height, then fades to transparent over the last 28%. The image itself dissolves — no colored overlay, no dark green paint. Whatever is behind the painting (the page background) shows through the fade naturally.
+- Radius: changed `rounded-xl` → `rounded-t-xl` (only top corners rounded). The bottom is square so it meets the FinalCTA section cleanly with no rounded edge.
+- Fixed a stray `</div>` left from removing the scrim's inner structure.
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings).
+  * Dev server alive (PID 3042), HTTP 200, zero runtime errors.
+  * VLM analysis confirmed ALL 4 criteria: (1) no solid dark green band/overlay/strip at the bottom, (2) painting fades/dissolves to transparent with no dark green paint layered on top, (3) only top corners rounded (bottom square), (4) top is full-strength and clear.
+
+Stage Summary:
+- No more dark green overlay. The FAQ painting now fades to transparent via a CSS mask (the image dissolves, nothing painted over it). Only top corners are rounded (rounded-t-xl), bottom is square. 1 file modified (landing-page.tsx), 0 added.

@@ -796,39 +796,28 @@ function FAQ({ t }: { t: typeof T.en }) {
     <section id="faq" className="relative py-20 px-4 overflow-hidden">
       {/*
         Painted artwork behind the FAQ content, constrained to the page
-        max-width (1230px, same as the navbar + Hero art frame) and rounded
-        with rounded-xl corners. The art wrapper uses inset-y-0 (not h-full)
-        so it spans the FULL section height including the py-20 padding —
-        this way the bottom fade reaches all the way down to the FinalCTA
-        section below, with no dark green page-background band interrupting
-        the transition. Only the BOTTOM edge fades (for the FinalCTA
-        transition); the top edge is NOT degraded — the painting is full
-        strength at the top, framed by the rounded corners.
+        max-width (1230px). Only the TOP corners are rounded (rounded-t-xl);
+        the bottom is square so it meets the FinalCTA section cleanly. The
+        painting itself fades to transparent at the bottom via a CSS mask
+        (no dark green scrim overlay) — the image just dissolves into
+        whatever is behind it.
       */}
       <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-full max-w-[1230px] px-4 pointer-events-none">
         <div
-          className="relative w-full h-full rounded-xl overflow-hidden"
+          className="relative w-full h-full rounded-t-xl overflow-hidden"
           style={{
             backgroundImage: "url('/art-bg-2.webp')",
             backgroundSize: "cover",
             backgroundPosition: "center",
             filter: "brightness(0.85) saturate(0.85) contrast(1.03)",
+            // Mask the painting itself so it fades to transparent at the
+            // bottom — no dark green overlay, the image just dissolves.
+            WebkitMaskImage:
+              "linear-gradient(to bottom, black 0%, black 72%, transparent 100%)",
+            maskImage:
+              "linear-gradient(to bottom, black 0%, black 72%, transparent 100%)",
           }}
-        >
-          {/* Bottom scrim: fades the painting into the page background right at
-              the section boundary for a smooth transition to the FinalCTA. Kept
-              short (h-1/4) so the painting stays visible for most of the section
-              and only fades in the last quarter — no large dark green band. The
-              gradient eases from transparent to the page background over the
-              full scrim height. */}
-          <div
-            className="absolute inset-x-0 bottom-0 h-1/4"
-            style={{
-              background:
-                "linear-gradient(to top, var(--background) 0%, color-mix(in srgb, var(--background) 75%, transparent) 30%, color-mix(in srgb, var(--background) 35%, transparent) 60%, transparent 100%)",
-            }}
-          />
-        </div>
+        />
       </div>
       <div className="relative max-w-2xl mx-auto">
         <Reveal variants={fadeUp} amount={0.3}>
