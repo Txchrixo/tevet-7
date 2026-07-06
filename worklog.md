@@ -793,3 +793,21 @@ Work Log:
 
 Stage Summary:
 - Navbar now aligns exactly with the bg art frame on all breakpoints (logo left = frame left, Try free right = frame right). Frame, window, and CTA buttons all share the same `rounded-lg` radius. 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 52
+Agent: main
+Task: Replace the artwork background with the newly uploaded art_bg.webp.
+
+Work Log:
+- The uploaded /home/z/my-project/upload/art_bg.webp (174426 bytes, md5 f8431c...) is a new, different image from the previous public/art-bg.webp (146890 bytes, md5 6e42b4...).
+- VLM analysis of the new image: a painting of a pastoral landscape — soft greens (field), whites (flowers), warm browns/peach (sky), muted blues (distant sky). Smooth blended brushstrokes, calm/serene/nostalgic mood. Suitable as a dark background wallpaper.
+- Copied /home/z/my-project/upload/art_bg.webp → /home/z/my-project/public/art-bg.webp (overwrote the previous cityscape painting). Verified md5 match.
+- No code changes needed — the landing-page.tsx already references url('/art-bg.webp'), so swapping the file is enough.
+- Verification:
+  * Dev server: GET / 200, clean compile, zero runtime errors.
+  * Agent Browser screenshot captured.
+  * VLM analysis of the rendered Hero confirmed: (1) painted landscape artwork visible as frame/matting around the dark demo window (sky + grassy foreground, calm pastoral feel), (2) dark demo window clearly floating on top, opaque, painting visible on all 4 sides, (3) painting reads well as decorative frame — soft muted tones complement the dark window without distracting from the demo content, (4) composition balanced and cohesive.
+
+Stage Summary:
+- The artwork frame now uses the new pastoral landscape painting (field, flowers, soft sky) instead of the previous cityscape. 1 file replaced (public/art-bg.webp), 0 code changes.
