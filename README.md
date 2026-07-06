@@ -1,9 +1,6 @@
-<table align="center">
-  <tr>
-    <td valign="middle"><img src="docs/screenshots/logo.svg" alt="logo" width="56" height="56" /></td>
-    <td valign="middle"><big><big><big><strong>Tevet-7</strong></big></big></big></td>
-  </tr>
-</table>
+<p align="center">
+  <img src="docs/screenshots/logo-title.svg" alt="Tevet-7" width="260" />
+</p>
 
 <p align="center">
   <strong>Configurable AI agent platform for your data.</strong><br/>
