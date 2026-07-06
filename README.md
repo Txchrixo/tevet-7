@@ -1,11 +1,12 @@
-<p align="center">
-  <img src="docs/screenshots/hero.png" alt="Tevet-7 Hero" width="720" />
-</p>
+<table align="center">
+  <tr>
+    <td><img src="docs/screenshots/logo.svg" alt="logo" width="56" height="56" /></td>
+    <td><h1>Tevet-7</h1></td>
+  </tr>
+</table>
 
-<h1 align="center">Tevet-7</h1>
-
 <p align="center">
-  Configurable AI agent platform for your data.<br/>
+  <strong>Configurable AI agent platform for your data.</strong><br/>
   Ask questions in plain language. Get SQL, charts, and cited answers in real time.
 </p>
 
