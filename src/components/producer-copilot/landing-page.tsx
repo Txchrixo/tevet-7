@@ -815,17 +815,17 @@ function FAQ({ t }: { t: typeof T.en }) {
             filter: "brightness(0.85) saturate(0.85) contrast(1.03)",
           }}
         >
-          {/* Bottom scrim only: a tall (h-2/5) multi-stop ease curve so the
-              painting fades out gradually over a large area, melting into the
-              page background for a smooth transition to the FinalCTA below.
-              The gradient holds the page background solid for the first 14%,
-              then eases slowly to transparent — a long, gentle fade. The top
-              is left untouched (full-strength painting). */}
+          {/* Bottom scrim: fades the painting into the page background right at
+              the section boundary for a smooth transition to the FinalCTA. Kept
+              short (h-1/4) so the painting stays visible for most of the section
+              and only fades in the last quarter — no large dark green band. The
+              gradient eases from transparent to the page background over the
+              full scrim height. */}
           <div
-            className="absolute inset-x-0 bottom-0 h-2/5"
+            className="absolute inset-x-0 bottom-0 h-1/4"
             style={{
               background:
-                "linear-gradient(to top, var(--background) 0%, var(--background) 14%, color-mix(in srgb, var(--background) 75%, transparent) 35%, color-mix(in srgb, var(--background) 35%, transparent) 65%, transparent 100%)",
+                "linear-gradient(to top, var(--background) 0%, color-mix(in srgb, var(--background) 75%, transparent) 30%, color-mix(in srgb, var(--background) 35%, transparent) 60%, transparent 100%)",
             }}
           />
         </div>

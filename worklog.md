@@ -1048,3 +1048,20 @@ Work Log:
 
 Stage Summary:
 - The FAQ artwork bottom fade now reaches all the way to the FinalCTA section, blending smoothly with no dark green band interrupting the transition. The art wrapper uses inset-y-0 (full section height, ignoring py-20 padding) instead of inset-0 (padding box). 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 62
+Agent: main
+Task: Fix the persistent dark green band at the bottom of the FAQ section that still interrupted the artwork fade into the FinalCTA (user: "ya tjrs le vert fonce en page de faq qui nuit au degrade, avant on avait pas ce pb").
+
+Work Log:
+- Previous fix (task 61) made the art wrapper span the full section height (inset-y-0), which eliminated the gap BETWEEN the art and the section edge. But the bottom scrim itself was still too tall (h-2/5 = 40% of 644px = 258px), and it started with a 14% solid var(--background) zone (~36px opaque). That 258px scrim covered the painting with page-background green over a large area at the bottom — which the VLM correctly saw as a "solid dark green band".
+- Root cause confirmed via DOM measurement: painting_h=644px, scrim_h=258px (40%), solid_bg_zone=36px. The scrim was too aggressive — it hid the painting for the bottom 40% of the section, leaving a large green zone before the FinalCTA.
+- Fix: shortened the bottom scrim from h-2/5 → h-1/4 (25% = ~161px) and removed the solid 14% hold at the top of the gradient. New gradient eases immediately: var(--background) 0% → 75% mix at 30% → 35% mix at 60% → transparent 100%. The painting now stays visible for 75% of the section and only fades in the last quarter, right at the FinalCTA boundary.
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings).
+  * Dev server alive (PID 3042), HTTP 200, zero runtime errors.
+  * VLM analysis confirmed: (1) no visible solid dark green band/strip at the bottom, (2) painted landscape stays visible for most of the FAQ section and only fades at the very bottom, (3) transition to the next section is smooth with no solid green block interrupting the fade.
+
+Stage Summary:
+- The dark green band is gone. The FAQ artwork now stays visible for 75% of the section and only fades in the last quarter (h-1/4 scrim with an immediate ease gradient, no solid hold). The transition into the FinalCTA is smooth with no green block. 1 file modified (landing-page.tsx), 0 added.
