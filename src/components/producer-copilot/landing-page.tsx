@@ -255,7 +255,7 @@ function HeptagonPattern({ opacity = 0.03 }: { opacity?: number }) {
       <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <pattern id="heptagon-pattern" x="0" y="0" width="60" height="60" patternUnits="userSpaceOnUse">
-            <path d="M 30 8 L 47.7 18.5 L 50.5 38.5 L 37.6 53 L 22.4 53 L 9.5 38.5 L 12.3 18.5 Z" fill="none" stroke="var(--accent, #A8C090)" strokeWidth="0.5" />
+            <path d="M 30 8 L 47.7 18.5 L 50.5 38.5 L 37.6 53 L 22.4 53 L 9.5 38.5 L 12.3 18.5 Z" fill="none" stroke="var(--accent, #A8C090)" strokeWidth="0.75" />
           </pattern>
         </defs>
         <rect width="100%" height="100%" fill="url(#heptagon-pattern)" />
@@ -331,7 +331,7 @@ function Navbar({ t, onLogin, onSignup }: { t: typeof T.en; onLogin: () => void;
 function Hero({ t, onSignup, onDemo }: { t: typeof T.en; onSignup: () => void; onDemo: () => void }) {
   return (
     <section className="relative pt-32 pb-20 px-4 overflow-hidden">
-      <HeptagonPattern opacity={0.04} />
+      <HeptagonPattern opacity={0.1} />
       <div className="absolute inset-0 bg-gradient-to-b from-primary/5 via-transparent to-transparent pointer-events-none" />
       <div className="relative max-w-4xl mx-auto text-center">
         {/* Badge scales in with a soft overshoot — "chip materializing" */}
@@ -738,7 +738,7 @@ function FAQ({ t }: { t: typeof T.en }) {
 function FinalCTA({ t, onSignup }: { t: typeof T.en; onSignup: () => void }) {
   return (
     <section className="relative py-24 px-4 overflow-hidden">
-      <HeptagonPattern opacity={0.05} />
+      <HeptagonPattern opacity={0.11} />
       <div className="relative max-w-2xl mx-auto text-center">
         {/* The heptagon outline draws itself in (strokeDashoffset), then the
             top-vertex node pops in — "the call crystallizes". Replaces the
@@ -792,10 +792,10 @@ function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l:
   return (
     <footer className="relative bg-secondary/20 px-4 py-12 overflow-hidden">
       {/* Filigree: large BrandMark watermark in the background — slow fades in
-          to its resting opacity (0.03). Custom variant because fadeUp would
+          to its resting opacity (0.08). Custom variant because fadeUp would
           animate to opacity:1 which is wrong for a watermark. */}
       <Reveal
-        variants={{ hidden: { opacity: 0 }, visible: { opacity: 0.03, transition: { duration: 1.6, ease: [0.16, 1, 0.3, 1] } } }}
+        variants={{ hidden: { opacity: 0 }, visible: { opacity: 0.08, transition: { duration: 1.6, ease: [0.16, 1, 0.3, 1] } } }}
         amount={0.3}
         className="absolute -right-8 -bottom-8 pointer-events-none"
       >

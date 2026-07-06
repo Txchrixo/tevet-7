@@ -887,3 +887,29 @@ Work Log:
 
 Stage Summary:
 - All section separation lines removed. Navbar bottom border removed. Footer top border removed and replaced with bg-secondary/20 (a theme color) to mark the footer passage via color contrast. Internal structural borders (demo window, footer columns/copyright divider) preserved. 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 56
+Agent: main
+Task: Make the heptagon filigree backgrounds slightly more visible (user: "un peu plus visible que actu").
+
+Work Log:
+- Identified 3 heptagon filigree elements in src/components/producer-copilot/landing-page.tsx:
+  1. Hero HeptagonPattern (repeating SVG pattern) — opacity 0.04
+  2. FinalCTA HeptagonPattern — opacity 0.05
+  3. Footer BrandMark watermark (large heptagon outline, 280px) — opacity 0.03
+- First attempt: bumped opacities to 0.07/0.08/0.06 — VLM reported the pattern was still invisible (strokeWidth 0.5px too thin at those opacities on a dark background).
+- Second attempt (successful): increased BOTH the stroke width AND the opacities:
+  * HeptagonPattern SVG strokeWidth: 0.5 → 0.75 (50% thicker strokes)
+  * Hero HeptagonPattern opacity: 0.04 → 0.10
+  * FinalCTA HeptagonPattern opacity: 0.05 → 0.11
+  * Footer BrandMark watermark opacity: 0.03 → 0.08
+- Updated the footer comment to reflect the new resting opacity (0.08).
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings).
+  * Dev server alive (PID 3042), HTTP 200.
+  * Agent Browser screenshots captured at Hero + FinalCTA/Footer positions.
+  * VLM analysis confirmed: (1) Hero — subtle heptagon filigree pattern now visible, faint repeating geometric outlines, visible but not distracting, adds textural depth without overwhelming content; (2) FinalCTA — heptagon filigree faint but discernible; (3) Footer — large faint heptagon watermark in bottom-right corner, subtle and visible without overpowering other footer elements.
+
+Stage Summary:
+- All 3 heptagon filigrees (Hero pattern, FinalCTA pattern, Footer watermark) are now slightly more visible — visible but still subtle, adding textural depth without distracting from content. strokeWidth 0.5→0.75, opacities bumped from 0.03-0.05 → 0.08-0.11. 1 file modified (landing-page.tsx), 0 added.
