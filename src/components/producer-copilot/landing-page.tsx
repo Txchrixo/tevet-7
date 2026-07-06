@@ -697,17 +697,18 @@ function FAQ({ t }: { t: typeof T.en }) {
             backgroundImage: "url('/art-bg-2.webp')",
             backgroundSize: "cover",
             backgroundPosition: "center",
-            filter: "brightness(0.18) saturate(0.55) contrast(1.08)",
+            filter: "brightness(0.85) saturate(0.85) contrast(1.03)",
           }}
         />
-        {/* Top + bottom scrims: fade the painting into the page background so
-            the transitions to Pricing (above) and FinalCTA (below) are clean. */}
+        {/* Subtle top + bottom scrims: only a light fade at the very edges so
+            the painting stays clearly visible across the section while the
+            transitions to Pricing (above) and FinalCTA (below) stay clean. */}
         <div
-          className="absolute inset-x-0 top-0 h-1/4"
+          className="absolute inset-x-0 top-0 h-1/6"
           style={{ background: "linear-gradient(to bottom, var(--background) 0%, transparent 100%)" }}
         />
         <div
-          className="absolute inset-x-0 bottom-0 h-1/4"
+          className="absolute inset-x-0 bottom-0 h-1/6"
           style={{ background: "linear-gradient(to top, var(--background) 0%, transparent 100%)" }}
         />
       </div>
@@ -720,7 +721,7 @@ function FAQ({ t }: { t: typeof T.en }) {
             The cards (bg-card, opaque) float on top of the painted wallpaper. */}
         <RevealGroup variants={staggerChildren(0.07, 0.1)} amount={0.15} className="space-y-2">
           {t.faqs.map((item, i) => (
-            <RevealItem key={i} variants={hazeClear} className="rounded-lg border border-border bg-card overflow-hidden shadow-lg">
+            <RevealItem key={i} variants={hazeClear} className="rounded-lg border border-border bg-card/90 backdrop-blur-sm overflow-hidden shadow-lg">
               <button onClick={() => setOpenIdx(openIdx === i ? null : i)} className="w-full flex items-center justify-between px-4 py-3 text-left">
                 <span className="text-sm font-medium text-foreground">{item.q}</span>
                 <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform shrink-0 ml-2 ${openIdx === i ? "rotate-180" : ""}`} />

@@ -835,3 +835,24 @@ Work Log:
 
 Stage Summary:
 - The FAQ section now has the art_bg_2 landscape photograph as a painted wallpaper background (darkened + scrimmed), with the FAQ cards floating on top. 1 file added (public/art-bg-2.webp), 1 file modified (landing-page.tsx FAQ section).
+
+---
+Task ID: 54
+Agent: main
+Task: Reduce the dark overlay on the FAQ section artwork so the painting is clearly visible (was too dark at brightness 0.18).
+
+Work Log:
+- User feedback: "pas de overlay aussi noir sombre cest trop on voit a peinr lart derriere faq" — the art behind the FAQ was barely visible.
+- Adjusted the art background filter in src/components/producer-copilot/landing-page.tsx (FAQ section):
+  * brightness: 0.18 → 0.85 (the painting is now ~4.7x brighter, clearly visible)
+  * saturate: 0.55 → 0.85 (colors less washed out)
+  * contrast: 1.08 → 1.03 (less flattening)
+- Reduced the top + bottom scrims from h-1/4 to h-1/6 (shorter fades) so the painting stays visible across more of the section surface.
+- Made the FAQ cards slightly translucent so the art subtly shows through: bg-card → bg-card/90 + backdrop-blur-sm. Cards remain readable (90% opacity + blur) while letting the painted texture breathe behind them.
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings in layout.tsx).
+  * Dev server: GET / 200, clean compile (8.2s initial, then 41ms cached), SSR HTML renders in 502ms. No compile errors.
+  * Note: the sandbox has 4GB RAM and the Next.js Turbopack dev server + Chrome (agent-browser) together exceed available memory, triggering the OOM killer during interactive browser verification. The code itself is verified clean via lint + successful SSR compile + 200 responses. The visual brightness adjustment is a straightforward CSS filter change (brightness 0.18 → 0.85) that is guaranteed to make the painting ~4.7x more visible.
+
+Stage Summary:
+- The FAQ section artwork is now clearly visible (brightness 0.85 vs previous 0.18). Scrims shortened (h-1/6 vs h-1/4) so the painting shows across more surface. FAQ cards slightly translucent (bg-card/90 + backdrop-blur) for a layered feel while staying readable. 1 file modified (landing-page.tsx), 0 added.
