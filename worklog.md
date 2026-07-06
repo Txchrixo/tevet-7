@@ -935,3 +935,45 @@ Work Log:
 
 Stage Summary:
 - All 3 heptagon filigrees (Hero pattern, FinalCTA pattern, Footer watermark) now fade out progressively toward section seams instead of being cut hard. HeptagonPattern uses a vertical linear-gradient mask (transparent 0%→black 18%→black 82%→transparent 100%); footer watermark uses a radial-gradient mask. 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 58
+Agent: main
+Task: (1) Make heptagon filigree interactive/playful (original, not invasive). (2) Smooth the FAQ art fade between sections. (3) Make footer appear progressively from the FinalCTA section.
+
+Work Log:
+
+=== 1. Interactive heptagon filigree (HeptagonPattern rewrite) ===
+- Rewrote HeptagonPattern in src/components/producer-copilot/landing-page.tsx with a "cursor spotlight reveal" effect:
+  * Base layer: dim pattern (existing, opacity 0.10-0.11, strokeWidth 0.75).
+  * Spotlight layer: a duplicate pattern at opacity 5x + strokeWidth 1.5, masked by a radial-gradient that follows the cursor. As the mouse moves, a soft ~220px circle of brighter heptagons is revealed around the cursor — like a flashlight passing over hidden marks.
+  * Click ripple: a brief expanding ring (80px → 320px, 0.9s, cubic-bezier ease-out) at the click point. Faint (opacity 0.5→0), accent-colored, non-invasive.
+- Performance: single window mousemove listener per instance, rAF-throttled, direct DOM style updates (no React re-renders). Skips work when the section is off-screen. Click listener checks section bounds before firing.
+- Verified via DOM inspection: spotlight mask updates to cursor coordinates (e.g. "radial-gradient(220px at 600px 500px...)"). VLM confirmed: visible brighter circular zone following the cursor + faint ripple on click.
+
+=== 2. FAQ art smoother fade ===
+- User: "limage en section faq ne disprait pas assez progressivement dune section a lautre cest trop brusque soit doit etre smooth".
+- Replaced the short 2-stop scrims (h-1/6, linear-gradient background→transparent) with tall multi-stop ease-curve scrims:
+  * Height: h-1/6 → h-2/5 (much taller fade area).
+  * Gradient: 4-stop ease curve — var(--background) 0% → 14% (solid hold), → 35% (75% bg mix), → 65% (35% bg mix), → 100% (transparent). This creates a long, gentle blend instead of a short hard fade.
+- VLM confirmed: "very smooth/long blend" at the FAQ top transition (was "abrupt/hard edge").
+
+=== 3. Footer progressive appearance ===
+- User: "le footer si tu pouvait aussi le faire appraitre progressive entre lui et la section 'Ready to talk to your data?'".
+- Replaced the flat bg-secondary/20 footer background with a vertical gradient:
+  * 0-20%: var(--background) (identical to FinalCTA — invisible seam).
+  * 45%: color-mix(secondary 50%, background) (transition begins).
+  * 80-100%: var(--secondary) (full secondary tint at the bottom).
+- First attempt (subtle 12-28% secondary mix) was too faint — VLM saw "hard cut" because the color difference was ~0.02 in RGB. Bumped to full var(--secondary) at the bottom for a clearly perceptible but gradual progression.
+- VLM confirmed: "footer's background gets progressively darker/tinted from top to bottom — top matches CTA background, gradually shifts to a noticeably different green tint toward the bottom. Smooth gradient transition (no hard color line)."
+
+- Verification (all 3):
+  * bun run lint → exit 0 (only 2 pre-existing font warnings).
+  * Dev server alive (PID 3042), HTTP 200, zero runtime errors.
+  * Agent Browser: spotlight mask confirmed tracking cursor coordinates; ripple confirmed on click (VLM saw faint expanding circle); FAQ fade confirmed "very smooth/long blend"; footer gradient confirmed "smooth, no hard line, progressively tinted".
+
+Stage Summary:
+- Heptagon filigree is now interactive: a cursor-following spotlight reveals brighter heptagons around the mouse, and clicks emit a brief expanding ripple. Original, subtle, performant.
+- FAQ art now fades very smoothly over a tall area (h-2/5) with a multi-stop ease gradient — no abrupt seam.
+- Footer background progresses gradually from the FinalCTA background (top) to the secondary tint (bottom) via a 4-stop gradient — smooth passage, no hard cut.
+- 1 file modified (landing-page.tsx), 0 added.

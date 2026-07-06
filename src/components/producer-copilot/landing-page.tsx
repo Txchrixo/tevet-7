@@ -250,22 +250,78 @@ const T = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function HeptagonPattern({ opacity = 0.03 }: { opacity?: number }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const spotlightRef = useRef<HTMLDivElement>(null);
+  const rippleRef = useRef<HTMLDivElement>(null);
+
+  // Cursor-following spotlight: a brighter copy of the pattern is revealed
+  // through a radial mask that tracks the mouse. The base layer stays dim;
+  // only the area near the cursor "wakes up". Uses rAF + direct DOM style
+  // updates (no React re-renders) so it's cheap even with two instances.
+  useEffect(() => {
+    let raf = 0;
+    const onMove = (e: MouseEvent) => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const c = containerRef.current;
+        const s = spotlightRef.current;
+        if (!c || !s) return;
+        const rect = c.getBoundingClientRect();
+        // Skip work when the section is off-screen.
+        if (rect.bottom < 0 || rect.top > window.innerHeight) return;
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const mask = `radial-gradient(circle 220px at ${x}px ${y}px, black 0%, black 35%, transparent 72%)`;
+        s.style.WebkitMaskImage = mask;
+        s.style.maskImage = mask;
+      });
+    };
+    window.addEventListener("mousemove", onMove, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  // Click ripple: a brief expanding ring at the click point. Re-triggered by
+  // toggling a class so it replays on each click. Only fires when the click
+  // lands within the section bounds.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      const c = containerRef.current;
+      const r = rippleRef.current;
+      if (!c || !r) return;
+      const rect = c.getBoundingClientRect();
+      if (e.clientY < rect.top || e.clientY > rect.bottom) return;
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      r.style.left = `${x}px`;
+      r.style.top = `${y}px`;
+      // Restart the animation by removing + re-adding the class.
+      r.classList.remove("hept-ripple-active");
+      void r.offsetWidth; // force reflow
+      r.classList.add("hept-ripple-active");
+    };
+    window.addEventListener("click", onClick, { passive: true });
+    return () => window.removeEventListener("click", onClick);
+  }, []);
+
   return (
     <div
+      ref={containerRef}
       className="absolute inset-0 pointer-events-none overflow-hidden"
       style={{
         opacity,
         // Fade the pattern out toward the top + bottom edges so it melts into
-        // the adjacent sections instead of being cut hard at the seam. The
-        // mask is opaque from ~18% to ~82% of the height, transparent at the
-        // very top + bottom. WebKit + standard syntax for cross-browser.
+        // the adjacent sections instead of being cut hard at the seam.
         WebkitMaskImage:
           "linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)",
         maskImage:
           "linear-gradient(to bottom, transparent 0%, black 18%, black 82%, transparent 100%)",
       }}
     >
-      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+      {/* Base dim pattern */}
+      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" className="absolute inset-0">
         <defs>
           <pattern id="heptagon-pattern" x="0" y="0" width="60" height="60" patternUnits="userSpaceOnUse">
             <path d="M 30 8 L 47.7 18.5 L 50.5 38.5 L 37.6 53 L 22.4 53 L 9.5 38.5 L 12.3 18.5 Z" fill="none" stroke="var(--accent, #A8C090)" strokeWidth="0.75" />
@@ -273,6 +329,49 @@ function HeptagonPattern({ opacity = 0.03 }: { opacity?: number }) {
         </defs>
         <rect width="100%" height="100%" fill="url(#heptagon-pattern)" />
       </svg>
+      {/* Spotlight layer: same pattern at higher contrast, revealed only near
+          the cursor via a radial mask. Opacity lifts ~5x vs base + thicker
+          stroke so the "woken up" heptagons are clearly more visible. */}
+      <div
+        ref={spotlightRef}
+        className="absolute inset-0"
+        style={{
+          opacity: 5,
+          WebkitMaskImage: "radial-gradient(circle 0px at -999px -999px, black 0%, transparent 70%)",
+          maskImage: "radial-gradient(circle 0px at -999px -999px, black 0%, transparent 70%)",
+        }}
+      >
+        <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg" className="absolute inset-0">
+          <defs>
+            <pattern id="heptagon-pattern-bright" x="0" y="0" width="60" height="60" patternUnits="userSpaceOnUse">
+              <path d="M 30 8 L 47.7 18.5 L 50.5 38.5 L 37.6 53 L 22.4 53 L 9.5 38.5 L 12.3 18.5 Z" fill="none" stroke="var(--accent, #A8C090)" strokeWidth="1.5" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#heptagon-pattern-bright)" />
+        </svg>
+      </div>
+      {/* Click ripple: a brief expanding ring at the click point. */}
+      <div
+        ref={rippleRef}
+        className="hept-ripple pointer-events-none absolute"
+        style={{ marginLeft: "-40px", marginTop: "-40px" }}
+      />
+      <style>{`
+        .hept-ripple {
+          width: 80px; height: 80px; border-radius: 9999px;
+          border: 1px solid var(--accent, #A8C090);
+          opacity: 0;
+          transform: scale(0.2);
+        }
+        .hept-ripple.hept-ripple-active {
+          animation: hept-ripple 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        @keyframes hept-ripple {
+          0%   { opacity: 0.5; transform: scale(0.2); }
+          60%  { opacity: 0.18; transform: scale(2.4); }
+          100% { opacity: 0; transform: scale(3.2); }
+        }
+      `}</style>
     </div>
   );
 }
@@ -713,16 +812,25 @@ function FAQ({ t }: { t: typeof T.en }) {
             filter: "brightness(0.85) saturate(0.85) contrast(1.03)",
           }}
         />
-        {/* Subtle top + bottom scrims: only a light fade at the very edges so
-            the painting stays clearly visible across the section while the
-            transitions to Pricing (above) and FinalCTA (below) stay clean. */}
+        {/* Smooth top + bottom scrims: very tall (h-2/5) with a multi-stop
+            ease curve so the painting fades in/out gradually over a large
+            area, melting into the adjacent sections (Pricing above, FinalCTA
+            below) with no abrupt seam. The gradient holds the page background
+            solid for the first 15%, then eases slowly to transparent across
+            the rest — a long, gentle fade rather than a short hard one. */}
         <div
-          className="absolute inset-x-0 top-0 h-1/6"
-          style={{ background: "linear-gradient(to bottom, var(--background) 0%, transparent 100%)" }}
+          className="absolute inset-x-0 top-0 h-2/5"
+          style={{
+            background:
+              "linear-gradient(to bottom, var(--background) 0%, var(--background) 14%, color-mix(in srgb, var(--background) 75%, transparent) 35%, color-mix(in srgb, var(--background) 35%, transparent) 65%, transparent 100%)",
+          }}
         />
         <div
-          className="absolute inset-x-0 bottom-0 h-1/6"
-          style={{ background: "linear-gradient(to top, var(--background) 0%, transparent 100%)" }}
+          className="absolute inset-x-0 bottom-0 h-2/5"
+          style={{
+            background:
+              "linear-gradient(to top, var(--background) 0%, var(--background) 14%, color-mix(in srgb, var(--background) 75%, transparent) 35%, color-mix(in srgb, var(--background) 35%, transparent) 65%, transparent 100%)",
+          }}
         />
       </div>
       <div className="relative max-w-2xl mx-auto">
@@ -803,7 +911,18 @@ function Footer({ t, lang, setLang }: { t: typeof T.en; lang: Lang; setLang: (l:
   };
 
   return (
-    <footer className="relative bg-secondary/20 px-4 py-12 overflow-hidden">
+    <footer
+      className="relative px-4 py-12 overflow-hidden"
+      style={{
+        // Progressive passage from the FinalCTA background (top) into the
+        // footer's secondary color (bottom). The gradient holds var(--background)
+        // solid for the first 20% so the seam with the FinalCTA is invisible,
+        // then eases to the full var(--secondary) tint toward the bottom —
+        // the progression is now clearly perceptible but still gradual.
+        background:
+          "linear-gradient(to bottom, var(--background) 0%, var(--background) 20%, color-mix(in srgb, var(--secondary) 50%, var(--background)) 45%, var(--secondary) 80%, var(--secondary) 100%)",
+      }}
+    >
       {/* Filigree: large BrandMark watermark in the background — slow fades in
           to its resting opacity (0.08). Custom variant because fadeUp would
           animate to opacity:1 which is wrong for a watermark. A radial mask
