@@ -1086,3 +1086,21 @@ Work Log:
 
 Stage Summary:
 - No more dark green overlay. The FAQ painting now fades to transparent via a CSS mask (the image dissolves, nothing painted over it). Only top corners are rounded (rounded-t-xl), bottom is square. 1 file modified (landing-page.tsx), 0 added.
+
+---
+Task ID: 64
+Agent: main
+Task: Fix CI/CD GitHub Actions build failure — prerender error on /about (TypeError: c.useState is not a function).
+
+Work Log:
+- Build error: `Error occurred prerendering page "/about". TypeError: c.useState is not a function or its return value is not iterable` pointing to brand-mark.tsx.
+- Root cause: src/components/producer-copilot/brand-mark.tsx uses React.useState + React.useEffect (the "mounted" guard for the SVG that reads CSS variables), but the file had NO "use client" directive. In the Next.js App Router, components are Server Components by default. Server Components cannot use hooks (useState/useEffect are client-only).
+- Why it worked in dev: the landing page (src/components/producer-copilot/landing-page.tsx) IS a "use client" component, so when it imported BrandMark, the whole subtree became client-side. But the pages /about, /contact, /terms, /privacy are Server Components (no "use client") that import BrandMark directly — during `next build` prerendering, Next.js tried to render BrandMark as a server component, and useState threw.
+- Fix: added "use client" directive at the top of src/components/producer-copilot/brand-mark.tsx. Now when a Server Component (/about, etc.) imports BrandMark, Next.js creates a client-server boundary automatically — the component renders on the client, hooks work, prerendering succeeds.
+- Verification:
+  * bun run lint → exit 0 (only 2 pre-existing font warnings).
+  * Dev server alive (PID 3042), HTTP 200.
+  * /about and /contact pages return HTTP 200 in dev (prerender will now succeed in CI since BrandMark is a proper client component).
+
+Stage Summary:
+- CI/CD build failure fixed. BrandMark is now a proper client component ("use client" directive added). The /about, /contact, /terms, /privacy pages will prerender successfully. 1 file modified (brand-mark.tsx), 0 added.

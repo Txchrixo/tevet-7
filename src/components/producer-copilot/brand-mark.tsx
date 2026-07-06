@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Tevet-7 brand mark.
  *
