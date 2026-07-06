@@ -1104,3 +1104,34 @@ Work Log:
 
 Stage Summary:
 - CI/CD build failure fixed. BrandMark is now a proper client component ("use client" directive added). The /about, /contact, /terms, /privacy pages will prerender successfully. 1 file modified (brand-mark.tsx), 0 added.
+
+---
+Task ID: 65
+Agent: main
+Task: Add About section on GitHub, update README with screenshots (landing + dashboard + onboarding), remove em-dashes, format nicely.
+
+Work Log:
+- Captured 3 screenshots via Agent Browser:
+  * docs/screenshots/landing.png (1280x800): the public landing page with Hero, interactive demo window framed by the art_bg painting, navbar, CTA buttons.
+  * docs/screenshots/dashboard.png (1280x800): the producer chat surface (Marie Dubois, producer #42) with welcome state, example questions, sidebar.
+  * docs/screenshots/hero.png (1280x800): the Hero section close-up showing the demo window floating on the painted artwork frame.
+- Note: the onboarding wizard screenshot could not be captured because the backend had an import error (traces table missing in db_seed). Documented the onboarding flow in text form in the README instead.
+- Rewrote README.md with:
+  * Centered hero image at the top (the landing page screenshot).
+  * Centered title + tagline + badge row (CI badge, Python, FastAPI, Next.js, TypeScript, SQLite, scikit-learn, MIT).
+  * Navigation links (Features, Screenshots, Architecture, Quick start, Security, Evaluation).
+  * New "About" section explaining what Tevet-7 is.
+  * New "Screenshots" section with centered images for landing + dashboard, plus a text description of the onboarding wizard (4 steps: connect data > detect schema > select tables > define roles > complete).
+  * All 15 em-dashes replaced: "Layer 1: sqlglot" (was "Layer 1 - sqlglot"), "Tevet-7 Eval: 39 cases" (was "Tevet-7 Eval - 39 cases"), "Intent classification: the agent" (was "Intent classification - the agent"), etc. Zero em-dashes remain.
+  * Improved formatting: project structure uses +-- instead of tree characters (cleaner rendering), section dividers with ---, consistent heading hierarchy.
+- Updated the GitHub repo "About" section via the REST API:
+  * Description: "Configurable AI agent platform for your data. Ask questions in plain language, get SQL + charts + cited answers. Multi-tenant, sqlglot row-level security, ML stock forecasting."
+  * Homepage: https://github.com/Txchrixo/tevet-7
+  * (Topics could not be set: the PAT lacks the repo:topics scope.)
+- Verification:
+  * bun run lint: exit 0 (only 2 pre-existing font warnings).
+  * grep -c "—" README.md: 0 (zero em-dashes).
+  * GitHub API confirmed the description was updated.
+
+Stage Summary:
+- README rewritten with screenshots, better formatting, About section, zero em-dashes. GitHub repo About section updated with a clear description. 3 screenshots added to docs/screenshots/. 1 file modified (README.md), 3 files added (docs/screenshots/*.png).
