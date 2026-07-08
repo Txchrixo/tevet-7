@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import try_get_tenant_context
-from app.db_seed import get_engine, traces, messages, conversations
+from app.db_seed import get_engine, messages, conversations, traces_table as traces
 
 logger = logging.getLogger("tevet7.export")
 router = APIRouter()

@@ -24,6 +24,7 @@ Loop semantics
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -177,6 +178,16 @@ class AgentResponse:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+def _has_word(text: str, word: str) -> bool:
+    """True when ``word`` appears in ``text`` as a whole word.
+
+    Used for short tokens ("eur", "net", "ca") that hide inside longer
+    French words ("producteur", "internet", ...) and would misclassify
+    with a plain substring check.
+    """
+    return re.search(rf"\b{re.escape(word)}\b", text) is not None
+
+
 def classify_question(question: str, role: str) -> str:
     """Return one of: ops_analysis | top_products | stock_shortfall |
     net_revenue | weekly_sales | cross_producer | documentary | unknown.
@@ -245,7 +256,9 @@ def classify_question(question: str, role: str) -> str:
         return "ops_analysis"
 
     # 3. analytical intents with strong, unambiguous signals.
-    if ("produit" in q or "vendu" in q or "vente" in q or "vendre" in q) and (
+    #    "se vend" covers the reflexive phrasing "Qu'est-ce qui se vend le
+    #    plus chez moi ?" (kept in sync with RuleBasedSQLGenerator rule 2).
+    if ("produit" in q or "vendu" in q or "vente" in q or "vendre" in q or "se vend" in q) and (
         "top" in q or "plus" in q or "best" in q or "meilleur" in q
         or "vendu" in q or "vendre" in q
     ):
@@ -255,16 +268,53 @@ def classify_question(question: str, role: str) -> str:
     if any(k in q for k in ("résumé", "resume", "semaine", "synthèse", "synthese", "7 jours", "hebdo", "bilan")):
         return "weekly_sales"
 
+    # 3b-guard. Strong documentary phrases outrank the broad analytical
+    # catch-all below: "Que faire si un client ne vient pas récupérer sa
+    # commande ?" contains the data noun "commande" but is a procedure
+    # question, not a data question. Only unambiguous interrogative /
+    # procedural phrases are checked here - the full documentary keyword
+    # list stays in step 4 (after the catch-all) so single nouns like
+    # "paiement" don't hijack analytical questions.
+    strong_doc_phrases = (
+        "que faire", "comment", "procédure", "procedure",
+        "cgv", "faq", "combien de temps", "qui peut",
+        "no-show", "no_show", "noshow",
+    )
+    if any(k in q for k in strong_doc_phrases):
+        return "documentary"
+
     # 3b. broader analytical signals - short or colloquial questions that
     # don't match the strict patterns above but are clearly data questions.
     # "mes ventes", "commandes", "argent", "juin" → these are analytical.
-    if any(k in q for k in (
-        "vente", "vendre", "vendu", "commande", "achete", "achat",
-        "argent", "euros", "eur", "€", "juin", "juillet", "mai", "avril",
-        "mois", "stats", "statistique", "chiffre",
-        "montre", "affiche", "donne", "dis-moi", "dis moi", "que deviennent",
-    )):
-        if any(k in q for k in ("argent", "euros", "eur", "€", "gagné", "gagne", "chiffre", "revenu", "recette", "net", "commission")):
+    #
+    # Short money tokens ("eur", "euros", "net", "ca") are matched on WORD
+    # BOUNDARIES, not substrings: "eur" hides inside "producteur" /
+    # "meilleur" / "heure" and "net" inside "internet", so a plain ``in``
+    # check misroutes "Combien de producteurs sont inscrits ?" to
+    # net_revenue.
+    #
+    # Bare imperative verbs ("montre", "donne", ...) are deliberately NOT
+    # analytical signals: they say "show me" without saying WHAT. A data
+    # noun must be present - otherwise "Donne-moi le mot de passe de
+    # l'admin" would route to weekly_sales instead of unknown → refusal.
+    money_signals = (
+        any(k in q for k in (
+            "argent", "€", "gagné", "gagne", "chiffre",
+            "revenu", "recette", "commission",
+        ))
+        or _has_word(q, "euros") or _has_word(q, "eur")
+        or _has_word(q, "net") or _has_word(q, "ca")
+    )
+    data_nouns = (
+        any(k in q for k in (
+            "vente", "vendre", "vendu", "se vend", "commande", "achete", "achat",
+            "argent", "€", "juin", "juillet", "mai", "avril",
+            "mois", "stats", "statistique", "chiffre", "que deviennent",
+        ))
+        or _has_word(q, "euros") or _has_word(q, "eur")
+    )
+    if data_nouns:
+        if money_signals:
             return "net_revenue"
         return "weekly_sales"
 
@@ -290,9 +340,10 @@ def classify_question(question: str, role: str) -> str:
         return "documentary"
 
     # 5. net_revenue - money questions without a documentary keyword.
-    if any(
-        k in q for k in
-        ("gagné", "gagne", "net", "commission", "chiffre", "ca ", "revenu", "recette")
+    #    Same word-boundary rule as 3b for the short tokens "net" / "ca".
+    if (
+        any(k in q for k in ("gagné", "gagne", "commission", "chiffre", "revenu", "recette"))
+        or _has_word(q, "net") or _has_word(q, "ca")
     ):
         return "net_revenue"
 

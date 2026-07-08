@@ -225,9 +225,23 @@ async def add_tenant_member(
     tenant) pair is already a member. The new membership is
     ``is_active=False`` by default (the user must explicitly activate it
     via ``set_active_membership`` to switch their context).
+
+    Role validation: tenants that completed the onboarding wizard define
+    their own roles in ``tenant_configs.roles_config`` (the "define roles"
+    step) - those are the source of truth here. Tenants without a
+    roles_config (demo tenant, legacy rows) fall back to the built-in trio.
     """
-    if role not in ("producer", "admin", "customer"):
-        raise ValueError(f"role must be 'producer', 'admin', or 'customer', got {role!r}")
+    from app.tenants.onboarding import get_tenant_config_row  # local: avoids import cycle
+
+    valid_roles = {"producer", "admin", "customer"}
+    config = await get_tenant_config_row(tenant_id)
+    if config and config.get("roles_config"):
+        # "admin" is always valid - the wizard doesn't require re-declaring it.
+        valid_roles = set(config["roles_config"].keys()) | {"admin"}
+    if role not in valid_roles:
+        raise ValueError(
+            f"role must be one of {sorted(valid_roles)}, got {role!r}"
+        )
     engine = get_engine()
     # Verify tenant exists.
     async with engine.connect() as conn:

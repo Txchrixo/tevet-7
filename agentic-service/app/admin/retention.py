@@ -7,7 +7,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from sqlalchemy import delete, select
-from app.db_seed import get_engine, conversations, messages, traces
+from app.db_seed import get_engine, conversations, messages, traces_table as traces
 
 logger = logging.getLogger("tevet7.retention")
 

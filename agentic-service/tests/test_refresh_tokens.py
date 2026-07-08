@@ -42,6 +42,14 @@ def test_refresh_carries_claims():
 
 def test_refresh_invalid_signature_rejected():
     token = create_refresh_token({"sub": "1"})
-    tampered = token[:-1] + ("A" if token[-1] != "A" else "B")
+    # Tamper a character in the MIDDLE of the base64url signature segment.
+    # The last character only carries 4 significant bits (the low 2 are
+    # discarded on decode), so flipping it can produce the same signature
+    # bytes and let the token verify — a middle character always changes
+    # the decoded signature.
+    header, payload, signature = token.split(".")
+    mid = len(signature) // 2
+    flipped = "A" if signature[mid] != "A" else "B"
+    tampered = f"{header}.{payload}.{signature[:mid]}{flipped}{signature[mid + 1:]}"
     with pytest.raises(JWTError):
         verify_refresh_token(tampered)
