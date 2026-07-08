@@ -1,122 +1,40 @@
 /**
- * Tevet-7 auth + tenant API client.
+ * Tevet-7 auth + tenant API client (NextAuth edition).
  *
- * All endpoints are proxied through Next.js:
- *   - `/api/auth/*`     → see `src/app/api/auth/[[...path]]/route.ts`
- *   - `/api/tenants/*`  → see `src/app/api/tenants/[[...path]]/route.ts`
+ * Security model
+ * --------------
+ * The browser NEVER holds a backend JWT. Authentication lives in a
+ * NextAuth session: an encrypted (JWE), httpOnly, SameSite=Lax cookie.
+ * Login goes through `signIn("credentials")`; every subsequent API call
+ * is a plain fetch to a Next.js proxy route, which decrypts the cookie
+ * server-side and attaches the backend token itself
+ * (see `src/lib/server/backend-auth.ts`).
  *
- * The browser frontend never talks to localhost:8001 directly - only relative
- * paths so the request goes through Next.js (and Caddy in production).
+ * There is therefore NO token storage in this module - no localStorage,
+ * no Authorization headers. XSS cannot exfiltrate what the JS runtime
+ * never sees.
  *
- * JWT persistence lives in `localStorage` under `tevet7.jwt` (shared with the
- * admin API client - `src/lib/admin-api.ts` reads the same key).
+ * Tenant switching rotates the backend JWT inside the session cookie via
+ * `updateSession({activateTenantId})` (see `src/lib/session-bridge.ts`
+ * and the `jwt` callback in `src/lib/server/auth-options.ts`).
  */
 
+import { getSession, signIn, signOut } from "next-auth/react";
+import type { Session } from "next-auth";
+
+import { updateSession } from "./session-bridge";
 import type { AuthUser, TenantMembership } from "./types";
 
-/** localStorage key shared with `admin-api.ts`. */
-const TOKEN_STORAGE_KEY = "tevet7.jwt";
-
-/** localStorage key for the refresh token (Phase B2). */
-const REFRESH_TOKEN_STORAGE_KEY = "tevet7.refreshToken";
-
-/** localStorage key for the cached active tenant id (so reloads remember it). */
-const ACTIVE_TENANT_KEY = "tevet7.activeTenantId";
-
-/** Email + password of the demo producer, used by the "Essayer la démo" button. */
+/** Email + password of the demo producer, used by the "Essayer la démo"
+ * button on the public landing page. These accounts only exist when the
+ * backend runs with ENABLE_DEMO_SEED=true (never in production). */
 export const DEMO_EMAIL = "marie@tevet7.dev";
 export const DEMO_PASSWORD = "tevet7demo";
 
-/** Reads the JWT from localStorage. Returns null on the server or when unset. */
-export function getAuthToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setAuthToken(token: string | null): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (token) window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
-    else window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
-/** Reads the refresh token from localStorage (Phase B2). */
-export function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(REFRESH_TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-/** Stores/removes the refresh token in localStorage (Phase B2). */
-export function setRefreshToken(token: string | null): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (token) window.localStorage.setItem(REFRESH_TOKEN_STORAGE_KEY, token);
-    else window.localStorage.removeItem(REFRESH_TOKEN_STORAGE_KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
 /**
- * Calls POST /api/auth/refresh to exchange the refresh token for a new
- * access token. Updates the stored access token. Returns false if the
- * refresh failed (caller should redirect to login).
- */
-async function refreshAccessToken(): Promise<boolean> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
-  try {
-    const res = await fetch("/api/auth/refresh", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    if (data.access_token) {
-      setAuthToken(data.access_token);
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
-export function getActiveTenantId(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(ACTIVE_TENANT_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setActiveTenantId(tenantId: string | null): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (tenantId) window.localStorage.setItem(ACTIVE_TENANT_KEY, tenantId);
-    else window.localStorage.removeItem(ACTIVE_TENANT_KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
-/**
- * Thrown by the auth client for any non-2xx response OR when the backend is
- * unreachable (502 from the Next.js proxy). Callers can use `instanceof` to
- * distinguish auth errors from generic JS errors.
+ * Thrown for any non-2xx response OR when the backend is unreachable
+ * (502 from the Next.js proxy). Callers use `instanceof` to distinguish
+ * auth errors from generic JS errors.
  */
 export class AuthApiError extends Error {
   status: number;
@@ -137,30 +55,23 @@ export class AuthApiError extends Error {
   }
 }
 
-interface AuthFetchOptions {
+// ---------------------------------------------------------------------------
+// Low-level fetch helper (proxy routes; session cookie flows automatically)
+// ---------------------------------------------------------------------------
+
+interface ApiFetchOptions {
   method?: "GET" | "POST";
   body?: unknown;
-  /** When true, send the stored JWT (default true). */
-  withToken?: boolean;
 }
 
-/**
- * Low-level auth/tenant fetch helper. Uses relative paths only.
- *
- * `pathPrefix` is `"auth"` or `"tenants"` - selects which Next.js proxy to hit.
- */
 async function apiFetch<T>(
   pathPrefix: "auth" | "tenants",
   path: string,
-  opts: AuthFetchOptions = {},
+  opts: ApiFetchOptions = {},
 ): Promise<T> {
-  const withToken = opts.withToken ?? true;
-  const token = withToken ? getAuthToken() : null;
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  if (token) headers["authorization"] = `Bearer ${token}`;
-
   const init: RequestInit = {
     method: opts.method ?? "GET",
     headers,
@@ -174,14 +85,11 @@ async function apiFetch<T>(
   let res: Response;
   try {
     // 10-second timeout - the backend can take 1-2s per request (DB + LLM).
-    // 3s was too short and caused false "Backend injoignable" errors.
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
     res = await fetch(url, { ...init, signal: controller.signal });
     clearTimeout(timeout);
   } catch (err) {
-    // Network-level failure (backend offline, DNS error, CORS, timeout, …).
-    // Treat as unreachable so the caller can fall back to demo mode.
     const message = err instanceof Error ? err.message : "Network error";
     throw new AuthApiError(message, 0, undefined, true);
   }
@@ -195,49 +103,7 @@ async function apiFetch<T>(
     } catch {
       /* keep raw text */
     }
-    throw new AuthApiError(
-      "Backend Tevet-7 injoignable",
-      502,
-      detail,
-      true,
-    );
-  }
-
-  // ── Phase B2: 401 auto-refresh interceptor ──
-  // When the access token expires (2h), the backend returns 401. Instead of
-  // forcing the user to re-login, we transparently call /auth/refresh with
-  // the stored refresh token (30d). If the refresh succeeds, we retry the
-  // original request with the new access token. If it fails, we clear both
-  // tokens and throw 401 (the caller redirects to login).
-  if (res.status === 401 && withToken && getRefreshToken()) {
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      // Retry the original request with the new token.
-      const newToken = getAuthToken();
-      const retryHeaders = { ...headers };
-      if (newToken) retryHeaders["authorization"] = `Bearer ${newToken}`;
-      const retryInit: RequestInit = { ...init, headers: retryHeaders };
-      try {
-        const controller2 = new AbortController();
-        const timeout2 = setTimeout(() => controller2.abort(), 10000);
-        res = await fetch(url, { ...retryInit, signal: controller2.signal });
-        clearTimeout(timeout2);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Network error";
-        throw new AuthApiError(message, 0, undefined, true);
-      }
-      // If the retry also fails with 401, the refresh token is invalid - logout.
-      if (res.status === 401) {
-        setAuthToken(null);
-        setRefreshToken(null);
-        throw new AuthApiError("Session expirée", 401);
-      }
-    } else {
-      // Refresh failed - clear tokens and throw 401.
-      setAuthToken(null);
-      setRefreshToken(null);
-      throw new AuthApiError("Session expirée", 401);
-    }
+    throw new AuthApiError("Backend Tevet-7 injoignable", 502, detail, true);
   }
 
   const text = await res.text();
@@ -251,11 +117,9 @@ async function apiFetch<T>(
   }
 
   if (!res.ok) {
-    // Parse user-friendly error message from the response.
     let message = `Auth API ${res.status} ${res.statusText}`;
     if (typeof parsed === "object" && parsed && "detail" in parsed) {
       const detail = (parsed as { detail: unknown }).detail;
-      // FastAPI validation errors are arrays: [{msg: "...", ...}]
       if (Array.isArray(detail)) {
         message = detail.map((e: { msg?: string }) => e.msg || String(e)).join("; ");
       } else {
@@ -271,52 +135,79 @@ async function apiFetch<T>(
 }
 
 // ---------------------------------------------------------------------------
-// Auth endpoints
+// Session lifecycle (NextAuth)
 // ---------------------------------------------------------------------------
 
-export interface LoginResponse {
+/** Maps a NextAuth session to the app's AuthUser shape. */
+function userFromSession(session: Session): AuthUser {
+  return {
+    id: session.user.id,
+    email: session.user.email,
+    name: session.user.name,
+    is_platform_owner: session.user.is_platform_owner,
+  } as AuthUser;
+}
+
+export interface LoginResult {
   user: AuthUser;
-  token: string;
-  /** Phase B2: refresh token (30d) for auto-renewal. */
-  refresh_token?: string;
+  session: Session;
 }
 
-/** `POST /api/auth/login` with `{email, password}`. Throws 401 on bad creds. */
-export async function login(
-  email: string,
-  password: string,
-): Promise<LoginResponse> {
-  return apiFetch<LoginResponse>("auth", "login", {
-    method: "POST",
-    body: { email, password },
-    withToken: false,
+/**
+ * Authenticates through NextAuth (credentials provider -> FastAPI login).
+ * On success the session cookie is set; no token is returned to JS.
+ * Throws AuthApiError(401) on bad credentials.
+ */
+export async function login(email: string, password: string): Promise<LoginResult> {
+  const result = await signIn("credentials", {
+    redirect: false,
+    email,
+    password,
   });
+  if (!result || result.error) {
+    // NextAuth surfaces every authorize() failure as "CredentialsSignin";
+    // network-level failures inside authorize() also land here.
+    throw new AuthApiError(
+      "Email ou mot de passe invalide.",
+      401,
+      result?.error ?? null,
+    );
+  }
+  const session = await getSession();
+  if (!session) {
+    throw new AuthApiError("Session introuvable après connexion.", 500);
+  }
+  return { user: userFromSession(session), session };
 }
 
+/**
+ * Creates the account on the backend (via the signup proxy - the backend
+ * JWT never reaches the browser), then signs in through NextAuth.
+ */
 export async function signup(
   email: string,
   password: string,
   name: string,
-): Promise<LoginResponse> {
-  return apiFetch<LoginResponse>("auth", "signup", {
+): Promise<LoginResult> {
+  await apiFetch<{ user: AuthUser }>("auth", "signup", {
     method: "POST",
     body: { email, password, name },
-    withToken: false,
   });
+  return login(email, password);
 }
 
-export interface MeResponse {
-  user: AuthUser;
-  memberships: TenantMembership[];
+/** Ends the NextAuth session (clears the httpOnly cookie). */
+export async function logoutSession(): Promise<void> {
+  await signOut({ redirect: false });
 }
 
-/** `GET /api/auth/me` - validates the stored JWT and returns the user + memberships. */
-export async function getMe(): Promise<MeResponse> {
-  return apiFetch<MeResponse>("auth", "me");
+/** Returns the current session, or null when unauthenticated. */
+export async function getCurrentSession(): Promise<Session | null> {
+  return getSession();
 }
 
 // ---------------------------------------------------------------------------
-// Tenant endpoints
+// Tenant endpoints (proxied; token attached server-side)
 // ---------------------------------------------------------------------------
 
 export interface ListTenantsResponse {
@@ -329,34 +220,46 @@ export async function listMyTenants(): Promise<ListTenantsResponse> {
   return apiFetch<ListTenantsResponse>("tenants", "mine");
 }
 
-export interface ActivateTenantResponse {
-  membership: TenantMembership;
-  token: string;
-}
-
-/** `POST /api/tenants/{tenantId}/activate` - switch active tenant, get a fresh JWT. */
-export async function activateTenant(
-  tenantId: string,
-): Promise<ActivateTenantResponse> {
-  return apiFetch<ActivateTenantResponse>(
-    "tenants",
-    `${encodeURIComponent(tenantId)}/activate`,
-    { method: "POST" },
-  );
+/**
+ * Switches the active tenant. The backend activation happens INSIDE the
+ * NextAuth `jwt` callback (server-side) so the newly scoped backend JWT
+ * lands directly in the session cookie. Returns the refreshed session
+ * (whose `tenant` reflects the new scope) or throws on failure.
+ */
+export async function activateTenant(tenantId: string): Promise<Session> {
+  const session = await updateSession({ activateTenantId: tenantId });
+  if (!session || session.tenant?.tenant_id !== tenantId) {
+    throw new AuthApiError(
+      `Impossible d'activer le tenant ${tenantId}.`,
+      409,
+      session?.tenant ?? null,
+    );
+  }
+  return session;
 }
 
 export interface CreateTenantResponse {
   tenant: TenantMembership;
-  token: string;
 }
 
-/** `POST /api/tenants` - create a new tenant (the caller becomes admin). */
+/**
+ * `POST /api/tenants` - create a new tenant (the caller becomes admin),
+ * then rotate the session onto it. The token returned by the backend is
+ * discarded by the proxy path - the session rotation goes through
+ * `activateTenant` so the cookie stays the single source of truth.
+ */
 export async function createTenant(
   name: string,
   slug: string,
-): Promise<CreateTenantResponse> {
-  return apiFetch<CreateTenantResponse>("tenants", "", {
+): Promise<{ tenant: TenantMembership; session: Session }> {
+  const resp = await apiFetch<{ tenant: TenantMembership }>("tenants", "", {
     method: "POST",
     body: { name, slug },
   });
+  const tenantId =
+    (resp.tenant as unknown as { id?: string }).id ??
+    (resp.tenant as unknown as { tenant_id?: string }).tenant_id ??
+    slug;
+  const session = await activateTenant(tenantId);
+  return { tenant: resp.tenant, session };
 }

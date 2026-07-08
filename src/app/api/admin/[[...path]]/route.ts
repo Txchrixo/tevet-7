@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getBackendAccessToken } from "@/lib/server/backend-auth";
+
 /**
  * Tevet-7 admin proxy.
  *
@@ -31,8 +33,10 @@ async function forward(req: NextRequest, segments: string[] | undefined) {
 
   // Forward only safe headers - Authorization carries the JWT.
   const headers = new Headers();
-  const auth = req.headers.get("authorization");
-  if (auth) headers.set("authorization", auth);
+  // Session-derived token: the browser never holds the backend JWT, so
+  // any client-sent Authorization header is ignored on purpose.
+  const access = await getBackendAccessToken(req);
+  if (access) headers.set("authorization", `Bearer ${access}`);
   const contentType = req.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
 

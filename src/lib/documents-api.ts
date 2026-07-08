@@ -1,4 +1,3 @@
-import { getAuthToken } from "./auth-api";
 
 const BACKEND_TIMEOUT = 15_000;
 
@@ -12,9 +11,7 @@ export interface DocumentInfo {
 }
 
 async function fetchDocuments(tenantId?: string): Promise<DocumentInfo[]> {
-  const token = getAuthToken();
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (token) headers["authorization"] = `Bearer ${token}`;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), BACKEND_TIMEOUT);
@@ -37,9 +34,7 @@ async function uploadDocument(
   content: string,
   producerId: number | null = null,
 ): Promise<{ document_id: number; chunks_count: number } | null> {
-  const token = getAuthToken();
   const headers: Record<string, string> = {};
-  if (token) headers["authorization"] = `Bearer ${token}`;
 
   const form = new FormData();
   form.append("title", title);
@@ -70,9 +65,7 @@ async function uploadDocument(
 }
 
 async function deleteDocument(id: number): Promise<boolean> {
-  const token = getAuthToken();
   const headers: Record<string, string> = {};
-  if (token) headers["authorization"] = `Bearer ${token}`;
   try {
     const res = await fetch(`/api/documents/${id}`, { method: "DELETE", headers });
     return res.ok;
