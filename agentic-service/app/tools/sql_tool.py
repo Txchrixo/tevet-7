@@ -200,13 +200,18 @@ class RuleBasedSQLGenerator:
         return None
 
     def _find_numeric_column(self, table_config: dict) -> str | None:
-        """Find the first numeric column in a table (for SUM/AVG)."""
+        """Find the first numeric column in a table (for SUM/AVG).
+
+        Skips identifier columns by SHAPE (``id`` or any ``*_id`` suffix)
+        rather than a hardcoded list: tenant schemas have arbitrary key
+        names (``delivery_id``, ``invoice_id``, ...) and summing an ID
+        produces a meaningless number.
+        """
         for c in table_config.get("columns", []):
             ctype = c.get("type", "").lower()
             if any(k in ctype for k in ("decimal", "float", "double", "integer", "int", "numeric", "real")):
-                # Skip ID columns.
                 cname = c.get("name", "").lower()
-                if cname not in ("id", "producer_id", "tenant_id", "user_id", "customer_id", "shop_id", "order_id", "product_id"):
+                if cname != "id" and not cname.endswith("_id"):
                     return c["name"]
         return None
 
@@ -264,18 +269,24 @@ class RuleBasedSQLGenerator:
         group_col = self._find_group_column(table_config)
         date_col = self._find_date_column(table_config)
 
-        # Try to find a column name mentioned in the question (for GROUP BY).
+        # Try to find a column name mentioned in the question (for GROUP BY
+        # when it's a text column, for SUM/AVG/MIN/MAX when it's numeric).
         mentioned_col = None
+        mentioned_col_type = ""
         for c in columns:
             if c["name"].lower() in q and c["name"].lower() not in ("id",):
                 mentioned_col = c["name"]
+                mentioned_col_type = c.get("type", "").lower()
                 break
-        # Use mentioned column as group_col if it's a text column.
         if mentioned_col:
-            for c in columns:
-                if c["name"] == mentioned_col and any(k in c.get("type", "").lower() for k in ("text", "varchar", "char", "string")):
-                    group_col = mentioned_col
-                    break
+            if any(k in mentioned_col_type for k in ("text", "varchar", "char", "string")):
+                # Text column → use it for GROUP BY.
+                group_col = mentioned_col
+            elif any(k in mentioned_col_type for k in ("decimal", "float", "double", "integer", "int", "numeric", "real")):
+                # Numeric column explicitly named ("le total des price_eur")
+                # → aggregate THAT column, not the first numeric one found.
+                if mentioned_col.lower() != "id" and not mentioned_col.lower().endswith("_id"):
+                    numeric_col = mentioned_col
 
         # Pattern 1: min/max (check before total/somme to avoid conflicts)
         if numeric_col and self._has_any(q, ["minimum", "plus bas", "plus petit", "min "]):
@@ -288,6 +299,20 @@ class RuleBasedSQLGenerator:
             if group_col and self._has_any(q, ["par", "by"]):
                 return f"SELECT {group_col}, ROUND(AVG({numeric_col}), 2) AS avg_{numeric_col} FROM {table_name} GROUP BY {group_col} ORDER BY avg_{numeric_col} DESC LIMIT 20"
             return f"SELECT ROUND(AVG({numeric_col}), 2) AS avg_{numeric_col} FROM {table_name}"
+
+        # Pattern 3a: "combien de X" / "nombre de X" without an explicitly
+        # named numeric column → COUNT of rows. Checked BEFORE the SUM
+        # pattern because "Combien de livraisons au total ?" contains both
+        # "combien de" and "total" - it counts objects, it doesn't sum a
+        # numeric column. When a numeric column IS named ("combien de
+        # price_eur au total"), the SUM pattern below takes over.
+        if (
+            self._has_any(q, ["combien de", "combien d'", "nombre de", "how many"])
+            and mentioned_col != numeric_col
+        ):
+            if group_col and self._has_any(q, ["par", "by"]):
+                return f"SELECT {group_col}, COUNT(*) AS count FROM {table_name} GROUP BY {group_col} ORDER BY count DESC LIMIT 20"
+            return f"SELECT COUNT(*) AS total FROM {table_name}"
 
         # Pattern 3: total / somme / sum + numeric column → SUM
         if numeric_col and self._has_any(q, ["total", "somme", "sum", "chiffre"]):
