@@ -47,6 +47,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Reques
 from pydantic import BaseModel, Field
 
 from app.auth.dependencies import get_current_user, try_get_tenant_context
+from app.feature_flags import require_flag
 from app.tenants.example_questions import GENERIC_QUESTIONS, generate_example_questions
 from app.tenants.onboarding import (
     complete_onboarding,
@@ -353,7 +354,7 @@ class StartOnboardingRequest(BaseModel):
     )
 
 
-@router.post("/tenants/{tenant_id}/onboarding/start")
+@router.post("/tenants/{tenant_id}/onboarding/start", dependencies=[require_flag("enable_multi_tenant_onboarding")])
 async def onboarding_start_endpoint(
     tenant_id: str,
     body: StartOnboardingRequest,
@@ -374,7 +375,7 @@ async def onboarding_start_endpoint(
     return {"config": config}
 
 
-@router.post("/tenants/{tenant_id}/onboarding/connect")
+@router.post("/tenants/{tenant_id}/onboarding/connect", dependencies=[require_flag("enable_multi_tenant_onboarding")])
 async def onboarding_connect_endpoint(
     tenant_id: str,
     connector_type: str = Form(..., description="'postgres' or 'csv'."),
@@ -427,7 +428,7 @@ async def onboarding_connect_endpoint(
     return result
 
 
-@router.post("/tenants/{tenant_id}/onboarding/detect-schema")
+@router.post("/tenants/{tenant_id}/onboarding/detect-schema", dependencies=[require_flag("enable_multi_tenant_onboarding")])
 async def onboarding_detect_schema_endpoint(
     tenant_id: str,
     current_user: dict = Depends(get_current_user),
@@ -458,7 +459,7 @@ class SaveSchemaRequest(BaseModel):
     )
 
 
-@router.post("/tenants/{tenant_id}/onboarding/save-schema")
+@router.post("/tenants/{tenant_id}/onboarding/save-schema", dependencies=[require_flag("enable_multi_tenant_onboarding")])
 async def onboarding_save_schema_endpoint(
     tenant_id: str,
     body: SaveSchemaRequest,
@@ -486,7 +487,7 @@ class SaveRolesRequest(BaseModel):
     )
 
 
-@router.post("/tenants/{tenant_id}/onboarding/save-roles")
+@router.post("/tenants/{tenant_id}/onboarding/save-roles", dependencies=[require_flag("enable_multi_tenant_onboarding")])
 async def onboarding_save_roles_endpoint(
     tenant_id: str,
     body: SaveRolesRequest,
@@ -503,7 +504,7 @@ async def onboarding_save_roles_endpoint(
     return {"saved": True, "roles_count": len(body.roles_config)}
 
 
-@router.post("/tenants/{tenant_id}/onboarding/complete")
+@router.post("/tenants/{tenant_id}/onboarding/complete", dependencies=[require_flag("enable_multi_tenant_onboarding")])
 async def onboarding_complete_endpoint(
     tenant_id: str,
     current_user: dict = Depends(get_current_user),
@@ -522,7 +523,7 @@ async def onboarding_complete_endpoint(
     return {"onboarded": True, "tenant_id": tenant_id}
 
 
-@router.get("/tenants/{tenant_id}/onboarding/status")
+@router.get("/tenants/{tenant_id}/onboarding/status", dependencies=[require_flag("enable_multi_tenant_onboarding")])
 async def onboarding_status_endpoint(
     tenant_id: str,
     request: Request,

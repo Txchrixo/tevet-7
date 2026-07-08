@@ -214,21 +214,15 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
         # clear French message prompting the user to complete onboarding.
 
         # ── Rate limit (per-tenant, prevents LLM cost abuse) ──
-        import time as _time
-        from collections import defaultdict, deque as _deque
-        if not hasattr(chat, '_rl_log'):
-            chat._rl_log = defaultdict(_deque)
-        _rl_log = chat._rl_log[tenant_id]
-        _now = _time.monotonic()
-        while _rl_log and _rl_log[0] < _now - 60.0:
-            _rl_log.popleft()
-        if len(_rl_log) >= 120:
+        # Shared with /chat/stream: one budget per tenant across both.
+        from app.auth.rate_limit import chat_limiter
+        allowed, retry_after = chat_limiter.check(tenant_id)
+        if not allowed:
             raise HTTPException(
                 status_code=429,
-                detail=f"Trop de requêtes. Réessayez dans {int(_rl_log[0] + 60.0 - _now) + 1}s.",
-                headers={"Retry-After": str(int(_rl_log[0] + 60.0 - _now) + 1)},
+                detail=f"Trop de requêtes. Réessayez dans {int(retry_after) + 1}s.",
+                headers={"Retry-After": str(int(retry_after) + 1)},
             )
-        _rl_log.append(_now)
 
         try:
             connector = await get_connector_for_tenant(tenant_id)
@@ -543,19 +537,12 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 identity_id = req.identity_id
                 tenant_id = "dp"
 
-            # ── Rate limit (per-tenant) ──
-            import time as _time_st
-            from collections import defaultdict as _dd_st, deque as _dq_st
-            if not hasattr(chat_stream, '_rl_log'):
-                chat_stream._rl_log = _dd_st(_dq_st)
-            _rl = chat_stream._rl_log[tenant_id]
-            _now_st = _time_st.monotonic()
-            while _rl and _rl[0] < _now_st - 60.0:
-                _rl.popleft()
-            if len(_rl) >= 120:
-                yield f"data: {json_mod.dumps({'type': 'error', 'message': 'Trop de requêtes. Réessayez dans 1 min.'})}\n\n"
+            # ── Rate limit (per-tenant, same budget as /chat) ──
+            from app.auth.rate_limit import chat_limiter
+            allowed, retry_after = chat_limiter.check(tenant_id)
+            if not allowed:
+                yield f"data: {json_mod.dumps({'type': 'error', 'message': f'Trop de requêtes. Réessayez dans {int(retry_after) + 1}s.'})}\n\n"
                 return
-            _rl.append(_now_st)
 
             # ── Build tools (same as /chat) ──
             yield f"data: {json_mod.dumps({'type': 'step', 'title': 'Connexion aux données…'})}\n\n"

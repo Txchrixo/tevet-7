@@ -53,6 +53,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.env,
         settings.llm_model,
     )
+    # Production guards - FAIL FAST. A production deployment with the
+    # default JWT secret, wide-open CORS, or public demo credentials is a
+    # compromised deployment, not a degraded one. Refuse to boot.
+    guard_errors = settings.validate_production_settings()
+    if guard_errors:
+        for err in guard_errors:
+            logger.critical("PRODUCTION GUARD: %s", err)
+        raise RuntimeError(
+            "refusing to start in env=production: " + "; ".join(guard_errors)
+        )
     # Phase 1: create + seed the SQLite DB (idempotent - drop & recreate).
     try:
         await init_db()
@@ -122,8 +132,12 @@ def create_app() -> FastAPI:
         ),
         version=__version__,
         lifespan=lifespan,
-        docs_url="/docs",
-        redoc_url="/redoc",
+        # OpenAPI explorers are a reconnaissance gift in production - the
+        # API surface is documented in the repo, operators don't need them
+        # exposed on the public internet.
+        docs_url="/docs" if settings.env != "production" else None,
+        redoc_url="/redoc" if settings.env != "production" else None,
+        openapi_url="/openapi.json" if settings.env != "production" else None,
     )
 
     # CORS - Phase B7 lockdown. "*" + credentials is invalid per spec.
@@ -152,9 +166,22 @@ def create_app() -> FastAPI:
     # Phase 6a: the auth router adds signup/login/me (JWT issuance) and
     # the tenants router adds tenant CRUD + membership activation. Both
     # are required for the multi-tenant frontend.
+    # Feature flags gate whole routers where the feature IS the router
+    # (documents = RAG management, approvals = human-in-the-loop). The
+    # multi-tenant onboarding flag is enforced per-endpoint inside
+    # app/tenants/routes.py because the tenants router also carries
+    # always-on routes (create/activate/members).
+    from app.feature_flags import require_flag
+
     app.include_router(chat_router, prefix="/api", tags=["chat"])
-    app.include_router(documents_router, prefix="/api", tags=["documents"])
-    app.include_router(approvals_router, prefix="/api", tags=["approvals"])
+    app.include_router(
+        documents_router, prefix="/api", tags=["documents"],
+        dependencies=[require_flag("enable_rag")],
+    )
+    app.include_router(
+        approvals_router, prefix="/api", tags=["approvals"],
+        dependencies=[require_flag("enable_human_in_the_loop")],
+    )
     app.include_router(auth_router, prefix="/api", tags=["auth"])
     app.include_router(tenants_router, prefix="/api", tags=["tenants"])
     app.include_router(admin_router, prefix="/api/admin", tags=["admin"])
@@ -182,6 +209,25 @@ def create_app() -> FastAPI:
             "service": "tevet-7",
             "version": __version__,
         }
+
+    @app.get("/ready", tags=["meta"])
+    async def ready() -> dict:
+        """Readiness probe: verifies the database answers a SELECT 1.
+
+        Orchestrators (Railway, k8s) should route traffic only when this
+        returns 200. Liveness (/health) stays DB-free so a slow DB does
+        not get the process killed.
+        """
+        from sqlalchemy import text
+        from app.db_seed import get_engine
+        try:
+            engine = get_engine()
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+        except Exception as exc:  # noqa: BLE001 - report, don't crash the probe
+            from fastapi import HTTPException
+            raise HTTPException(status_code=503, detail=f"database not ready: {exc}")
+        return {"status": "ready", "service": "tevet-7", "version": __version__}
 
     @app.get("/", tags=["meta"])
     async def root() -> dict:
