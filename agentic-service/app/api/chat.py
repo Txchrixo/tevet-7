@@ -162,10 +162,13 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
                     "via POST /api/tenants or POST /api/tenants/{id}/activate"
                 ),
             )
-        # The orchestrator expects role ∈ {"producer", "admin"}.
-        # "customer" maps to "producer" for scoping purposes (same
-        # row-level filter on producer_id).
-        role: str = jwt_ctx.role if jwt_ctx.role in ("producer", "admin") else "producer"
+        # Pass the JWT role through UNCHANGED. Onboarded tenants define
+        # custom roles (e.g. "driver" scoped by driver_id) in their
+        # roles_config - coercing unknown roles to "producer" here would
+        # make resolve_role_scope() look up the wrong role and silently
+        # drop row-level security. Downstream the only privileged value
+        # is "admin"; every other role is treated as scoped/restricted.
+        role: str = jwt_ctx.role
         producer_id: int | None = jwt_ctx.producer_id
         identity_id: str = jwt_ctx.email or f"user_{jwt_ctx.user_id}"
         tenant_id: str = jwt_ctx.tenant_id
@@ -254,8 +257,15 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             }
         schema = connector.get_schema()
         allowed_tables = connector.get_allowed_tables(role)
-        scope_column = "producer_id" if role == "producer" else None
-        scope_value = producer_id if role == "producer" else None
+        # Scope resolution: onboarded tenants define role → scope_column in
+        # their roles_config (wizard "define roles" step); the demo tenant
+        # falls back to the historical producer/producer_id rule. Hardcoding
+        # "producer" here would silently drop row-level security for every
+        # scoped custom role (e.g. "driver" scoped by driver_id).
+        from app.tenants.onboarding import resolve_role_scope
+        scope_column, scope_value = await resolve_role_scope(
+            tenant_id, role, producer_id,
+        )
 
         sql_tool = SqlReadTool(
             connector=connector,
@@ -518,7 +528,9 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
                 if not jwt_ctx.role or not jwt_ctx.tenant_id:
                     yield f"data: {json_mod.dumps({'type': 'error', 'message': 'no active tenant'})}\n\n"
                     return
-                role = jwt_ctx.role if jwt_ctx.role in ("producer", "admin") else "producer"
+                # Same as /chat: pass the JWT role through unchanged so
+                # resolve_role_scope() can look up custom roles.
+                role = jwt_ctx.role
                 producer_id = jwt_ctx.producer_id
                 identity_id = jwt_ctx.email or f"user_{jwt_ctx.user_id}"
                 tenant_id = jwt_ctx.tenant_id
@@ -564,8 +576,12 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
 
             schema = connector.get_schema()
             allowed_tables = connector.get_allowed_tables(role)
-            scope_column = "producer_id" if role == "producer" else None
-            scope_value = producer_id if role == "producer" else None
+            # Same scope resolution as /chat: roles_config is the source of
+            # truth for onboarded tenants (see resolve_role_scope).
+            from app.tenants.onboarding import resolve_role_scope
+            scope_column, scope_value = await resolve_role_scope(
+                tenant_id, role, producer_id,
+            )
 
             sql_tool = SqlReadTool(
                 connector=connector, schema=schema,

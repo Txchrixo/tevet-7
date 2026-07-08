@@ -63,6 +63,38 @@ async def get_tenant_config_row(tenant_id: str) -> dict[str, Any] | None:
     return await _get_config_row(tenant_id)
 
 
+async def resolve_role_scope(
+    tenant_id: str, role: str, scope_value: int | str | None,
+) -> tuple[str | None, int | str | None]:
+    """Resolve the (scope_column, scope_value) pair for a role on a tenant.
+
+    Onboarded tenants define their roles in ``roles_config`` (the wizard's
+    "define roles" step): ``{"driver": {"scope_column": "driver_id"},
+    "admin": {"scope_column": null}}``. That mapping is the source of
+    truth - a scoped custom role MUST get its scope column from here,
+    otherwise row-level security silently degrades to "no scoping".
+
+    Tenants without a roles_config (the demo tenant "dp", the legacy body
+    path) fall back to the historical rule: ONLY "admin" is unscoped,
+    every other role (producer, customer, unknown) is scoped by
+    ``producer_id`` - the same semantics the old role-coercion in
+    app/api/chat.py enforced (customer used to be coerced to producer).
+    Fail-closed: an unrecognized role must never mean "no scoping".
+
+    Returns ``(None, None)`` when the role is unscoped (e.g. admin).
+    """
+    config = await _get_config_row(tenant_id)
+    roles_cfg = (config or {}).get("roles_config") or {}
+    role_cfg = roles_cfg.get(role)
+    if role_cfg is not None:
+        scope_column = role_cfg.get("scope_column")
+    else:
+        scope_column = None if role == "admin" else "producer_id"
+    if not scope_column:
+        return None, None
+    return scope_column, scope_value
+
+
 async def _get_config_row(tenant_id: str) -> dict[str, Any] | None:
     """Return the tenant_configs row for ``tenant_id``, or None."""
     engine = get_engine()
@@ -369,11 +401,65 @@ async def save_schema(tenant_id: str, schema_config: dict) -> None:
     )
 
 
+def _stamp_roles_on_schema(schema_config: dict, roles_config: dict) -> bool:
+    """Propagate the wizard's roles onto the saved schema tables.
+
+    The auto-detected schema only knows the legacy defaults
+    (``allowed_for_roles=["producer", "admin"]``, ``tenant_scope_column``
+    set only for a column literally named ``producer_id``). The wizard's
+    "define roles" step is the source of truth, so after save_roles every
+    table must:
+
+    - list the tenant's declared roles in ``allowed_for_roles`` (otherwise
+      a custom role like "driver" has zero queryable tables), and
+    - carry the scoped role's ``tenant_scope_column`` when that column
+      exists in the table (otherwise the sqlglot rewriter has nothing to
+      match and row-level security silently does not apply).
+
+    Mutates ``schema_config`` in place; returns True when anything changed.
+    Note: the schema carries ONE scope column per table, so the first
+    scoped role whose column exists wins (multi-scope-column tenants are
+    not supported by the current data model).
+    """
+    role_names = set(roles_config.keys()) | {"admin"}
+    scoped_columns = [
+        cfg.get("scope_column")
+        for cfg in roles_config.values()
+        if isinstance(cfg, dict) and cfg.get("scope_column")
+    ]
+    changed = False
+    for table in schema_config.get("tables", []):
+        merged_roles = sorted(set(table.get("allowed_for_roles", [])) | role_names)
+        if merged_roles != table.get("allowed_for_roles"):
+            table["allowed_for_roles"] = merged_roles
+            changed = True
+        col_names = {c.get("name") for c in table.get("columns", [])}
+        for scope_col in scoped_columns:
+            if scope_col in col_names:
+                if table.get("tenant_scope_column") != scope_col:
+                    table["tenant_scope_column"] = scope_col
+                    changed = True
+                break
+    return changed
+
+
 async def save_roles(tenant_id: str, roles_config: dict) -> None:
-    """Persist the tenant's roles + scope columns."""
+    """Persist the tenant's roles + scope columns.
+
+    Also re-stamps the saved schema_config (see
+    :func:`_stamp_roles_on_schema`) so the declared roles and scope
+    columns actually reach the connector + sqlglot rewriter.
+    """
     if not isinstance(roles_config, dict):
         raise ValueError("roles_config must be a dict")
-    await _upsert_config(tenant_id, roles_config=roles_config)
+    config = await _get_config_row(tenant_id)
+    schema_config = (config or {}).get("schema_config")
+    if schema_config and _stamp_roles_on_schema(schema_config, roles_config):
+        await _upsert_config(
+            tenant_id, roles_config=roles_config, schema_config=schema_config,
+        )
+    else:
+        await _upsert_config(tenant_id, roles_config=roles_config)
     logger.info(
         "save_roles - tenant=%s roles=%s",
         tenant_id, list(roles_config.keys()),
@@ -401,7 +487,14 @@ async def complete_onboarding(tenant_id: str) -> None:
         )
     if not config["roles_config"]:
         raise ValueError("cannot complete onboarding - save_roles must run first.")
-    await _upsert_config(tenant_id, onboarded=True)
+    # Re-stamp roles onto the schema (idempotent): covers the case where
+    # save_schema was re-run AFTER save_roles and wiped the stamped
+    # allowed_for_roles / tenant_scope_column.
+    schema_config = config["schema_config"]
+    if _stamp_roles_on_schema(schema_config, config["roles_config"]):
+        await _upsert_config(tenant_id, schema_config=schema_config, onboarded=True)
+    else:
+        await _upsert_config(tenant_id, onboarded=True)
     logger.info("complete_onboarding - tenant=%s onboarded=True", tenant_id)
 
 
