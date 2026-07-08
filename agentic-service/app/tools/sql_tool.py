@@ -40,6 +40,7 @@ three-layer defense in depth we pitch to enterprise customers.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -188,10 +189,14 @@ class RuleBasedSQLGenerator:
             name = t.get("name", "").lower()
             if not name:
                 continue
-            # Match exact, plural (s), or singular (strip trailing s).
+            # Match exact, plural (s), or singular (strip trailing s) -
+            # as WHOLE WORDS. A substring check would match the table
+            # "products" inside the French word "producteurs" and answer
+            # a producer-enumeration question with a product count.
             variants = {name, name + "s", name.rstrip("s"), name.replace("_", " "), name.replace("-", " ")}
-            if any(v in q_lower for v in variants if len(v) >= 3):
-                return t["name"], t
+            for v in variants:
+                if len(v) >= 3 and re.search(rf"\b{re.escape(v)}\b", q_lower):
+                    return t["name"], t
         return None
 
     def _find_numeric_column(self, table_config: dict) -> str | None:
@@ -346,7 +351,9 @@ class RuleBasedSQLGenerator:
 
         # 2. Top products this month.
         #    "Quels sont mes 5 produits les plus vendus ce mois-ci ?"
-        if self._has_any(q, ["produit", "vendu", "vente"]) and self._has_any(q, ["top", "plus", "plus vendu", "best", "meilleur"]):
+        #    "se vend" covers the reflexive phrasing "Qu'est-ce qui se vend
+        #    le plus chez moi ?" (kept in sync with classify_question).
+        if self._has_any(q, ["produit", "vendu", "vente", "se vend"]) and self._has_any(q, ["top", "plus", "plus vendu", "best", "meilleur"]):
             return (
                 "SELECT p.name AS name, "
                 "SUM(oi.quantity) AS units_sold, "
