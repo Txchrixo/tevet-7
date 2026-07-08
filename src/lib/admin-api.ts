@@ -21,34 +21,10 @@ import type {
 } from "./types";
 
 /** Where the JWT is persisted client-side (set by the login flow). */
-const TOKEN_STORAGE_KEY = "tevet7.jwt";
 
 /** The default tenant slug - Drive Producteur. */
 export const DEFAULT_TENANT_ID = "dp";
 
-/**
- * Reads the JWT from localStorage. Returns null on the server or when no
- * token has been issued yet - the admin UI surfaces an empty state in that
- * case.
- */
-export function getAuthToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-export function setAuthToken(token: string | null): void {
-  if (typeof window === "undefined") return;
-  try {
-    if (token) window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
-    else window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-  } catch {
-    /* ignore */
-  }
-}
 
 interface FetchOptions {
   method?: "GET" | "POST";
@@ -71,11 +47,9 @@ export class AdminApiError extends Error {
 }
 
 async function adminFetch<T>(path: string, opts: FetchOptions = {}): Promise<T> {
-  const token = getAuthToken();
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  if (token) headers["authorization"] = `Bearer ${token}`;
 
   const init: RequestInit = {
     method: opts.method ?? "GET",

@@ -11,22 +11,16 @@
  * as `src/lib/auth-api.ts` and `src/lib/admin-api.ts`.
  */
 
-import { getAuthToken } from "./auth-api";
 import type { ExampleQuestion } from "./types";
 
 /**
- * Returns the Authorization header dict if a JWT is stored, else an
- * empty dict. Used by fetchers that don't already go through the
- * auth-api / admin-api helpers.
- *
- * Reads the same `tevet7.jwt` localStorage key as `auth-api.ts` and
- * `admin-api.ts` so the JWT set by the login flow is reused.
+ * Auth headers are no longer built client-side: the NextAuth session
+ * cookie flows automatically with same-origin fetches, and the Next.js
+ * proxy routes attach the backend Bearer token server-side
+ * (src/lib/server/backend-auth.ts). Kept for call-site compatibility.
  */
 export function authHeaders(): Record<string, string> {
-  const token = getAuthToken();
-  const headers: Record<string, string> = {};
-  if (token) headers["authorization"] = `Bearer ${token}`;
-  return headers;
+  return {};
 }
 
 /**

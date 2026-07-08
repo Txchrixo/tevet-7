@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getBackendAccessToken } from "@/lib/server/backend-auth";
+
 const BACKEND_BASE = "http://localhost:8001";
 
 export async function GET(req: NextRequest) {
-  const auth = req.headers.get("authorization");
   const headers: Record<string, string> = {};
-  if (auth) headers["authorization"] = auth;
+  const access = await getBackendAccessToken(req);
+  if (access) headers["authorization"] = `Bearer ${access}`;
 
   try {
     const res = await fetch(`${BACKEND_BASE}/api/documents`, { headers });
@@ -20,9 +22,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = req.headers.get("authorization");
   const headers = new Headers();
-  if (auth) headers.set("authorization", auth);
+  const access = await getBackendAccessToken(req);
+  if (access) headers.set("authorization", `Bearer ${access}`);
   const ct = req.headers.get("content-type");
   if (ct) headers.set("content-type", ct);
 

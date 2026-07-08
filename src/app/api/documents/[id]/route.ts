@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+import { getBackendAccessToken } from "@/lib/server/backend-auth";
+
 const BACKEND_BASE = "http://localhost:8001";
 
 export async function DELETE(
@@ -7,9 +9,9 @@ export async function DELETE(
   ctx: { params: Promise<{ id: string }> },
 ) {
   const { id } = await ctx.params;
-  const auth = req.headers.get("authorization");
   const headers: Record<string, string> = {};
-  if (auth) headers["authorization"] = auth;
+  const access = await getBackendAccessToken(req);
+  if (access) headers["authorization"] = `Bearer ${access}`;
 
   try {
     const res = await fetch(`${BACKEND_BASE}/api/documents/${id}`, {

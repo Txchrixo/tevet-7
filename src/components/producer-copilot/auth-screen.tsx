@@ -34,7 +34,6 @@ const AUTH_T = {
     hasAccount: "Already have an account? Sign in",
     noAccount: "No account? Create one",
     demo: "Try demo", demoLoading: "Loading...",
-    mockBackend: "Continue without backend (mock data)",
   },
   fr: {
     subtitle: "Plateforme d'agents IA configurable. Connectez-vous pour acceder a votre agent - chaque question est securisee par un scope tenant.",
@@ -44,7 +43,6 @@ const AUTH_T = {
     hasAccount: "Deja un compte ? Se connecter",
     noAccount: "Pas de compte ? Creer un compte",
     demo: "Essayer la demo", demoLoading: "Connexion...",
-    mockBackend: "Continuer sans backend (mock data)",
   },
 };
 
@@ -73,7 +71,6 @@ export function AuthScreen({ initialMode = "login" }: AuthScreenProps = {}) {
 function AuthForm({ initialMode }: { initialMode: "login" | "signup" }) {
   const login = useCopilotStore((s) => s.login);
   const signup = useCopilotStore((s) => s.signup);
-  const enterDemoMode = useCopilotStore((s) => s.enterDemoMode);
   const authLoading = useCopilotStore((s) => s.authLoading);
   const setShowIdentityPicker = useCopilotStore((s) => s.setShowIdentityPicker);
 
@@ -107,11 +104,6 @@ function AuthForm({ initialMode }: { initialMode: "login" | "signup" }) {
     if (authLoading) return;
     setError(null);
     setShowIdentityPicker(true);
-  };
-
-  const handleMockDemo = () => {
-    setError(null);
-    enterDemoMode();
   };
 
   return (
@@ -235,17 +227,6 @@ function AuthForm({ initialMode }: { initialMode: "login" | "signup" }) {
             </p>
           </div>
 
-          {/* Skip to mock demo */}
-          <div className="mt-6 text-center">
-            <button
-              type="button"
-              onClick={handleMockDemo}
-              disabled={authLoading}
-              className="text-[11px] uppercase tracking-wide text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {t.mockBackend}
-            </button>
-          </div>
         </motion.div>
       </main>
     </div>

@@ -1047,12 +1047,45 @@ def _generate_orders_and_history(
     return orders_out, stock_history_out
 
 
-async def init_db() -> None:
-    """Create all tables and seed fictitious Drive Producteur data.
+_FTS5_CREATE_SQL = (
+    "CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks_fts USING fts5("
+    "content, document_id UNINDEXED, tenant_id UNINDEXED, "
+    "producer_id UNINDEXED, tokenize = 'porter unicode61')"
+)
 
-    Idempotent: drops every table first, then recreates and reseeds. Safe
-    to call on every startup.
+
+async def _ensure_schema() -> None:
+    """Create missing tables (incl. the FTS5 virtual table). NEVER drops.
+
+    This is the persistent-mode startup path: real deployments must keep
+    their data across restarts. ``metadata.create_all`` only creates
+    tables that don't exist yet.
     """
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
+        await conn.execute(text(_FTS5_CREATE_SQL))
+    logger.info("Persistent mode: schema ensured (no drop, no seed) at %s", engine.url)
+
+
+async def init_db() -> None:
+    """Prepare the database on startup.
+
+    Two modes, switched by ``ENABLE_DEMO_SEED`` (see app/config.py):
+
+    - Demo mode (default in dev): drop every table, recreate, reseed the
+      fictitious Drive Producteur data + demo accounts. Deterministic
+      demo on every restart.
+    - Persistent mode (mandatory in production - enforced by the startup
+      guards): create missing tables only. NO drops, NO demo data, NO
+      demo accounts. Restarts preserve all tenant data.
+    """
+    from app.config import get_settings
+
+    if not get_settings().enable_demo_seed:
+        await _ensure_schema()
+        return
+
     engine = get_engine()
     # Drop + recreate (idempotent). The FTS5 virtual table is NOT part of
     # ``metadata`` (SQLAlchemy Core does not model virtual tables), so we
@@ -1070,13 +1103,7 @@ async def init_db() -> None:
         # improvement). The ``UNINDEXED`` columns (``document_id``,
         # ``tenant_id``, ``producer_id``) are stored but not tokenised -
         # we filter on them at query time.
-        await conn.execute(
-            text(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS document_chunks_fts USING fts5("
-                "content, document_id UNINDEXED, tenant_id UNINDEXED, "
-                "producer_id UNINDEXED, tokenize = 'porter unicode61')"
-            )
-        )
+        await conn.execute(text(_FTS5_CREATE_SQL))
     logger.info("SQLite tables created at %s", engine.url)
 
     # Seed

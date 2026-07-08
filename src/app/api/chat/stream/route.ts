@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 
+import { getBackendAccessToken } from "@/lib/server/backend-auth";
+
 /**
  * Tevet-7 chat SSE streaming proxy.
  *
@@ -12,8 +14,10 @@ const BACKEND_TARGET = "http://localhost:8001/api/chat/stream";
 
 export async function POST(req: NextRequest) {
   const headers = new Headers();
-  const auth = req.headers.get("authorization");
-  if (auth) headers.set("authorization", auth);
+  // Session-derived token: the browser never holds the backend JWT, so
+  // any client-sent Authorization header is ignored on purpose.
+  const access = await getBackendAccessToken(req);
+  if (access) headers.set("authorization", `Bearer ${access}`);
   headers.set("content-type", "application/json");
   headers.set("accept", "text/event-stream");
 

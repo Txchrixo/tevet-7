@@ -14,15 +14,11 @@ import {
   AuthApiError,
   activateTenant,
   createTenant as authCreateTenant,
-  getAuthToken,
-  getMe,
+  getCurrentSession,
   listMyTenants,
   login as authLogin,
+  logoutSession,
   signup as authSignup,
-  setAuthToken,
-  setRefreshToken,
-  setActiveTenantId,
-  getActiveTenantId,
 } from "./auth-api";
 import {
   DEFAULT_TENANT_ID,
@@ -390,13 +386,13 @@ function adaptBackendResponse(raw: unknown): AssistantResponse {
  * without re-login. The backend's dual-mode fallback handles the scoping.
  */
 async function callBackendChat(message: string): Promise<AssistantResponse> {
-  const token = getAuthToken();
   const override = useCopilotStore.getState().demoIdentityOverride;
+  // Authenticated sessions carry the NextAuth cookie automatically; the
+  // /api/chat proxy attaches the backend Bearer token server-side. The
+  // demo identity override (landing demo) sends body identity instead.
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  const useJwt = token && !override;
-  if (useJwt) headers["authorization"] = `Bearer ${token}`;
 
   const body: Record<string, unknown> = { message };
   if (override) {
@@ -454,13 +450,11 @@ async function callBackendChatStream(
   onChunk: (chunk: string) => void,
   onStep: (title: string) => void,
 ): Promise<AssistantResponse> {
-  const token = getAuthToken();
   const override = useCopilotStore.getState().demoIdentityOverride;
+  // Same auth model as callBackendChat: session cookie + server-side token.
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  const useJwt = token && !override;
-  if (useJwt) headers["authorization"] = `Bearer ${token}`;
 
   const body: Record<string, unknown> = { message };
   if (override) {
@@ -588,15 +582,19 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
    * `anonymous` (the user can still click "Essayer la démo").
    */
   bootstrap: async () => {
-    const token = getAuthToken();
-    if (!token) {
+    const session = await getCurrentSession();
+    if (!session || session.error === "RefreshFailed") {
+      if (session?.error === "RefreshFailed") void logoutSession();
       set({ authMode: "anonymous" });
       return;
     }
     try {
-      const me = await getMe();
-      const tenants = normalizeMemberships(me.memberships);
-      const activeTenant = pickActiveTenant(tenants);
+      const mine = await listMyTenants();
+      const tenants = normalizeMemberships(mine.tenants);
+      const activeTenant = pickActiveTenant(
+        tenants,
+        session.tenant?.tenant_id ?? null,
+      );
       // Check onboarding status for the active tenant (the /me endpoint
       // doesn't include `onboarded` - we fetch it separately).
       if (activeTenant && !activeTenant.is_demo) {
@@ -607,29 +605,24 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
           // If the status check fails, assume onboarded (don't block the user).
         }
       }
+      const user = session.user as AuthUser;
       set({
         authMode: "authenticated",
         isDemoSession: false,
   lang: "en",
-        user: me.user,
+        user,
         tenants,
         activeTenant,
-        identity: identityFromAuthUser(me.user, activeTenant),
+        identity: identityFromAuthUser(user, activeTenant),
       });
       // Phase 6d - load schema-driven example questions for the active
       // tenant. Fire-and-forget; loadExampleQuestions falls back to
       // FALLBACK_QUESTIONS on any error so the sidebar never breaks.
       void get().loadExampleQuestions();
-    } catch (err) {
-      // Stale or invalid JWT - clear it and show the auth screen.
-      setAuthToken(null);
-    setRefreshToken(null);
-      setActiveTenantId(null);
+    } catch {
+      // Stale or invalid session - end it and show the auth screen.
+      void logoutSession();
       set({ authMode: "anonymous", user: null, tenants: [], activeTenant: null });
-      if (err instanceof AuthApiError && !err.unreachable) {
-        // 401 / 403 etc. - silently clear. Other errors (502) are also silent
-        // so the user just sees the auth screen.
-      }
     }
   },
 
@@ -644,14 +637,22 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   login: async (email, password) => {
     set({ authLoading: true });
     try {
-      const { user, token, refresh_token } = await authLogin(email, password);
-      setAuthToken(token);
-      if (refresh_token) setRefreshToken(refresh_token);
-      // Fetch memberships + tenants.
-      const me = await getMe();
-      const tenants = normalizeMemberships(me.memberships);
-      const activeTenant = pickActiveTenant(tenants);
-      if (activeTenant) setActiveTenantId(activeTenant.tenant_id);
+      const { user, session } = await authLogin(email, password);
+      // Fetch memberships + tenants (proxy attaches the session token).
+      const mine = await listMyTenants();
+      const tenants = normalizeMemberships(mine.tenants);
+      const activeTenant = pickActiveTenant(
+        tenants,
+        session.tenant?.tenant_id ?? null,
+      );
+      // Make sure the session cookie is scoped to the chosen tenant.
+      if (activeTenant && session.tenant?.tenant_id !== activeTenant.tenant_id) {
+        try {
+          await activateTenant(activeTenant.tenant_id);
+        } catch {
+          // Keep the login session's own scope on failure.
+        }
+      }
       set({
         authMode: "authenticated",
         isDemoSession: false,
@@ -689,9 +690,7 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   signup: async (email, password, name) => {
     set({ authLoading: true });
     try {
-      const { user, token, refresh_token } = await authSignup(email, password, name);
-      setAuthToken(token);
-      if (refresh_token) setRefreshToken(refresh_token);
+      const { user } = await authSignup(email, password, name);
       // New user has no memberships yet - they'll create a tenant next.
       set({
         authMode: "authenticated",
@@ -768,9 +767,8 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
    * backend is unreachable.
    */
   enterDemoMode: () => {
-    setAuthToken(null);
-    setRefreshToken(null);
-    setActiveTenantId(null);
+    // Pure client-side mock: make sure no real session lingers underneath.
+    void logoutSession();
     set({
       authMode: "demo",
       authLoading: false,
@@ -791,9 +789,9 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
   },
 
   logout: () => {
-    setAuthToken(null);
-    setRefreshToken(null);
-    setActiveTenantId(null);
+    // Clears the NextAuth httpOnly cookie (fire-and-forget: the local
+    // state reset below is what the UI reacts to).
+    void logoutSession();
     set({
       authMode: "anonymous",
       authLoading: false,
@@ -825,19 +823,26 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
    * a fresh JWT scoped to the new tenant, then re-derives the chat identity.
    */
   switchTenant: async (tenantId) => {
-    const token = getAuthToken();
-    if (!token) return;
+    if (get().authMode !== "authenticated") return;
     try {
-      const { membership, token: newToken } = await activateTenant(tenantId);
-      setAuthToken(newToken);
-      const fresh = normalizeMembership(membership);
-      setActiveTenantId(fresh.tenant_id);
+      // Rotates the backend JWT inside the session cookie (server-side
+      // activation via the NextAuth jwt callback).
+      await activateTenant(tenantId);
       const tenants = get().tenants.map((t) =>
-        t.tenant_id === fresh.tenant_id
-          ? { ...t, is_active: true, onboarded: fresh.onboarded }
+        t.tenant_id === tenantId
+          ? { ...t, is_active: true }
           : { ...t, is_active: false },
       );
-      const activeTenant = tenants.find((t) => t.tenant_id === fresh.tenant_id) ?? null;
+      const activeTenant = tenants.find((t) => t.tenant_id === tenantId) ?? null;
+      // Refresh the onboarded flag for the new tenant (best effort).
+      if (activeTenant && !activeTenant.is_demo) {
+        try {
+          const status = await getOnboardingStatus(activeTenant.tenant_id);
+          activeTenant.onboarded = status.onboarded;
+        } catch {
+          // Keep the cached flag when the status check fails.
+        }
+      }
       const user = get().user;
       set({
         tenants,
@@ -876,12 +881,12 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
 
   createTenant: async (name, slug) => {
     try {
-      const { tenant, token: newToken } = await authCreateTenant(name, slug);
-      setAuthToken(newToken);
+      // authCreateTenant creates the tenant AND rotates the session cookie
+      // onto it (server-side activation) - no token handling here.
+      const { tenant } = await authCreateTenant(name, slug);
       const fresh = normalizeMembership(tenant);
       // New tenants are NOT onboarded by default - the wizard will appear.
       fresh.onboarded = false;
-      setActiveTenantId(fresh.tenant_id);
       const tenants = [...get().tenants, { ...fresh, is_active: true }];
       const activeTenant = tenants.find((t) => t.tenant_id === fresh.tenant_id) ?? null;
       const user = get().user;
@@ -999,17 +1004,20 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
     set({ onboardingLoading: true, onboardingError: null });
     try {
       await apiCompleteOnboarding(tenantId);
-      // Refresh `/api/auth/me` so memberships carry the new `onboarded: true`.
+      // Refresh memberships so they carry the new `onboarded: true`.
       try {
-        const me = await getMe();
-        const tenants = normalizeMemberships(me.memberships);
+        const mine = await listMyTenants();
+        const tenants = normalizeMemberships(mine.tenants);
         const activeTenant =
           tenants.find((t) => t.tenant_id === tenantId) ?? null;
+        if (activeTenant) activeTenant.onboarded = true;
+        const user = get().user;
         set({
-          user: me.user,
           tenants,
           activeTenant,
-          identity: identityFromAuthUser(me.user, activeTenant),
+          identity: user
+            ? identityFromAuthUser(user, activeTenant)
+            : get().identity,
         });
       } catch {
         // The refresh is best-effort. The wizard is already complete on the
@@ -1243,16 +1251,19 @@ export const useCopilotStore = create<CopilotState>((set, get) => ({
 // ---------------------------------------------------------------------------
 
 /**
- * Picks the tenant to activate after login: the cached `activeTenantId` if the
- * user is still a member, else the first `is_active` membership, else the
- * first membership. Returns null if the user has no memberships.
+ * Picks the tenant to activate after login: the session's scoped tenant
+ * (from the NextAuth cookie) if the user is still a member, else the first
+ * `is_active` membership, else the first membership. Returns null if the
+ * user has no memberships.
  */
-function pickActiveTenant(tenants: TenantMembership[]): TenantMembership | null {
+function pickActiveTenant(
+  tenants: TenantMembership[],
+  preferredId: string | null = null,
+): TenantMembership | null {
   if (tenants.length === 0) return null;
-  const cachedId = getActiveTenantId();
-  if (cachedId) {
-    const cached = tenants.find((t) => t.tenant_id === cachedId);
-    if (cached) return cached;
+  if (preferredId) {
+    const preferred = tenants.find((t) => t.tenant_id === preferredId);
+    if (preferred) return preferred;
   }
   const active = tenants.find((t) => t.is_active);
   if (active) return active;

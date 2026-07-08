@@ -26,17 +26,7 @@ import type {
 } from "./types";
 
 /** Where the JWT is persisted client-side (set by the login flow). */
-const TOKEN_STORAGE_KEY = "tevet7.jwt";
 
-/** Reads the JWT from localStorage. Returns null on the server or when unset. */
-export function getAuthToken(): string | null {
-  if (typeof window === "undefined") return null;
-  try {
-    return window.localStorage.getItem(TOKEN_STORAGE_KEY);
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Thrown by the onboarding client for any non-2xx response OR when the backend
@@ -111,11 +101,9 @@ export async function connectPostgres(
   tenantId: string,
   connectionUrl: string,
 ): Promise<OnboardingConnectResult> {
-  const token = getAuthToken();
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  if (token) headers["authorization"] = `Bearer ${token}`;
 
   let res: Response;
   try {
@@ -175,9 +163,7 @@ export async function connectCsv(
   tenantId: string,
   file: File,
 ): Promise<OnboardingConnectResult> {
-  const token = getAuthToken();
   const headers: Record<string, string> = {};
-  if (token) headers["authorization"] = `Bearer ${token}`;
   // NOTE: do NOT set content-type - the browser sets it automatically with
   // the correct multipart boundary when we pass a FormData body.
 
@@ -258,11 +244,9 @@ interface RawTable {
 export async function detectSchema(
   tenantId: string,
 ): Promise<{ tables: OnboardingSchemaTable[] }> {
-  const token = getAuthToken();
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  if (token) headers["authorization"] = `Bearer ${token}`;
 
   let res: Response;
   try {
@@ -339,11 +323,9 @@ export async function saveSchema(
     metadata?: Record<string, unknown>;
   },
 ): Promise<OnboardingSaveResult> {
-  const token = getAuthToken();
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  if (token) headers["authorization"] = `Bearer ${token}`;
 
   // Strip the wizard-only `selected` flag before sending - the backend stores
   // the schema without it. Deselected tables/columns are dropped entirely.
@@ -420,11 +402,9 @@ export async function saveRoles(
   tenantId: string,
   rolesConfig: OnboardingRole[],
 ): Promise<OnboardingSaveResult> {
-  const token = getAuthToken();
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  if (token) headers["authorization"] = `Bearer ${token}`;
 
   let res: Response;
   try {
@@ -488,11 +468,9 @@ export async function saveRoles(
 export async function completeOnboarding(
   tenantId: string,
 ): Promise<OnboardingSaveResult> {
-  const token = getAuthToken();
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  if (token) headers["authorization"] = `Bearer ${token}`;
 
   let res: Response;
   try {
@@ -546,9 +524,7 @@ export async function completeOnboarding(
 export async function getOnboardingStatus(
   tenantId: string,
 ): Promise<OnboardingStatus> {
-  const token = getAuthToken();
   const headers: Record<string, string> = {};
-  if (token) headers["authorization"] = `Bearer ${token}`;
 
   let res: Response;
   try {

@@ -155,10 +155,23 @@ class Settings(BaseSettings):
         description="Hard cap on tokens consumed per tenant per UTC day.",
     )
 
-    # ── Feature flags (phase gates) ──────────────────────────────────────────
-    enable_rag: bool = Field(default=False)
-    enable_human_in_the_loop: bool = Field(default=False)
-    enable_multi_tenant_onboarding: bool = Field(default=False)
+    # ── Feature flags (kill switches) ────────────────────────────────────────
+    # All three features shipped and are covered by the eval + e2e suites,
+    # so they default ON. The flags remain as operational kill switches:
+    # flipping one to false returns 503 on the feature's endpoints without
+    # a redeploy.
+    enable_rag: bool = Field(default=True)
+    enable_human_in_the_loop: bool = Field(default=True)
+    enable_multi_tenant_onboarding: bool = Field(default=True)
+
+    # Demo tenant seeding (marie/pierre/admin + Drive Producteur data).
+    # Defaults ON in development, but ``validate_production_settings``
+    # requires it OFF in production - demo credentials are public in the
+    # README and must never exist on a production deployment.
+    enable_demo_seed: bool = Field(
+        default=True,
+        description="Seed the demo tenant + demo accounts on startup.",
+    )
 
     # ── Runtime ──────────────────────────────────────────────────────────────
     env: Literal["development", "staging", "production"] = Field(default="development")
@@ -167,6 +180,37 @@ class Settings(BaseSettings):
         default="*",
         description="Comma-separated list of allowed origins, or '*' for all.",
     )
+
+    # ── Production guards ────────────────────────────────────────────────────
+    def validate_production_settings(self) -> list[str]:
+        """Return the list of fatal misconfigurations for ``env=production``.
+
+        Called at startup: a non-empty list aborts the boot. Fail-fast is
+        the only safe behavior - a production deployment with the default
+        JWT secret or wide-open CORS is a compromised deployment, not a
+        degraded one. Returns ``[]`` outside production.
+        """
+        if self.env != "production":
+            return []
+        errors: list[str] = []
+        if self.jwt_secret == "replace-me-with-openssl-rand-base64-32":
+            errors.append(
+                "JWT_SECRET is the default placeholder - generate one with "
+                "`openssl rand -base64 32`."
+            )
+        elif len(self.jwt_secret) < 32:
+            errors.append("JWT_SECRET is shorter than 32 characters.")
+        if self.cors_origins.strip() == "*":
+            errors.append(
+                "CORS_ORIGINS is '*' - set it to the frontend origin(s) "
+                "in production."
+            )
+        if self.enable_demo_seed:
+            errors.append(
+                "ENABLE_DEMO_SEED is true - demo accounts (public "
+                "credentials) must not be seeded in production."
+            )
+        return errors
 
 
 @lru_cache
