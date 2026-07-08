@@ -323,19 +323,24 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
                 logger.warning("LLM orchestrator failed (%s) - falling back to rule-based", exc)
                 response = None
 
-        # Heuristic: detect "bad" LLM responses (empty answer, or SQL present
-        # but no chart for analytical intents) → fall back to rule-based.
+        # Heuristic: detect "bad" LLM responses and fall back to rule-based.
+        # A response is bad only when the answer is empty OR carries no
+        # substantive content. The absence of a chart is NOT evidence of
+        # failure: scalar aggregates (COUNT(*), SUM) legitimately return a
+        # single row and no chart, and discarding them threw away correct
+        # LLM answers (e.g. "Combien de commandes j'ai eues ?").
         if response is not None and not response.refused:
-            if not response.answer or not response.answer.strip():
+            answer = (response.answer or "").strip()
+            if not answer:
                 logger.info("LLM response is bad (empty answer) - falling back to rule-based")
                 response = None
-            elif response.sql and not response.chart:
-                # SQL but no chart → likely 0 rows or wrong aliases.
-                from app.agents.orchestrator import classify_question
-                intent = classify_question(req.message, role)
-                if intent in ("top_products", "weekly_sales", "stock_shortfall", "net_revenue"):
-                    logger.info("LLM response is bad (intent=%s sql=True chart=False) - falling back", intent)
-                    response = None
+            elif response.sql and not response.chart and not any(ch.isdigit() for ch in answer):
+                # SQL ran but the answer carries no number at all → likely a
+                # 0-row result or a broken query for a data question. A valid
+                # scalar answer always contains a digit, so this only fires on
+                # genuinely empty results.
+                logger.info("LLM response is bad (sql, no chart, no numeric content) - falling back")
+                response = None
 
         if response is None:
             # Rule-based fallback.
