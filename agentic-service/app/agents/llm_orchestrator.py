@@ -289,9 +289,19 @@ class LLMOrchestrator:
                         "unit": "",
                     }
 
+            # Surface a foreign-scope rewrite as a WARNING in the audit trail.
+            # The rewriter forced the caller's own scope (no data leak), but
+            # the LLM tried to read another tenant's rows - that is a security
+            # event operators must see, not a silent auto-fix.
+            incident = bool(getattr(self.sql_tool, "_last_security_incident", False))
+            scope_status = "warning" if incident else "ok"
+            scope_detail = (
+                f"Tentative de scope étranger réécrite → {scope_clause}"
+                if incident else str(scope_clause or "admin")
+            )
             security_checks = [
                 {"label": "Read-only", "status": "ok", "detail": "SELECT uniquement"},
-                {"label": "Scope appliqué", "status": "ok", "detail": str(scope_clause or "admin")},
+                {"label": "Scope appliqué", "status": scope_status, "detail": scope_detail},
                 {"label": "Tables autorisées", "status": "ok", "detail": "Validées par sqlglot"},
                 {"label": "LIMIT 1000", "status": "ok", "detail": "Présente"},
             ]

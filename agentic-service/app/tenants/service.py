@@ -39,7 +39,7 @@ from sqlalchemy.engine import Row
 
 from app.auth.jwt import create_access_token
 from app.auth.service import _row_to_user  # internal reuse (same team)
-from app.db_seed import get_engine, tenants, tenant_memberships, users
+from app.db_seed import get_engine, tenant_configs, tenants, tenant_memberships, users
 
 logger = logging.getLogger("tevet7.tenants.service")
 
@@ -131,6 +131,12 @@ async def list_user_tenants(user_id: int) -> list[dict[str, Any]]:
     """Return all tenants the user belongs to, with role/producer/active."""
     engine = get_engine()
     async with engine.connect() as conn:
+        # LEFT JOIN tenant_configs so the payload is authoritative about
+        # onboarding state - the frontend must not have to guess it (a
+        # missing `onboarded` used to default to false and wrongly route
+        # even the pre-onboarded demo tenant into the wizard). Demo tenants
+        # have no tenant_configs row requirement, so we also treat is_demo
+        # as onboarded.
         r = await conn.execute(
             select(
                 tenants.c.id,
@@ -142,10 +148,14 @@ async def list_user_tenants(user_id: int) -> list[dict[str, Any]]:
                 tenant_memberships.c.role,
                 tenant_memberships.c.producer_id,
                 tenant_memberships.c.is_active,
+                tenant_configs.c.onboarded,
             )
             .select_from(
-                tenant_memberships.join(
-                    tenants, tenants.c.id == tenant_memberships.c.tenant_id
+                tenant_memberships
+                .join(tenants, tenants.c.id == tenant_memberships.c.tenant_id)
+                .outerjoin(
+                    tenant_configs,
+                    tenant_configs.c.tenant_id == tenant_memberships.c.tenant_id,
                 )
             )
             .where(tenant_memberships.c.user_id == int(user_id))
@@ -162,6 +172,7 @@ async def list_user_tenants(user_id: int) -> list[dict[str, Any]]:
                 "role": row.role,
                 "producer_id": row.producer_id,
                 "is_active": bool(row.is_active),
+                "onboarded": bool(row.is_demo) or bool(row.onboarded),
             })
     return items
 
