@@ -95,6 +95,27 @@ async def resolve_role_scope(
     return scope_column, scope_value
 
 
+async def resolve_role_denied_columns(tenant_id: str, role: str) -> list[str]:
+    """Resolve the column deny list for a role on a tenant.
+
+    Read from ``roles_config[role].denied_columns`` (the wizard's "define
+    roles" step, extended with column-level policy):
+    ``{"driver": {"scope_column": "driver_id", "denied_columns": ["revenue"]}}``.
+
+    Admins are never column-restricted (they are unscoped). Returns ``[]``
+    when no deny list is configured. Fail-open here is acceptable because
+    the SqlReadTool only column-restricts scoped callers anyway; the
+    row-level scope is the primary boundary.
+    """
+    if role == "admin":
+        return []
+    config = await _get_config_row(tenant_id)
+    roles_cfg = (config or {}).get("roles_config") or {}
+    role_cfg = roles_cfg.get(role) or {}
+    denied = role_cfg.get("denied_columns") or []
+    return [str(c) for c in denied if c]
+
+
 async def _get_config_row(tenant_id: str) -> dict[str, Any] | None:
     """Return the tenant_configs row for ``tenant_id``, or None."""
     engine = get_engine()

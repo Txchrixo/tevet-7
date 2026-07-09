@@ -256,10 +256,11 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
         # falls back to the historical producer/producer_id rule. Hardcoding
         # "producer" here would silently drop row-level security for every
         # scoped custom role (e.g. "driver" scoped by driver_id).
-        from app.tenants.onboarding import resolve_role_scope
+        from app.tenants.onboarding import resolve_role_denied_columns, resolve_role_scope
         scope_column, scope_value = await resolve_role_scope(
             tenant_id, role, producer_id,
         )
+        denied_columns = await resolve_role_denied_columns(tenant_id, role)
 
         sql_tool = SqlReadTool(
             connector=connector,
@@ -268,6 +269,7 @@ async def chat(req: ChatRequest, request: Request) -> dict[str, Any]:
             scope_column=scope_column,
             scope_value=scope_value,
             role=role,
+            denied_columns=denied_columns,
         )
         # Phase 3 - build the RAG tool with the same identity context so
         # documentary questions are scoped identically to analytical ones.
@@ -570,15 +572,17 @@ async def chat_stream(req: ChatRequest, request: Request) -> StreamingResponse:
             allowed_tables = connector.get_allowed_tables(role)
             # Same scope resolution as /chat: roles_config is the source of
             # truth for onboarded tenants (see resolve_role_scope).
-            from app.tenants.onboarding import resolve_role_scope
+            from app.tenants.onboarding import resolve_role_denied_columns, resolve_role_scope
             scope_column, scope_value = await resolve_role_scope(
                 tenant_id, role, producer_id,
             )
+            denied_columns = await resolve_role_denied_columns(tenant_id, role)
 
             sql_tool = SqlReadTool(
                 connector=connector, schema=schema,
                 allowed_tables=allowed_tables, scope_column=scope_column,
                 scope_value=scope_value, role=role,
+                denied_columns=denied_columns,
             )
             rag_tool = RagSearchTool(
                 connector=connector, tenant_id=tenant_id,

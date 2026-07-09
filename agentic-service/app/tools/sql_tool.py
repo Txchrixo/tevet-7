@@ -533,10 +533,19 @@ class SqlReadTool:
         role: str = "producer",
         llm_client: Any | None = None,
         generator: SQLGenerator | None = None,
+        denied_columns: list[str] | None = None,
     ) -> None:
         self.connector = connector
         self.schema = schema
         self.allowed_tables = set(allowed_tables)
+        # Column-level access control (Phase 1 of the "provable in-scope
+        # compilation" work). ``denied_columns`` is a flat set of column
+        # NAMES the caller's role may never read - e.g. a "driver" role
+        # denied "revenue"/"cost". Enforcement is by name (fail-closed):
+        # a reference to a denied name is rejected wherever it appears, and
+        # ``SELECT *`` on a scoped table is expanded to the allowed columns.
+        # Admins (enforce_scope=False) are not column-restricted.
+        self.denied_columns = {c.lower() for c in (denied_columns or [])}
         # Forbidden tables are tenant-wide: nobody, not even admins, may
         # query them via the agent (they're reserved for the control plane).
         self.forbidden_tables = set(schema.get("forbidden_tables", []))
@@ -568,8 +577,13 @@ class SqlReadTool:
                 self.generator = RuleBasedSQLGenerator(schema=schema)
         # Build a quick lookup: table_name -> scope_column (or None)
         self._table_scope_columns: dict[str, str | None] = {}
+        # And table_name -> [column names] (for safe ``SELECT *`` expansion).
+        self._table_columns: dict[str, list[str]] = {}
         for t in schema.get("tables", []):
             self._table_scope_columns[t["name"]] = t.get("tenant_scope_column")
+            self._table_columns[t["name"]] = [
+                c.get("name") for c in t.get("columns", []) if c.get("name")
+            ]
 
     # ───────────────────────────────────────────────────────────────────────
     # Step 1 - SQL generation
@@ -664,6 +678,11 @@ class SqlReadTool:
         if self.enforce_scope:
             self._apply_row_level_scope(ast)
 
+        # ── d2) Column-level access control ──
+        # Enforced only for scoped (non-admin) callers with a deny list.
+        if self.enforce_scope and self.denied_columns:
+            self._apply_column_level_scope(ast)
+
         # ── e) Dangerous functions ──
         for anon in ast.find_all(exp.Anonymous):
             fname = (anon.name or "").lower()
@@ -679,6 +698,125 @@ class SqlReadTool:
 
         rewritten = ast.sql(dialect="sqlite", pretty=False)
         return rewritten
+
+    def _apply_column_level_scope(self, ast: exp.Select) -> None:
+        """Enforce the caller's column deny list across the whole AST.
+
+        Two guarantees, applied at every nesting level (subqueries, CTEs,
+        UNION branches, ...):
+
+        1. **Reject** any explicit reference to a denied column NAME wherever
+           it appears - SELECT list, WHERE, GROUP BY, HAVING, ORDER BY, JOIN
+           conditions, window/partition clauses, expressions. Rejecting (not
+           silently dropping) is the provably-safe choice: dropping a WHERE
+           predicate would change the result's meaning without the caller
+           knowing.
+        2. **Expand** ``SELECT *`` / ``SELECT t.*`` on a scoped table to the
+           table's allowed columns (all minus denied). If the table's column
+           list is unknown (schema gap), a ``*`` is rejected fail-closed,
+           because we cannot prove the expansion excludes a denied column.
+
+        Denial is by column name (flat), matching the flat ``scope_column``
+        model: a denied name is blocked regardless of table qualifier. This
+        can over-block a same-named column in an unrelated table - the safe
+        direction, and acceptable for v1.
+
+        Raises ``SqlSecurityError`` on any violation and flags a security
+        incident (the caller tried to read a column they are denied).
+        """
+        # 1. Reject explicit references to denied columns anywhere.
+        for col in ast.find_all(exp.Column):
+            if col.name and col.name.lower() in self.denied_columns:
+                self._last_security_incident = True
+                logger.warning(
+                    "SECURITY WARNING - denied-column access attempt: role=%s "
+                    "column=%s scope_value=%s.",
+                    self.role, col.name, self.scope_value,
+                )
+                raise SqlSecurityError(
+                    f"Column {col.name!r} is not readable by role {self.role!r}."
+                )
+
+        # 2. Expand SELECT * / t.* on scoped tables to allowed columns.
+        for sel in ast.find_all(exp.Select):
+            # Map every direct table's reference-name (alias if present, else
+            # the table name) to its base table name. Emitted columns MUST be
+            # qualified by the reference-name the query actually uses -
+            # ``SELECT deliveries.id FROM deliveries AS d`` is invalid SQL.
+            ref_to_base: dict[str, str] = {}
+            for base, ref in self._direct_table_refs(sel):
+                ref_to_base[ref] = base
+            scoped_refs = {
+                ref: base for ref, base in ref_to_base.items()
+                if self._table_scope_columns.get(base) == self.scope_column
+            }
+            if not scoped_refs:
+                continue
+            # Qualify emitted columns when the SELECT touches more than one
+            # table (avoids ambiguous-column errors) or the star was qualified.
+            multi = len(ref_to_base) > 1
+
+            def _emit(ref: str, base: str, qualify: bool) -> list[exp.Expression]:
+                cols = self._table_columns.get(base)
+                if not cols:
+                    self._last_security_incident = True
+                    raise SqlSecurityError(
+                        f"'SELECT *' on {base!r} cannot be safely expanded "
+                        f"for role {self.role!r} (unknown columns); denied."
+                    )
+                out: list[exp.Expression] = []
+                for cname in cols:
+                    if cname.lower() in self.denied_columns:
+                        continue
+                    out.append(exp.column(cname, table=ref if qualify else None))
+                return out
+
+            new_expressions: list[exp.Expression] = []
+            changed = False
+            for proj in list(sel.expressions):
+                is_bare_star = isinstance(proj, exp.Star)
+                # ``t.*`` parses as a Column whose ``this`` is a Star.
+                is_qualified_star = (
+                    isinstance(proj, exp.Column) and isinstance(proj.this, exp.Star)
+                )
+                if not is_bare_star and not is_qualified_star:
+                    new_expressions.append(proj)
+                    continue
+
+                if is_qualified_star:
+                    ref = proj.table
+                    if ref not in scoped_refs:
+                        # Star on a non-scoped table (e.g. a join dimension) -
+                        # leave it untouched; its columns aren't scope-denied.
+                        new_expressions.append(proj)
+                        continue
+                    new_expressions.extend(_emit(ref, scoped_refs[ref], qualify=True))
+                    changed = True
+                else:
+                    # Bare ``*``: expand every scoped table it covers, and keep
+                    # non-scoped tables' columns is not possible generically -
+                    # but a bare * with a scoped table present must be expanded
+                    # to prove no denied column leaks. Expand ALL direct tables.
+                    for ref, base in ref_to_base.items():
+                        qualify = multi
+                        if ref in scoped_refs:
+                            new_expressions.extend(_emit(ref, base, qualify))
+                        else:
+                            cols = self._table_columns.get(base)
+                            if cols:
+                                new_expressions.extend(
+                                    exp.column(c, table=ref if qualify else None) for c in cols
+                                )
+                            else:
+                                # Unknown non-scoped columns: keep a qualified
+                                # star for that table so the query still works.
+                                new_expressions.append(
+                                    exp.column("*", table=ref) if qualify else exp.Star()
+                                )
+                    changed = True
+            if changed:
+                sel.set("expressions", new_expressions)
+                self._last_rewrites_applied += 1
 
     def _apply_row_level_scope(self, ast: exp.Select) -> None:
         """Inject ``{scope_column} = {scope_value}`` at every SELECT that
@@ -790,13 +928,24 @@ class SqlReadTool:
         """Tables directly referenced by ``sel`` (FROM + JOINs) - excluding
         tables that appear only inside subqueries of ``sel``.
         """
-        out: list[str] = []
+        return [base for base, _ref in SqlReadTool._direct_table_refs(sel)]
+
+    @staticmethod
+    def _direct_table_refs(sel: exp.Select) -> list[tuple[str, str]]:
+        """``(base_table_name, reference_name)`` for each direct table of
+        ``sel`` (FROM + JOINs). ``reference_name`` is the alias when one is
+        set, else the table name - it is how the query refers to the table,
+        which is what emitted columns must be qualified by.
+        """
+        out: list[tuple[str, str]] = []
         from_clause = sel.args.get("from_") or sel.args.get("from")
         if from_clause is not None and isinstance(from_clause.this, exp.Table):
-            out.append(from_clause.this.name)
+            t = from_clause.this
+            out.append((t.name, t.alias_or_name))
         for j in (sel.args.get("joins") or []):
             if isinstance(j.this, exp.Table):
-                out.append(j.this.name)
+                t = j.this
+                out.append((t.name, t.alias_or_name))
         return out
 
     # ───────────────────────────────────────────────────────────────────────
