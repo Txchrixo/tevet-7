@@ -276,6 +276,10 @@ The 39-case suite above validates the deterministic rule-based generator. A real
 
 All 30 invariant checks hold. Because hosted providers may be unreachable in CI or restricted networks, the suite runs against a local OpenAI-compatible model double (`scripts/mock_llm_server.py`) that emits realistic **and** adversarial tool calls; point the backend at a real key (`GROQ_API_KEY`) and the identical code path runs against the hosted model.
 
+### Provable in-scope compilation (row + column)
+
+Beyond row-level scoping, a role can be denied specific columns (`roles_config[role].denied_columns`), and the rewriter enforces a compile-time invariant: for any input SQL, the output is either rejected or a `SELECT` that, at every nesting level, carries only the caller's scope value and references no denied column - verified by a 194-case fuzzing harness that executes each admitted query against a poison-seeded database (`scripts/verify_scope_invariant.py`, 0 violations, self-testing). A companion **permission-constrained benchmark** (`eval/permission_eval.py`) scores accuracy against a *scope-masked gold* (the same question has a different correct answer per actor) and reports a leakage metric (100% accuracy, 10/10 leakage attempts contained, 0 escaped). Full write-up, including the research framing and open questions: [`docs/PERMISSION_COMPILATION.md`](docs/PERMISSION_COMPILATION.md).
+
 ---
 
 ## ML model metrics
