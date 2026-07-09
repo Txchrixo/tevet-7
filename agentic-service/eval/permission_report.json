@@ -1,0 +1,28 @@
+{
+  "cases_graded": 23,
+  "accuracy_under_constraint": 1.0,
+  "by_actor": {
+    "driver-7": {
+      "correct": 9,
+      "graded": 9,
+      "accuracy": 1.0
+    },
+    "driver-9": {
+      "correct": 9,
+      "graded": 9,
+      "accuracy": 1.0
+    },
+    "admin": {
+      "correct": 5,
+      "graded": 5,
+      "accuracy": 1.0
+    }
+  },
+  "leakage": {
+    "attempts": 10,
+    "contained": 10,
+    "escaped": 0,
+    "containment_rate": 1.0
+  },
+  "failures": []
+}
