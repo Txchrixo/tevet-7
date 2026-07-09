@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white" alt="Next.js" />
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/SQLite-3-003B57?logo=sqlite&logoColor=white" alt="SQLite" />
-  <img src="https://img.shields.io/badge/scikit--learn-1.5-F7931E?logo=scikit-learn&logoColor=white" alt="scikit-learn" />
+  <img src="https://img.shields.io/badge/scikit--learn-1.6-F7931E?logo=scikit-learn&logoColor=white" alt="scikit-learn" />
   <img src="https://img.shields.io/badge/License-MIT-blue" alt="MIT License" />
 </p>
 
@@ -48,7 +48,7 @@ The heptagon in the brand mark references the "7" in Tevet-7. Each workspace has
 - **Observability**: LocalTracer + LangfuseTracer (production-ready)
 - **Multi-tenant**: onboarding wizard, custom roles with enforced row-level scoping, dynamic connectors (Postgres/CSV/SQLite)
 - **Production hardening**: fail-fast boot guards, persistent (non-destructive) startup mode, feature-flag kill switches, `/ready` probe
-- **129 backend tests** + 3 end-to-end suites (onboarding wizard, custom-role RLS, NextAuth flow)
+- **129 backend tests** + 4 end-to-end suites (onboarding wizard, custom-role RLS, NextAuth flow, LLM-path red-team)
 
 ---
 
@@ -199,7 +199,7 @@ tevet-7/
 |   +-- components/
 |       +-- producer-copilot/ # Chat, sidebar, inspector, admin console
 |       +-- ui/               # shadcn/ui + Feather icons
-+-- mini-services/            # Backend persistence (dev.sh auto-launch)
++-- mini-services/            # glm-bridge (GLM LLM bridge) + tevet7-backend helper
 +-- docs/screenshots/         # Landing + dashboard screenshots
 ```
 
@@ -220,9 +220,11 @@ Every SQL statement produced by the agent is parsed into an AST before execution
 
 If the rewrite fails (unparseable SQL, forbidden table, non-SELECT), the tool raises `SqlSecurityError` and the query never reaches the database. This is verified by **8 dedicated security tests** in `agentic-service/tests/test_sql_security.py`, each named after a specific attack vector: non-SELECT statements, forbidden tables (including CTE smuggling), missing-scope injection, wrong-scope rewrite (with a logged SECURITY incident), subquery bypass, LIMIT enforcement, no double-injection on correct scope, and comment-based bypass. All 8 run green in CI.
 
-### Layer 2: Read-only database connections
+### Layer 2: Read-only enforcement in the connector
 
-Tenant connectors open the business database with a **read-only** role. Even if Layer 1 were compromised, the database itself rejects any write attempt at the engine level. This is defense-in-depth: a single layer is never the only thing standing between the LLM and the data.
+Before running any statement, every connector's `execute_readonly_query` re-parses the (already-rewritten) SQL and refuses anything that is not a `SELECT` - a second, independent check that does not trust Layer 1. This is defense-in-depth: a single layer is never the only thing standing between the LLM and the data.
+
+For engine-level enforcement in production, point the Postgres connector at a **read-only database role**, so the database itself rejects writes even if both application layers were bypassed. (The shipped SQLite demo has no read-only role concept, so there the guarantee is the connector-level check above.)
 
 ### Layer 3: session-derived identity (NextAuth)
 
